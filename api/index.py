@@ -29,6 +29,9 @@ GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
               "/api/forum": list_threads, "/api/forum/thread": read_thread,
               "/api/review": review_queue}
 _DEPS = None
+# 两个 Vercel 专案的代价就是这一条：前端跨域来调，得放行。
+# 生产环境把 FENCEPOST_ALLOWED_ORIGIN 设成前端的域名，别留星号。
+ALLOWED_ORIGIN = os.getenv("FENCEPOST_ALLOWED_ORIGIN", "*")
 
 
 def _deps() -> Deps:
@@ -123,6 +126,7 @@ class handler(BaseHTTPRequestHandler):
         if status != 200:
             return self._json(status, result)
         self.send_response(200)
+        self._cors()
         self.send_header("content-type", "text/event-stream")
         self.send_header("cache-control", "no-cache")
         self.send_header("x-accel-buffering", "no")     # 别让中间层把流缓冲成一坨
@@ -144,9 +148,23 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(("data: " + json.dumps(payload) + "\n\n").encode())
         self.wfile.flush()
 
+    def _cors(self) -> None:
+        self.send_header("access-control-allow-origin", ALLOWED_ORIGIN)
+        self.send_header("vary", "origin")
+
+    def do_OPTIONS(self):
+        """预检。浏览器带 authorization 头就一定会先问一次。"""
+        self.send_response(204)
+        self._cors()
+        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+        self.send_header("access-control-allow-headers", "authorization, content-type")
+        self.send_header("access-control-max-age", "86400")
+        self.end_headers()
+
     def _json(self, status: int, payload: dict) -> None:
         data = json.dumps(payload).encode()
         self.send_response(status)
+        self._cors()
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(data)))
         self.end_headers()

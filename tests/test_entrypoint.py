@@ -105,5 +105,37 @@ class Entrypoint(unittest.TestCase):
         self.assertEqual({"done": True}, frames[-1])
 
 
+class Cors(unittest.TestCase):
+    """两个 Vercel 专案就要跨域，浏览器会先发预检。"""
+
+    def setUp(self):
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), entry.handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/api/assistant"
+        deps = Deps(client=FakeClient())
+        deps.context.grants.add(("u1", "s1"))
+        entry._DEPS = deps
+
+    def tearDown(self):
+        self.server.shutdown()
+        entry._DEPS = None
+
+    def test_preflight_allows_the_authorization_header(self):
+        request = urllib.request.Request(self.url, method="OPTIONS")
+        with urllib.request.urlopen(request) as resp:
+            self.assertEqual(204, resp.status)
+            self.assertEqual("*", resp.headers.get("access-control-allow-origin"))
+            self.assertIn("authorization", resp.headers.get("access-control-allow-headers"))
+            self.assertIn("POST", resp.headers.get("access-control-allow-methods"))
+
+    def test_answers_carry_the_origin_header(self):
+        request = urllib.request.Request(
+            self.url, data=json.dumps({"role": "neighbour", "storyboard_id": "s1",
+                                       "message": "hello"}).encode(),
+            headers={"content-type": "application/json", "authorization": "Bearer " + TOKEN})
+        with urllib.request.urlopen(request) as resp:
+            self.assertEqual("*", resp.headers.get("access-control-allow-origin"))
+
+
 if __name__ == "__main__":
     unittest.main()
