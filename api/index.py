@@ -13,7 +13,8 @@ from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, ha
                        close_storyboard, dashboard, delete_entry, edit_entry, issue_share_link,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        submit_entry, timeline)
-from proxy.db import Database, SqliteContext, SqliteHistory, SqliteScreeningLog
+from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
+                      SqliteScreeningLog)
 from proxy.model import DashScope, UpstreamError, redact
 
 POST_ROUTES = ("/api/session", "/api/storyboards", "/api/storyboards/close",
@@ -26,9 +27,7 @@ _DEPS = None
 
 
 def _deps() -> Deps:
-    # 历史与上下文走 SQLite；库文件路径用 FENCEPOST_DB 指定，默认放在仓库根目录。
-    # 限流仍是内存实作：operations.md §3 那三条上限在 data-model.md §1 里没有对应的表，
-    # 加表得先定下来，所以 serverless 多实例之间限流暂时不共享。
+    # 历史、上下文、筛查记录与限流都走 SQLite；库文件路径用 FENCEPOST_DB 指定。
     global _DEPS
     if _DEPS is None:
         # Vercel 上只有 /tmp 可写，而且每个实例一份、冷启动就没。
@@ -36,7 +35,8 @@ def _deps() -> Deps:
         default_db = ("/tmp/fencepost.db" if os.getenv("VERCEL")
                       else str(Path(__file__).resolve().parent.parent / "fencepost.db"))
         db = Database(os.getenv("FENCEPOST_DB", default_db))
-        _DEPS = Deps(client=DashScope(), history=SqliteHistory(db), context=SqliteContext(db),
+        _DEPS = Deps(client=DashScope(), limiter=SqliteRateLimiter(db),
+                     history=SqliteHistory(db), context=SqliteContext(db),
                      screening=SqliteScreeningLog(db), db=db)
     return _DEPS
 
