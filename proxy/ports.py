@@ -10,7 +10,7 @@ from collections import deque
 
 # operations.md §3。三个值都可用环境变量覆盖，默认与文档一致。
 DEFAULT_LIMITS = {
-    "chat": (int(os.getenv("LIMIT_CHAT_PER_DAY", "50")), 86400),
+    "chat": (int(os.getenv("LIMIT_CHAT_PER_DAY", "200")), 86400),
     "vision": (int(os.getenv("LIMIT_VISION_PER_HOUR", "10")), 3600),
     "submission": (int(os.getenv("LIMIT_SUBMISSION_PER_HOUR", "20")), 3600),
 }

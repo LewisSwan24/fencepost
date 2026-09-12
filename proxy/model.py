@@ -29,8 +29,8 @@ class DashScope:
         if not key:
             raise UpstreamError("no_api_key")
         self.chat_model = chat_model or os.getenv("CHAT_MODEL", "qwen3.8-max")
-        # qwen-integration.md §1 写的是「轻量档（plus/turbo 级）」，具体型号还没定，
-        # 暂时跟 chat 同一个，定下来改这一处。
+        # 2026-09-13 定：Screener 与聊天同一个模型，靠 reasoning_effort=none 压延迟。
+        # 要换型号改这一处或设 SCREENER_MODEL，换完必须重跑红线。
         self.screener_model = screener_model or os.getenv("SCREENER_MODEL", self.chat_model)
         self.timeout = timeout or float(os.getenv("MODEL_TIMEOUT", "20"))
         # max_retries=0：重试次数按角色由调用方决定，SDK 不要自己悄悄重试。
