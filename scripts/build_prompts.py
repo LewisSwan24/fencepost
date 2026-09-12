@@ -81,7 +81,7 @@ def main() -> None:
             print(f"  警告: {name}.txt 里还有 {len(leftover)} 处未替换的占位符")
         header = f"# GENERATED from prompts.md {version} — do not edit by hand\n\n"
         path = OUT / f"{name}.txt"
-        path.write_text(header + body + "\n", encoding="utf-8")
+        path.write_text(header + body + "\n", encoding="utf-8", newline="\n")
         print(f"  {path.relative_to(ROOT)}  ({len(body.splitlines())} 行)")
 
     (OUT / "VERSION").write_text(version + "\n", encoding="utf-8")
