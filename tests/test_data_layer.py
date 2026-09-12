@@ -16,13 +16,19 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 from proxy import auth                                               # noqa: E402
 from proxy.app import Deps, handle                                   # noqa: E402
-from proxy.db import Database, SqliteContext, SqliteHistory          # noqa: E402
+from proxy.db import (Database, SqliteContext, SqliteHistory,        # noqa: E402
+                      SqliteScreeningLog)
+from proxy.model import UpstreamError                                # noqa: E402
 from proxy.ports import PermissionDenied                             # noqa: E402
 
 VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 
 TABLES = {"users", "videos", "storyboards", "entries", "access_grants",
           "share_links", "chat_messages", "screening_results", "review_votes"}
+
+OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
+REVIEW_JSON = '{"verdict":"review","codes":["fact_conflict"],"note":"lifespan is off"}'
+REJECT_JSON = '{"verdict":"reject","codes":["pii"],"note":"address named"}'
 
 
 class FakeClient:
@@ -34,6 +40,8 @@ class FakeClient:
 
     def call(self, role, system, content, history=()):
         self.calls.append({"role": role, "content": content, "history": list(history)})
+        if isinstance(self.reply, Exception):
+            raise self.reply
         return self.reply
 
 
@@ -179,6 +187,79 @@ class History(Fixture):
         self.history.append(self.owner, self.storyboard, "user", "will be archived")
         self.history.drop_partition(self.owner, self.storyboard)
         self.assertEqual([], self.history.recent(self.owner, self.storyboard))
+
+
+class Screening(Fixture):
+    """筛查结果落库。三种 subject 都要装得下，见 data-model.md §6。"""
+
+    def screen(self, submission, reply, **over):
+        deps = Deps(client=FakeClient(reply), history=self.history, context=self.context,
+                    screening=SqliteScreeningLog(self.db))
+        body = {"role": "screener", "field": "fun_fact", "submission": submission}
+        body.update(over)
+        status, payload = handle(body, auth.issue(self.owner), deps)
+        row = self.db.conn.execute(
+            "SELECT * FROM screening_results ORDER BY rowid DESC LIMIT 1").fetchone()
+        return status, payload, row
+
+    def test_ok_keeps_no_original_text(self):
+        _, payload, row = self.screen("Brushtails are nocturnal.", OK_JSON)
+        self.assertTrue(payload["published"])
+        self.assertEqual("ok", row["verdict"])
+        self.assertIsNone(row["original_text"])
+        self.assertEqual("submission", row["subject_type"])
+        self.assertIsNone(row["subject_id"])
+
+    def test_reject_keeps_the_original_text(self):
+        _, payload, row = self.screen("He lives at 42 Example St.", REJECT_JSON)
+        self.assertFalse(payload["published"])
+        self.assertEqual("He lives at 42 Example St.", row["original_text"])
+        self.assertEqual(["pii"], json.loads(row["codes"]))
+        self.assertEqual("address named", row["note"])
+
+    def test_review_keeps_the_original_text_too(self):
+        _, _, row = self.screen("Ringtails live about 40 years.", REVIEW_JSON)
+        self.assertEqual("review", row["verdict"])
+        self.assertEqual("Ringtails live about 40 years.", row["original_text"])
+
+    def test_a_screened_entry_points_at_that_entry(self):
+        entry = self.db.add_entry(self.storyboard, self.owner, "brushtail", story="mine")
+        _, _, row = self.screen("Ringtails live about 40 years.", REVIEW_JSON,
+                                subject_type="entry", subject_id=entry)
+        self.assertEqual("entry", row["subject_type"])
+        self.assertEqual(entry, row["subject_id"])
+
+    def test_a_forum_post_fits_before_the_forum_table_exists(self):
+        _, _, row = self.screen("possums carry rabies", REJECT_JSON, field="forum_post",
+                                subject_type="forum_post", subject_id="post-1")
+        self.assertEqual("forum_post", row["subject_type"])
+        self.assertEqual("post-1", row["subject_id"])
+
+    def test_a_subject_type_without_an_id_is_refused(self):
+        deps = Deps(client=FakeClient(OK_JSON), screening=SqliteScreeningLog(self.db))
+        status, _ = handle({"role": "screener", "field": "fun_fact", "submission": "x",
+                            "subject_type": "entry"}, auth.issue(self.owner), deps)
+        self.assertEqual(400, status)
+        self.assertIsNone(self.db.conn.execute(
+            "SELECT 1 FROM screening_results").fetchone())
+
+    def test_fail_open_is_recorded(self):
+        _, payload, row = self.screen("anything", UpstreamError("boom"))
+        self.assertTrue(payload["published"])
+        self.assertEqual("review", row["verdict"])
+        self.assertEqual(1, row["fail_open"])
+
+    def test_the_language_floor_is_recorded(self):
+        _, payload, row = self.screen("他住在四十二号，史密斯家的屋顶。", REJECT_JSON)
+        self.assertTrue(payload["published"])
+        self.assertEqual("review", row["verdict"])
+        self.assertEqual(1, row["downgraded_non_english"])
+
+    def test_the_check_constraint_catches_a_dangling_subject(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.conn.execute(
+                "INSERT INTO screening_results (id, subject_type, subject_id, field, verdict, "
+                "created_at) VALUES ('x', 'entry', NULL, 'fun_fact', 'ok', '2026-09-12T00:00:00+00:00')")
 
 
 if __name__ == "__main__":
