@@ -2,6 +2,7 @@
 限流、fail-open、Writer 校验、报错不外泄。
 """
 
+import os
 import sys
 from dataclasses import dataclass, field
 
@@ -21,6 +22,8 @@ COPY = {
     "unauthorized": "Sign in again to keep using the assistant.",
     "no_access": "You do not have access to this storyboard.",
     "bad_request": "The assistant could not read that request.",
+    "not_found": "There is nothing at that address.",
+    "signup_closed": "Sign-up is closed on this deployment.",
     "frame_consent_missing": "The frame needs the consent step before it can be sent.",
     "upstream_unavailable": "The assistant is offline right now. Writing and posting work as normal.",
     "rate_limited_chat": "You have used today's assistant allowance. Writing, posting and sharing all still work.",
@@ -36,6 +39,7 @@ class Deps:
     history: object = field(default_factory=MemoryHistory)
     context: object = field(default_factory=MemoryContext)
     records: list = field(default_factory=list)   # 阶段 4 换成 screening_results 落库
+    db: object = None                            # 资源端点要直接写库，助手那条路用不上
 
 
 def _error(code: str, copy_key: str = None, **extra) -> dict:
@@ -178,3 +182,32 @@ def handle_stream(body: dict, token: str, deps: Deps):
         return 403, _error("no_access")
     stream = roles.neighbour_stream(deps.client, context, history, message, body.get("image_b64"))
     return 200, StreamSession(stream, deps, user_id, storyboard_id, message)
+
+
+# ---------- 资源端点 ----------
+
+def create_session(body: dict, deps: Deps):
+    """demo 级的身分：给一个 handle 就签令牌，没有密码。
+
+    所以它默认关着。任何人拿别人的 handle 都能换到令牌，这在真环境里就是冒充，
+    要开得显式设 FENCEPOST_OPEN_SIGNUP。
+    """
+    if not os.getenv("FENCEPOST_OPEN_SIGNUP"):
+        return 403, _error("signup_closed")
+    handle = (body.get("handle") or "").strip()
+    if not handle or len(handle) > 40:
+        return 400, _error("bad_request")
+    user_id = deps.db.ensure_user(handle)
+    return 200, {"user_id": user_id, "handle": handle, "token": auth.issue(user_id)}
+
+
+def create_storyboard(body: dict, token: str, deps: Deps):
+    try:
+        user_id = auth.verify(token)
+    except auth.AuthError:
+        return 401, _error("unauthorized")
+    title = body.get("title")
+    if title is not None and (not isinstance(title, str) or len(title) > 120):
+        return 400, _error("bad_request")
+    # add_storyboard 顺手给 owner 一条 grant，否则他进不了自己的故事版
+    return 200, {"storyboard_id": deps.db.add_storyboard(user_id, title), "title": title}
