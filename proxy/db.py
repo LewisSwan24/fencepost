@@ -162,6 +162,53 @@ class Database:
             "ORDER BY e.created_at, e.rowid", (storyboard_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    # ---------- 分享链接 ----------
+
+    def add_share_link(self, storyboard_id: str, created_by: str, token_hash: str,
+                       level: str, expires_at, max_uses) -> str:
+        link_id = new_id()
+        self.conn.execute(
+            "INSERT INTO share_links (id, storyboard_id, token_hash, created_by, level, "
+            "expires_at, max_uses, used_count) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+            (link_id, storyboard_id, token_hash, created_by, level, expires_at, max_uses))
+        self.conn.commit()
+        return link_id
+
+    def share_link_by_hash(self, token_hash: str):
+        row = self.conn.execute("SELECT * FROM share_links WHERE token_hash = ?",
+                                (token_hash,)).fetchone()
+        return dict(row) if row else None
+
+    def share_link(self, link_id: str):
+        row = self.conn.execute("SELECT * FROM share_links WHERE id = ?", (link_id,)).fetchone()
+        return dict(row) if row else None
+
+    def consume_share_link(self, link_id: str) -> None:
+        self.conn.execute("UPDATE share_links SET used_count = used_count + 1 WHERE id = ?",
+                          (link_id,))
+        self.conn.commit()
+
+    def revoke_share_link(self, link_id: str) -> None:
+        self.conn.execute("UPDATE share_links SET revoked_at = ? WHERE id = ?", (now(), link_id))
+        self.conn.commit()
+
+    def storyboard_owner(self, storyboard_id: str):
+        row = self.conn.execute("SELECT owner_id FROM storyboards WHERE id = ?",
+                                (storyboard_id,)).fetchone()
+        return row["owner_id"] if row else None
+
+    def dashboard(self, user_id: str) -> list[dict]:
+        """我有权访问的故事版。只出故事版本身的属性，不出别人是谁、发了多少。"""
+        rows = self.conn.execute(
+            "SELECT s.id, s.title, s.status, s.last_entry_at, g.level, "
+            "(SELECT COUNT(*) FROM entries e WHERE e.storyboard_id = s.id "
+            " AND e.deleted_at IS NULL) AS entry_count "
+            "FROM access_grants g JOIN storyboards s ON s.id = g.storyboard_id "
+            "WHERE g.user_id = ? AND g.revoked_at IS NULL "
+            "ORDER BY COALESCE(s.last_entry_at, s.created_at) DESC",
+            (user_id,)).fetchall()
+        return [dict(row) for row in rows]
+
     def entry(self, entry_id: str):
         row = self.conn.execute(
             "SELECT id, storyboard_id, author_id, species, fun_fact, story, deleted_at "

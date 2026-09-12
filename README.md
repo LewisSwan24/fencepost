@@ -38,7 +38,7 @@ None of them touch the network — the model is faked.
 python tests/test_proxy.py && python tests/test_data_layer.py && python tests/test_entrypoint.py && python tests/test_resources.py
 ```
 
-90 tests. The data layer ones matter most: they pin the three access invariants — other people's
+107 tests. The data layer ones matter most: they pin the three access invariants — other people's
 entries never enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
 
@@ -70,7 +70,12 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 | `POST /api/entries` | Submit an entry. Screened first, created only if nothing was rejected. Needs `contribute` or `reshare`. |
 | `POST /api/entries/edit` | Change your own entry. Changed fields go back through the Screener; a rejected edit leaves the original alone. |
 | `POST /api/entries/delete` | Soft delete your own entry. The assistant stops seeing it on the next call. |
+| `POST /api/share-links` | Issue a permissioned link. The plain token comes back once; only its hash is stored. |
+| `POST /api/share-links/redeem` | Turn a token into a grant. Upgrades only — a view link never demotes anyone. |
+| `POST /api/share-links/revoke` | Turn a link off. |
+| `POST /api/grants/revoke` | Take someone's access away. Effective on the next call, with no cache in between. |
 | `GET /api/timeline?storyboard_id=` | Every contributor's entries. Deliberately a different query from what the assistant sees. |
+| `GET /api/dashboard` | The storyboards you can reach, active ones separated from past ones. |
 | `POST /api/assistant` | Dispatch to one of the three model roles by `role`. Add `"stream": true` for server-sent events, which only the chat role supports. |
 
 Every response carries `prompt_version`, which belongs in the database next to whatever the call
