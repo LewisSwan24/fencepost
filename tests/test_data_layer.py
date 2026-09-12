@@ -29,7 +29,7 @@ VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 
 TABLES = {"users", "videos", "storyboards", "entries", "access_grants",
           "share_links", "chat_messages", "screening_results", "rate_limits",
-          "review_votes"}
+          "forum_threads", "forum_posts", "review_votes"}
 
 OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
 REVIEW_JSON = '{"verdict":"review","codes":["fact_conflict"],"note":"lifespan is off"}'
@@ -359,6 +359,13 @@ class Retention(Fixture):
         self.assertNotEqual("guest", handle)
         # owner 的故事版不受影响
         self.assertEqual("active", self.db.storyboard_status(self.storyboard))
+
+    def test_deleting_an_account_takes_their_forum_posts(self):
+        thread, _ = self.db.add_thread(self.storyboard, self.guest, "their thread", "their words")
+        self.db.add_post(thread, self.owner, "my reply stays")
+        self.db.delete_account(self.guest)
+        bodies = [p["body"] for p in self.db.posts(thread)]
+        self.assertEqual(["my reply stays"], bodies)
 
     def test_deleting_an_account_turns_off_the_links_they_issued(self):
         link = self.db.add_share_link(self.storyboard, self.guest, "somehash", "view", None, None)
