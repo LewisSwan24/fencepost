@@ -8,7 +8,9 @@ import os
 import sqlite3
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -260,6 +262,114 @@ class Screening(Fixture):
             self.db.conn.execute(
                 "INSERT INTO screening_results (id, subject_type, subject_id, field, verdict, "
                 "created_at) VALUES ('x', 'entry', NULL, 'fun_fact', 'ok', '2026-09-12T00:00:00+00:00')")
+
+
+class Archiving(Fixture):
+    """user-flow §9：30 天没动静转只读，owner 可以主动完结。归档不等于删除。"""
+
+    def age(self, storyboard_id, days=40):
+        old = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        self.db.conn.execute("UPDATE storyboards SET last_entry_at = ? WHERE id = ?",
+                             (old, storyboard_id))
+        self.db.conn.commit()
+
+    def test_thirty_days_without_an_entry_turns_it_read_only(self):
+        self.db.add_entry(self.storyboard, self.owner, "brushtail", story="the last one")
+        self.age(self.storyboard)
+        self.assertEqual(1, self.db.settle_stale())
+        self.assertEqual("readonly", self.db.storyboard_status(self.storyboard))
+
+    def test_a_storyboard_with_recent_activity_is_left_alone(self):
+        self.db.add_entry(self.storyboard, self.owner, "brushtail", story="yesterday")
+        self.assertEqual(0, self.db.settle_stale())
+        self.assertEqual("active", self.db.storyboard_status(self.storyboard))
+
+    def test_settling_clears_that_storyboards_chat(self):
+        self.history.append(self.owner, self.storyboard, "user", "will not survive archiving")
+        self.age(self.storyboard)
+        self.db.settle_stale()
+        self.assertEqual([], self.history.recent(self.owner, self.storyboard))
+
+    def test_the_owner_can_close_it_with_a_note(self):
+        self.db.close_storyboard(self.storyboard, "that was the last of them")
+        row = self.db.conn.execute("SELECT status, closed_note FROM storyboards WHERE id = ?",
+                                   (self.storyboard,)).fetchone()
+        self.assertEqual("archived", row["status"])
+        self.assertEqual("that was the last of them", row["closed_note"])
+
+    def test_closing_clears_the_chat_too(self):
+        self.history.append(self.owner, self.storyboard, "user", "goes with it")
+        self.db.close_storyboard(self.storyboard)
+        self.assertEqual([], self.history.recent(self.owner, self.storyboard))
+
+    def test_a_read_only_storyboard_still_resolves_for_a_grant_holder(self):
+        self.age(self.storyboard)
+        self.db.settle_stale()
+        context = self.context.build(self.guest, self.storyboard)
+        self.assertTrue(context["storyboard_visible_to_this_user"])
+
+
+class Retention(Fixture):
+    """data-model.md §4 那张触发表，逐行。"""
+
+    def screening_row(self, author, verdict, age_days):
+        stamp = (datetime.now(timezone.utc) - timedelta(days=age_days)).isoformat(timespec="seconds")
+        self.db.conn.execute(
+            "INSERT INTO screening_results (id, subject_type, subject_id, author_id, field, "
+            "verdict, codes, original_text, created_at) "
+            "VALUES (?, 'submission', NULL, ?, 'fun_fact', ?, '[]', 'their words', ?)",
+            (uuid4().hex, author, verdict, stamp))
+        self.db.conn.commit()
+
+    def remaining(self):
+        return self.db.conn.execute("SELECT COUNT(*) AS c FROM screening_results").fetchone()["c"]
+
+    def test_screening_results_go_thirty_days_after_disposal(self):
+        self.screening_row(self.owner, "ok", 40)
+        self.screening_row(self.owner, "reject", 40)
+        self.screening_row(self.owner, "ok", 3)
+        self.assertEqual(2, self.db.purge_screening())
+        self.assertEqual(1, self.remaining())
+
+    def test_items_still_under_review_are_left_in_the_queue(self):
+        self.screening_row(self.owner, "review", 90)
+        self.assertEqual(0, self.db.purge_screening())
+        self.assertEqual(1, self.remaining())
+
+    def test_deleting_an_account_removes_their_content_everywhere(self):
+        self.db.add_entry(self.storyboard, self.guest, "ringtail", story="theirs, in my storyboard")
+        self.db.add_entry(self.storyboard, self.owner, "brushtail", story="mine")
+        self.history.append(self.guest, self.storyboard, "user", "their question")
+        self.screening_row(self.guest, "reject", 1)
+        self.db.delete_account(self.guest)
+        self.assertEqual(["mine"], [e["story"] for e in self.db.timeline(self.storyboard)])
+        self.assertEqual(0, self.remaining())
+        self.assertEqual(0, self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM chat_messages WHERE user_id = ?",
+            (self.guest,)).fetchone()["c"])
+
+    def test_deleting_an_account_leaves_an_anonymous_tombstone(self):
+        self.db.delete_account(self.guest)
+        handle = self.db.conn.execute("SELECT handle FROM users WHERE id = ?",
+                                      (self.guest,)).fetchone()["handle"]
+        self.assertTrue(handle.startswith("deleted-"))
+        self.assertNotEqual("guest", handle)
+        # owner 的故事版不受影响
+        self.assertEqual("active", self.db.storyboard_status(self.storyboard))
+
+    def test_deleting_an_account_turns_off_the_links_they_issued(self):
+        link = self.db.add_share_link(self.storyboard, self.guest, "somehash", "view", None, None)
+        self.db.delete_account(self.guest)
+        self.assertIsNotNone(self.db.share_link(link)["revoked_at"])
+
+    def test_the_teardown_script_empties_every_table(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import teardown_demo
+        self.db.add_entry(self.storyboard, self.owner, "brushtail", story="anything")
+        self.history.append(self.owner, self.storyboard, "user", "anything")
+        removed = teardown_demo.clear(self.db)
+        self.assertTrue(removed["entries"] >= 1)
+        self.assertEqual({0}, set(teardown_demo.counts(self.db).values()))
 
 
 if __name__ == "__main__":

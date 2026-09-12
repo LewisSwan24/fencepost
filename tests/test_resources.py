@@ -523,5 +523,37 @@ class Dashboard(Fixture):
         self.assertEqual("view", self.view(guest["token"])["active"][0]["level"])
 
 
+class Closing(Fixture):
+    """owner 主动完结。"""
+
+    def test_the_owner_can_close_with_a_note(self):
+        owner, board = self.board()
+        status, payload = self.post("/api/storyboards/close",
+                                    {"storyboard_id": board,
+                                     "closed_note": "that was the last of them"},
+                                    token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual("archived", payload["status"])
+        self.assertEqual([board], [b["id"] for b in self.get("/api/dashboard",
+                                                             token=owner["token"])[1]["past"]])
+
+    def test_only_the_owner_closes(self):
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "reshare", owner["user_id"])
+        status, payload = self.post("/api/storyboards/close", {"storyboard_id": board},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("not_the_owner", payload["error"]["code"])
+
+    def test_a_closed_storyboard_still_reads(self):
+        owner, board = self.board()
+        self.submit(owner["token"], board, OK_JSON, story="before closing")
+        self.post("/api/storyboards/close", {"storyboard_id": board}, token=owner["token"])
+        status, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual(["before closing"], [e["story"] for e in view["entries"]])
+
+
 if __name__ == "__main__":
     unittest.main()

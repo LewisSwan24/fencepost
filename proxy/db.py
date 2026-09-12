@@ -9,7 +9,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .ports import PermissionDenied
@@ -209,6 +209,81 @@ class Database:
             (user_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    # ---------- 留存与删除（data-model.md §4）----------
+
+    def delete_account(self, user_id: str) -> dict:
+        """清掉这个人的全部内容，users 行留成匿名墓碑。
+
+        不真删 users 行的原因：storyboards.owner_id、access_grants.granted_by、
+        share_links.created_by 都外键指向它，删了别人还在用的故事版会跟着塌。
+        operations §1 要的是内容和聊天记录清干净，不是这一行消失。
+        """
+        mine = [row["id"] for row in self.conn.execute(
+            "SELECT id FROM entries WHERE author_id = ?", (user_id,)).fetchall()]
+        removed = {}
+        if mine:
+            marks = ",".join("?" * len(mine))
+            removed["screening_of_entries"] = self.conn.execute(
+                f"DELETE FROM screening_results WHERE subject_id IN ({marks})", mine).rowcount
+        for name, sql, args in (
+            ("screening_results", "DELETE FROM screening_results WHERE author_id = ?", (user_id,)),
+            ("review_votes", "DELETE FROM review_votes WHERE voter_id = ?", (user_id,)),
+            ("chat_messages", "DELETE FROM chat_messages WHERE user_id = ?", (user_id,)),
+            ("entries", "DELETE FROM entries WHERE author_id = ?", (user_id,)),
+            ("videos", "DELETE FROM videos WHERE owner_id = ?", (user_id,)),
+            ("access_grants", "DELETE FROM access_grants WHERE user_id = ?", (user_id,)),
+        ):
+            removed[name] = self.conn.execute(sql, args).rowcount
+        # 他签发的链接不能继续放人进来，但保留行本身，外键还指着他
+        removed["share_links_revoked"] = self.conn.execute(
+            "UPDATE share_links SET revoked_at = ? WHERE created_by = ? AND revoked_at IS NULL",
+            (now(), user_id)).rowcount
+        self.conn.execute("UPDATE users SET handle = ? WHERE id = ?",
+                          (f"deleted-{new_id()[:6]}", user_id))
+        self.conn.commit()
+        return removed
+
+    def purge_screening(self, days: int = 30) -> int:
+        """处理完 30 天后删（operations §1）。
+
+        还在复核队列里的（verdict='review'）不动——「处理完」这个状态要等 #18 的队列
+        做出来才有，现在只能按「不是待核实的就算处理过了」近似。
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        gone = self.conn.execute(
+            "DELETE FROM screening_results WHERE created_at < ? AND verdict != 'review'",
+            (cutoff,)).rowcount
+        self.conn.commit()
+        return gone
+
+    # ---------- 归档 ----------
+
+    def settle_stale(self, days: int = 30) -> int:
+        """把 30 天没有新 entry 的活跃故事版翻成只读，并清掉它们的聊天记录。
+
+        没有定时任务：谁碰到就谁结算。user-flow §9 说的是「自动转只读」，不是「有个 cron」。
+        归档时清聊天记录是 data-model.md §4 的要求。
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        stale = [row["id"] for row in self.conn.execute(
+            "SELECT id FROM storyboards WHERE status = 'active' "
+            "AND COALESCE(last_entry_at, created_at) < ?", (cutoff,)).fetchall()]
+        if not stale:
+            return 0
+        marks = ",".join("?" * len(stale))
+        self.conn.execute(f"DELETE FROM chat_messages WHERE storyboard_id IN ({marks})", stale)
+        self.conn.execute(f"UPDATE storyboards SET status = 'readonly' WHERE id IN ({marks})", stale)
+        self.conn.commit()
+        return len(stale)
+
+    def close_storyboard(self, storyboard_id: str, note: str = None) -> None:
+        """owner 主动完结，附一句结语。归档不等于删除：故事版还在，QR 还能扫。"""
+        self.conn.execute(
+            "UPDATE storyboards SET status = 'archived', closed_note = ? WHERE id = ?",
+            (note, storyboard_id))
+        self.conn.execute("DELETE FROM chat_messages WHERE storyboard_id = ?", (storyboard_id,))
+        self.conn.commit()
+
     def entry(self, entry_id: str):
         row = self.conn.execute(
             "SELECT id, storyboard_id, author_id, species, fun_fact, story, deleted_at "
@@ -260,13 +335,15 @@ class SqliteScreeningLog:
 
     def record(self, row: dict) -> None:
         self.db.conn.execute(
-            "INSERT INTO screening_results (id, subject_type, subject_id, field, verdict, codes, "
-            "note, original_text, model, prompt_version, fail_open, downgraded_non_english, "
-            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (new_id(), row["subject_type"], row.get("subject_id"), row["field"], row["verdict"],
-             json.dumps(row.get("codes") or []), row.get("note"), row.get("original_text"),
-             row.get("model"), row.get("prompt_version"), int(bool(row.get("fail_open"))),
-             int(bool(row.get("downgraded_non_english"))), now()))
+            "INSERT INTO screening_results (id, subject_type, subject_id, author_id, field, "
+            "verdict, codes, note, original_text, model, prompt_version, fail_open, "
+            "downgraded_non_english, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (new_id(), row["subject_type"], row.get("subject_id"), row.get("author_id"),
+             row["field"], row["verdict"], json.dumps(row.get("codes") or []), row.get("note"),
+             row.get("original_text"), row.get("model"), row.get("prompt_version"),
+             int(bool(row.get("fail_open"))), int(bool(row.get("downgraded_non_english"))),
+             now()))
         self.db.conn.commit()
 
 
