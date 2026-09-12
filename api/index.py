@@ -10,7 +10,8 @@ from urllib.parse import parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, handle_stream,
-                       close_storyboard, dashboard, delete_entry, edit_entry, issue_share_link,
+                       close_storyboard, create_post, create_thread, dashboard, delete_entry,
+                       edit_entry, issue_share_link, list_threads, read_thread,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        submit_entry, timeline)
 from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
@@ -21,8 +22,9 @@ POST_ROUTES = ("/api/session", "/api/storyboards", "/api/storyboards/close",
                "/api/videos", "/api/entries",
                "/api/entries/edit", "/api/entries/delete", "/api/share-links",
                "/api/share-links/redeem", "/api/share-links/revoke", "/api/grants/revoke",
-               "/api/assistant")
-GET_ROUTES = ("/api/timeline", "/api/dashboard")
+               "/api/forum/threads", "/api/forum/posts", "/api/assistant")
+GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
+              "/api/forum": list_threads, "/api/forum/thread": read_thread}
 _DEPS = None
 
 
@@ -86,6 +88,10 @@ class handler(BaseHTTPRequestHandler):
             return self._json(*revoke_share_link(body, token, deps))
         if path == "/api/grants/revoke":
             return self._json(*revoke_grant(body, token, deps))
+        if path == "/api/forum/threads":
+            return self._json(*create_thread(body, token, deps))
+        if path == "/api/forum/posts":
+            return self._json(*create_post(body, token, deps))
         if body.get("stream"):
             return self._sse(body, token, deps)
         self._json(*handle(body, token, deps))
@@ -103,8 +109,7 @@ class handler(BaseHTTPRequestHandler):
             return self._json(503, {"error": {"code": "upstream_unavailable",
                                               "message": COPY["upstream_unavailable"]}})
         params = {key: values[0] for key, values in parse_qs(query).items()}
-        view = timeline if path == "/api/timeline" else dashboard
-        self._json(*view(params, token, deps))
+        self._json(*GET_ROUTES[path](params, token, deps))
 
     def _sse(self, body: dict, token: str, deps) -> None:
         status, result = handle_stream(body, token, deps)

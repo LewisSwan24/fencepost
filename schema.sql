@@ -90,6 +90,24 @@ CREATE TABLE screening_results (
   CHECK (subject_type = 'submission' OR subject_id IS NOT NULL)
 );
 
+CREATE TABLE forum_threads (        -- 挂在 storyboard 下的讨论串
+  id            TEXT PRIMARY KEY,
+  storyboard_id TEXT NOT NULL REFERENCES storyboards(id),
+  author_id     TEXT NOT NULL REFERENCES users(id),
+  title         TEXT NOT NULL,
+  created_at    TIMESTAMP NOT NULL,
+  deleted_at    TIMESTAMP
+);
+
+CREATE TABLE forum_posts (
+  id          TEXT PRIMARY KEY,
+  thread_id   TEXT NOT NULL REFERENCES forum_threads(id),
+  author_id   TEXT NOT NULL REFERENCES users(id),
+  body        TEXT NOT NULL,
+  created_at  TIMESTAMP NOT NULL,
+  deleted_at  TIMESTAMP
+);
+
 CREATE TABLE rate_limits (          -- operations §3 的三条上限
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id),
