@@ -76,6 +76,7 @@ CREATE TABLE screening_results (
   -- forum 贴文也不在 entries 里。代价是没有外键约束，靠下面那条 CHECK 兜一半。
   subject_type   TEXT NOT NULL CHECK (subject_type IN ('entry','forum_post','submission')),
   subject_id     TEXT,                   -- subject_type='submission' 时为空：还没有行可指
+  author_id      TEXT REFERENCES users(id),  -- 谁写的。被拒的提交没有 entry 可挂，靠这列才找得回来
   field          TEXT NOT NULL CHECK (field IN ('fun_fact','story','forum_post')),
   verdict        TEXT NOT NULL CHECK (verdict IN ('ok','review','reject')),
   codes          TEXT NOT NULL DEFAULT '[]',   -- JSON 数组

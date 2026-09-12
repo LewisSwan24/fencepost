@@ -38,7 +38,7 @@ None of them touch the network — the model is faked.
 python tests/test_proxy.py && python tests/test_data_layer.py && python tests/test_entrypoint.py && python tests/test_resources.py
 ```
 
-107 tests. The data layer ones matter most: they pin the three access invariants — other people's
+122 tests. The data layer ones matter most: they pin the three access invariants — other people's
 entries never enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
 
@@ -66,6 +66,7 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 |---|---|
 | `POST /api/session` | Exchange a handle for a token, creating the user on first use. Off unless `FENCEPOST_OPEN_SIGNUP` is set. |
 | `POST /api/storyboards` | Create a storyboard and grant its owner access. |
+| `POST /api/storyboards/close` | Close a storyboard with a note. Archiving is not deletion: the QR still works. |
 | `POST /api/videos` | Register a clip. Only a storage key is kept — there is no field for EXIF to land in. |
 | `POST /api/entries` | Submit an entry. Screened first, created only if nothing was rejected. Needs `contribute` or `reshare`. |
 | `POST /api/entries/edit` | Change your own entry. Changed fields go back through the Screener; a rejected edit leaves the original alone. |

@@ -101,7 +101,7 @@ def handle(body: dict, token: str, deps: Deps):
             return _neighbour(body, user_id, deps)
         if role == "writer":
             return _writer(body, deps)
-        return _screener(body, deps)
+        return _screener(body, user_id, deps)
     except PermissionDenied:
         return 403, _error("no_access")
     except UpstreamError:
@@ -118,6 +118,7 @@ def _neighbour(body: dict, user_id: str, deps: Deps):
     if not storyboard_id or not message:
         return 400, _error("bad_request")
     # 权限门与上下文都在服务端。请求体里就算带了 history/context 也一概不看。
+    _settle(deps)
     context = deps.context.build(user_id, storyboard_id)
     history = deps.history.recent(user_id, storyboard_id)
     result = roles.neighbour(deps.client, context, history, message, body.get("image_b64"))
@@ -141,7 +142,7 @@ def _writer(body: dict, deps: Deps):
     }
 
 
-def _screener(body: dict, deps: Deps):
+def _screener(body: dict, user_id: str, deps: Deps):
     submission = body.get("submission")
     if submission is None or body.get("field") not in FIELDS:
         return 400, _error("bad_request")
@@ -151,7 +152,8 @@ def _screener(body: dict, deps: Deps):
         return 400, _error("bad_request")
     internal = roles.screener(deps.client, body.get("species_selected", "unknown"),
                               body["field"], submission)
-    _record_screening(deps, internal, body["field"], submission, subject_type, subject_id)
+    _record_screening(deps, internal, body["field"], submission, subject_type, subject_id,
+                      author_id=user_id)
     # review 档作者无感（operations.md §2.3），所以客户端只拿得到能不能发；
     # verdict、codes、note、fail_open 留在服务端记录里。
     published = internal["verdict"] != "reject"
@@ -235,6 +237,12 @@ def create_storyboard(body: dict, token: str, deps: Deps):
     return 200, {"storyboard_id": deps.db.add_storyboard(user_id, title), "title": title}
 
 
+def _settle(deps: Deps) -> None:
+    """碰故事版之前先结算：30 天没动静的翻成只读。没有 cron，谁碰谁结算。"""
+    if deps.db is not None:
+        deps.db.settle_stale()
+
+
 def _identify(token: str):
     """放行给 (user_id, None)，认不出给 (None, (401, payload))。"""
     try:
@@ -244,12 +252,13 @@ def _identify(token: str):
 
 
 def _record_screening(deps: Deps, result: dict, field: str, text: str,
-                      subject_type: str, subject_id) -> None:
+                      subject_type: str, subject_id, author_id=None) -> None:
     deps.screening.record({
         **result,
         "field": field,
         "subject_type": subject_type,
         "subject_id": subject_id,
+        "author_id": author_id,
         # operations.md §1：ok 不留原文，减少留存面
         "original_text": None if result["verdict"] == "ok" else text,
         "model": getattr(deps.client, "screener_model", None),
@@ -282,6 +291,7 @@ def submit_entry(body: dict, token: str, deps: Deps):
     if not storyboard_id or species not in SPECIES or not (fun_fact or story):
         return 400, _error("bad_request")
 
+    _settle(deps)
     level = deps.db.grant_level(storyboard_id, user_id)
     if level is None:
         return 403, _error("no_access")
@@ -307,13 +317,13 @@ def submit_entry(body: dict, token: str, deps: Deps):
 
     if rejected:
         for field, value, result in screened:
-            _record_screening(deps, result, field, value, "submission", None)
+            _record_screening(deps, result, field, value, "submission", None, user_id)
         codes = sorted({code for result in rejected for code in result["codes"]})
         return 200, {"published": False, "reason_codes": codes, "prompt_version": version}
 
     entry_id = deps.db.add_entry(storyboard_id, user_id, species, fun_fact, story, video_id)
     for field, value, result in screened:
-        _record_screening(deps, result, field, value, "entry", entry_id)
+        _record_screening(deps, result, field, value, "entry", entry_id, user_id)
     return 200, {"entry_id": entry_id, "published": True, "prompt_version": version}
 
 
@@ -325,6 +335,7 @@ def timeline(params: dict, token: str, deps: Deps):
     storyboard_id = params.get("storyboard_id")
     if not storyboard_id:
         return 400, _error("bad_request")
+    _settle(deps)
     if deps.db.grant_level(storyboard_id, user_id) is None:
         return 403, _error("no_access")
     return 200, {"storyboard_id": storyboard_id, "entries": deps.db.timeline(storyboard_id)}
@@ -374,7 +385,7 @@ def edit_entry(body: dict, token: str, deps: Deps):
                 for field, value in changed]
     version = screened[0][2]["prompt_version"]
     for field, value, result in screened:
-        _record_screening(deps, result, field, value, "entry", record["id"])
+        _record_screening(deps, result, field, value, "entry", record["id"], record["author_id"])
 
     rejected = [result for _, _, result in screened if result["verdict"] == "reject"]
     if rejected:
@@ -480,6 +491,22 @@ def dashboard(params: dict, token: str, deps: Deps):
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
+    _settle(deps)
     boards = deps.db.dashboard(user_id)
     return 200, {"active": [b for b in boards if b["status"] == "active"],
                  "past": [b for b in boards if b["status"] != "active"]}
+
+
+def close_storyboard(body: dict, token: str, deps: Deps):
+    """owner 主动完结，可以附一句结语。归档不等于删除。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = body.get("storyboard_id")
+    note = body.get("closed_note")
+    if not storyboard_id or (note is not None and (not isinstance(note, str) or len(note) > 280)):
+        return 400, _error("bad_request")
+    if deps.db.storyboard_owner(storyboard_id) != user_id:
+        return 403, _error("not_the_owner")
+    deps.db.close_storyboard(storyboard_id, note)
+    return 200, {"storyboard_id": storyboard_id, "status": "archived", "closed_note": note}
