@@ -157,7 +157,10 @@ class Database:
         """
         rows = self.conn.execute(
             "SELECT e.id, e.author_id, u.handle, e.species, e.fun_fact, e.story, e.video_id, "
-            "e.created_at FROM entries e JOIN users u ON u.id = e.author_id "
+            "e.created_at, EXISTS (SELECT 1 FROM screening_results s "
+            "  WHERE s.subject_type = 'entry' AND s.subject_id = e.id "
+            "  AND s.disposition = 'labelled') AS being_checked "
+            "FROM entries e JOIN users u ON u.id = e.author_id "
             "WHERE e.storyboard_id = ? AND e.deleted_at IS NULL "
             "ORDER BY e.created_at, e.rowid", (storyboard_id,)).fetchall()
         return [dict(row) for row in rows]
@@ -208,6 +211,83 @@ class Database:
             "ORDER BY COALESCE(s.last_entry_at, s.created_at) DESC",
             (user_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    # ---------- 复核队列（operations.md §2）----------
+
+    def settle_review(self, days: int = 7) -> int:
+        """七天没人处理就自动清除标记，避免无限积压（operations §2.2）。
+
+        和归档一样是惰性的：读队列或投票时顺手结算，不设定时任务。
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+        done = self.conn.execute(
+            "UPDATE screening_results SET disposition = 'kept', disposed_at = ? "
+            "WHERE verdict = 'review' AND disposition IS NULL AND created_at < ?",
+            (now(), cutoff)).rowcount
+        self.conn.commit()
+        return done
+
+    def review_queue(self, storyboard_id: str, viewer_id: str) -> list[dict]:
+        """该故事版待核实的 entry，**不含查看者自己写的**。
+
+        作者对自己被标记这件事无感（operations §2.3），所以队列里看不到自己的条目。
+        返回票数但绝不返回投票人是谁。
+        """
+        rows = self.conn.execute(
+            "SELECT s.subject_id AS entry_id, s.field, s.codes, s.created_at, "
+            "e.species, e.fun_fact, e.story, "
+            "(SELECT COUNT(*) FROM review_votes v WHERE v.entry_id = e.id "
+            " AND v.vote = 'worth_checking') AS worth_checking, "
+            "(SELECT COUNT(*) FROM review_votes v WHERE v.entry_id = e.id "
+            " AND v.vote = 'looks_right') AS looks_right "
+            "FROM screening_results s JOIN entries e ON e.id = s.subject_id "
+            "WHERE s.subject_type = 'entry' AND s.verdict = 'review' AND s.disposition IS NULL "
+            "AND e.storyboard_id = ? AND e.author_id != ? AND e.deleted_at IS NULL "
+            "ORDER BY s.created_at", (storyboard_id, viewer_id)).fetchall()
+
+        # 一条 entry 的两个字段可能各被标记一次，队列里只该出现一次，把字段和代码并起来
+        items: dict[str, dict] = {}
+        for row in rows:
+            item = items.setdefault(row["entry_id"], {
+                "entry_id": row["entry_id"], "species": row["species"],
+                "fun_fact": row["fun_fact"], "story": row["story"],
+                "created_at": row["created_at"], "fields": [], "codes": [],
+                "worth_checking": row["worth_checking"], "looks_right": row["looks_right"]})
+            item["fields"].append(row["field"])
+            item["codes"] = sorted(set(item["codes"]) | set(json.loads(row["codes"] or "[]")))
+        return list(items.values())
+
+    def cast_vote(self, entry_id: str, voter_id: str, vote: str) -> dict:
+        """一人一票，可以改。投完按阈值结算：两票定音（operations §2.2）。"""
+        self.conn.execute(
+            "INSERT INTO review_votes (id, entry_id, voter_id, vote, created_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT (entry_id, voter_id) DO UPDATE SET "
+            "vote = excluded.vote, created_at = excluded.created_at",
+            (new_id(), entry_id, voter_id, vote, now()))
+        tally = {name: self.conn.execute(
+            "SELECT COUNT(*) AS c FROM review_votes WHERE entry_id = ? AND vote = ?",
+            (entry_id, name)).fetchone()["c"] for name in ("worth_checking", "looks_right")}
+        if tally["worth_checking"] >= 2:
+            self.dispose(entry_id, "labelled")
+        elif tally["looks_right"] >= 2:
+            self.dispose(entry_id, "kept")
+        self.conn.commit()
+        return tally
+
+    def dispose(self, entry_id: str, action: str) -> None:
+        """处置：保留、打公开标签、或移除。移除是软删，不是抹掉。"""
+        self.conn.execute(
+            "UPDATE screening_results SET disposition = ?, disposed_at = ? "
+            "WHERE subject_type = 'entry' AND subject_id = ? AND disposition IS NULL",
+            (action, now(), entry_id))
+        if action == "removed":
+            self.conn.execute("UPDATE entries SET deleted_at = ? WHERE id = ?", (now(), entry_id))
+        self.conn.commit()
+
+    def entry_author(self, entry_id: str):
+        row = self.conn.execute("SELECT author_id FROM entries WHERE id = ?",
+                                (entry_id,)).fetchone()
+        return row["author_id"] if row else None
 
     # ---------- 论坛 ----------
 
@@ -296,13 +376,16 @@ class Database:
     def purge_screening(self, days: int = 30) -> int:
         """处理完 30 天后删（operations §1）。
 
-        还在复核队列里的（verdict='review'）不动——「处理完」这个状态要等 #18 的队列
-        做出来才有，现在只能按「不是待核实的就算处理过了」近似。
+        有处置时间的按处置时间算，没处置过的按创建时间算。还挂在队列上没处置的
+        （verdict='review' 且 disposition 为空）不动——它们最多七天就会被 settle_review
+        自动清掉，届时才开始计时。
         """
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
         gone = self.conn.execute(
-            "DELETE FROM screening_results WHERE created_at < ? AND verdict != 'review'",
-            (cutoff,)).rowcount
+            "DELETE FROM screening_results WHERE "
+            "(disposed_at IS NOT NULL AND disposed_at < ?) OR "
+            "(disposition IS NULL AND verdict != 'review' AND created_at < ?)",
+            (cutoff, cutoff)).rowcount
         self.conn.commit()
         return gone
 

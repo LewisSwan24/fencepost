@@ -42,6 +42,7 @@ COPY = {
     "link_used_up": "That link has been used as many times as it allows.",
     "cannot_share": "You cannot hand out access to this storyboard.",
     "not_the_owner": "Only the storyboard owner can do that.",
+    "not_your_call": "You cannot vote on your own entry.",
     "frame_consent_missing": "The frame needs the consent step before it can be sent.",
     "upstream_unavailable": "The assistant is offline right now. Writing and posting work as normal.",
     "rate_limited_chat": "You have used today's assistant allowance. Writing, posting and sharing all still work.",
@@ -614,3 +615,71 @@ def read_thread(params: dict, token: str, deps: Deps):
     if refusal:
         return refusal
     return 200, {"thread_id": thread_id, "posts": deps.db.posts(thread_id)}
+
+
+# ---------- 复核队列 ----------
+
+VOTES = {"looks_right", "worth_checking"}
+DISPOSITIONS = {"kept", "labelled", "removed"}
+
+
+def review_queue(params: dict, token: str, deps: Deps):
+    """待核实的条目，给同故事版的其他贡献者看。看不到自己的。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = params.get("storyboard_id")
+    if not storyboard_id:
+        return 400, _error("bad_request")
+    _settle(deps)
+    deps.db.settle_review()
+    level = deps.db.grant_level(storyboard_id, user_id)
+    if level is None:
+        return 403, _error("no_access")
+    if level not in WRITE_LEVELS:
+        # 只读的人不参与复核：这是贡献者之间的事
+        return 403, _error("read_only_access")
+    return 200, {"storyboard_id": storyboard_id,
+                 "items": deps.db.review_queue(storyboard_id, user_id)}
+
+
+def cast_review_vote(body: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    entry_id, vote = body.get("entry_id"), body.get("vote")
+    if not entry_id or vote not in VOTES:
+        return 400, _error("bad_request")
+    record = deps.db.entry(entry_id)
+    if record is None or record["deleted_at"]:
+        return 404, _error("gone")
+    if record["author_id"] == user_id:
+        # 自己的条目自己投票没有意义，何况作者本来就不该知道它被标记了
+        return 403, _error("not_your_call")
+    level = deps.db.grant_level(record["storyboard_id"], user_id)
+    if level is None:
+        return 403, _error("no_access")
+    if level not in WRITE_LEVELS:
+        return 403, _error("read_only_access")
+    deps.db.settle_review()
+    tally = deps.db.cast_vote(entry_id, user_id, vote)
+    # 只回票数，不回谁投的（operations §2.3）
+    return 200, {"entry_id": entry_id, "worth_checking": tally["worth_checking"],
+                 "looks_right": tally["looks_right"]}
+
+
+def dispose_entry(body: dict, token: str, deps: Deps):
+    """owner 的最终处置权：保留、打标签、移除。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    entry_id, action = body.get("entry_id"), body.get("action")
+    if not entry_id or action not in DISPOSITIONS:
+        return 400, _error("bad_request")
+    record = deps.db.entry(entry_id)
+    if record is None or record["deleted_at"]:
+        return 404, _error("gone")
+    if deps.db.storyboard_owner(record["storyboard_id"]) != user_id:
+        return 403, _error("not_the_owner")
+    deps.db.dispose(entry_id, action)
+    return 200, {"entry_id": entry_id, "disposition": action}
