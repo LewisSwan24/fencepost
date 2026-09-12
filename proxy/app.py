@@ -510,3 +510,107 @@ def close_storyboard(body: dict, token: str, deps: Deps):
         return 403, _error("not_the_owner")
     deps.db.close_storyboard(storyboard_id, note)
     return 200, {"storyboard_id": storyboard_id, "status": "archived", "closed_note": note}
+
+
+# ---------- 论坛 ----------
+
+def _forum_gate(storyboard_id: str, user_id: str, deps: Deps, writing: bool):
+    """论坛的权限跟着故事版走：有 grant 才看得到，能写要 contribute 以上。"""
+    _settle(deps)
+    level = deps.db.grant_level(storyboard_id, user_id)
+    if level is None:
+        return 403, _error("no_access")
+    if writing:
+        if level not in WRITE_LEVELS:
+            return 403, _error("read_only_access")
+        if deps.db.storyboard_status(storyboard_id) != "active":
+            return 409, _error("storyboard_closed")
+    return None
+
+
+def _screen_forum_body(body_text: str, user_id: str, deps: Deps):
+    """返回 (result, refusal)。被 reject 就不建贴文，记录挂 submission。"""
+    result = roles.screener(deps.client, "other", "forum_post", body_text)
+    if result["verdict"] == "reject":
+        _record_screening(deps, result, "forum_post", body_text, "submission", None, user_id)
+        return result, (200, {"published": False, "reason_codes": sorted(set(result["codes"])),
+                              "prompt_version": result["prompt_version"]})
+    return result, None
+
+
+def create_thread(body: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id, title, text = body.get("storyboard_id"), body.get("title"), body.get("body")
+    if not storyboard_id or not title or not text or len(title) > 120:
+        return 400, _error("bad_request")
+    refusal = _forum_gate(storyboard_id, user_id, deps, writing=True)
+    if refusal:
+        return refusal
+    try:
+        deps.limiter.check_and_count(user_id, "submission")
+    except RateLimited as limited:
+        return 429, _error("rate_limited", f"rate_limited_{limited.scope}", scope=limited.scope)
+
+    result, refusal = _screen_forum_body(text, user_id, deps)
+    if refusal:
+        return refusal
+    thread_id, post_id = deps.db.add_thread(storyboard_id, user_id, title, text)
+    _record_screening(deps, result, "forum_post", text, "forum_post", post_id, user_id)
+    return 200, {"thread_id": thread_id, "post_id": post_id, "published": True,
+                 "prompt_version": result["prompt_version"]}
+
+
+def create_post(body: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    thread_id, text = body.get("thread_id"), body.get("body")
+    if not thread_id or not text:
+        return 400, _error("bad_request")
+    storyboard_id = deps.db.thread_storyboard(thread_id)
+    if storyboard_id is None:
+        return 404, _error("gone")
+    refusal = _forum_gate(storyboard_id, user_id, deps, writing=True)
+    if refusal:
+        return refusal
+    try:
+        deps.limiter.check_and_count(user_id, "submission")
+    except RateLimited as limited:
+        return 429, _error("rate_limited", f"rate_limited_{limited.scope}", scope=limited.scope)
+
+    result, refusal = _screen_forum_body(text, user_id, deps)
+    if refusal:
+        return refusal
+    post_id = deps.db.add_post(thread_id, user_id, text)
+    _record_screening(deps, result, "forum_post", text, "forum_post", post_id, user_id)
+    return 200, {"thread_id": thread_id, "post_id": post_id, "published": True,
+                 "prompt_version": result["prompt_version"]}
+
+
+def list_threads(params: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = params.get("storyboard_id")
+    if not storyboard_id:
+        return 400, _error("bad_request")
+    refusal = _forum_gate(storyboard_id, user_id, deps, writing=False)
+    if refusal:
+        return refusal
+    return 200, {"storyboard_id": storyboard_id, "threads": deps.db.threads(storyboard_id)}
+
+
+def read_thread(params: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    thread_id = params.get("thread_id")
+    storyboard_id = deps.db.thread_storyboard(thread_id or "")
+    if storyboard_id is None:
+        return 404, _error("gone")
+    refusal = _forum_gate(storyboard_id, user_id, deps, writing=False)
+    if refusal:
+        return refusal
+    return 200, {"thread_id": thread_id, "posts": deps.db.posts(thread_id)}

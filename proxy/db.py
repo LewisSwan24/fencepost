@@ -209,6 +209,52 @@ class Database:
             (user_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    # ---------- 论坛 ----------
+
+    def add_thread(self, storyboard_id: str, author_id: str, title: str, body: str) -> tuple:
+        """开一个讨论串，连同第一条贴文。没有贴文的串没有意义。"""
+        thread_id, post_id, stamp = new_id(), new_id(), now()
+        self.conn.execute(
+            "INSERT INTO forum_threads (id, storyboard_id, author_id, title, created_at) "
+            "VALUES (?, ?, ?, ?, ?)", (thread_id, storyboard_id, author_id, title, stamp))
+        self.conn.execute(
+            "INSERT INTO forum_posts (id, thread_id, author_id, body, created_at) "
+            "VALUES (?, ?, ?, ?, ?)", (post_id, thread_id, author_id, body, stamp))
+        self.conn.commit()
+        return thread_id, post_id
+
+    def add_post(self, thread_id: str, author_id: str, body: str) -> str:
+        post_id = new_id()
+        self.conn.execute(
+            "INSERT INTO forum_posts (id, thread_id, author_id, body, created_at) "
+            "VALUES (?, ?, ?, ?, ?)", (post_id, thread_id, author_id, body, now()))
+        self.conn.commit()
+        return post_id
+
+    def thread_storyboard(self, thread_id: str):
+        row = self.conn.execute(
+            "SELECT storyboard_id FROM forum_threads WHERE id = ? AND deleted_at IS NULL",
+            (thread_id,)).fetchone()
+        return row["storyboard_id"] if row else None
+
+    def threads(self, storyboard_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT t.id, t.title, u.handle, t.created_at, "
+            "(SELECT COUNT(*) FROM forum_posts p WHERE p.thread_id = t.id "
+            " AND p.deleted_at IS NULL) AS post_count "
+            "FROM forum_threads t JOIN users u ON u.id = t.author_id "
+            "WHERE t.storyboard_id = ? AND t.deleted_at IS NULL "
+            "ORDER BY t.created_at DESC, t.rowid DESC", (storyboard_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def posts(self, thread_id: str) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT p.id, u.handle, p.body, p.created_at FROM forum_posts p "
+            "JOIN users u ON u.id = p.author_id "
+            "WHERE p.thread_id = ? AND p.deleted_at IS NULL "
+            "ORDER BY p.created_at, p.rowid", (thread_id,)).fetchall()
+        return [dict(row) for row in rows]
+
     # ---------- 留存与删除（data-model.md §4）----------
 
     def delete_account(self, user_id: str) -> dict:
@@ -233,6 +279,9 @@ class Database:
             ("videos", "DELETE FROM videos WHERE owner_id = ?", (user_id,)),
             ("access_grants", "DELETE FROM access_grants WHERE user_id = ?", (user_id,)),
             ("rate_limits", "DELETE FROM rate_limits WHERE user_id = ?", (user_id,)),
+            ("forum_posts", "DELETE FROM forum_posts WHERE author_id = ?", (user_id,)),
+            ("forum_threads", "DELETE FROM forum_threads WHERE author_id = ? AND id NOT IN "
+                              "(SELECT thread_id FROM forum_posts)", (user_id,)),
         ):
             removed[name] = self.conn.execute(sql, args).rowcount
         # 他签发的链接不能继续放人进来，但保留行本身，外键还指着他
