@@ -38,7 +38,7 @@ None of them touch the network — the model is faked.
 python tests/test_proxy.py && python tests/test_data_layer.py && python tests/test_entrypoint.py && python tests/test_resources.py
 ```
 
-137 tests. The data layer ones matter most: they pin the three access invariants — other people's
+147 tests. The data layer ones matter most: they pin the three access invariants — other people's
 entries never enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
 
@@ -80,6 +80,9 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 | `POST /api/forum/posts` | Reply to a thread, screened the same way. |
 | `GET /api/forum?storyboard_id=` | Threads on a storyboard. Reading needs any grant, posting needs `contribute`. |
 | `GET /api/forum/thread?thread_id=` | The posts in one thread. |
+| `GET /api/review?storyboard_id=` | Entries flagged for checking. Never includes your own — the author is not told. |
+| `POST /api/review/vote` | One vote per person, changeable. Two agreeing votes settle it. |
+| `POST /api/review/dispose` | The owner keeps, labels or removes. Removal is a soft delete. |
 | `GET /api/dashboard` | The storyboards you can reach, active ones separated from past ones. |
 | `POST /api/assistant` | Dispatch to one of the three model roles by `role`. Add `"stream": true` for server-sent events, which only the chat role supports. |
 

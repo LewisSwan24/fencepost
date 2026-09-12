@@ -13,6 +13,7 @@ import unittest
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -642,6 +643,111 @@ class Forum(Fixture):
         status, payload = self.get("/api/forum/thread?thread_id=nope", token=who["token"])
         self.assertEqual(404, status)
         self.assertEqual("gone", payload["error"]["code"])
+
+
+class Review(Fixture):
+    """operations §2：谁看得见、怎么投、两票定音、七天自动清、owner 有最终处置权。"""
+
+    def flagged(self):
+        """一条被标记 review 的 entry，外加一个有投票权的邻居。"""
+        owner, board = self.board("owner")
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        _, created = self.submit(owner["token"], board, REVIEW_JSON,
+                                 fun_fact="Ringtails live about 40 years.", story=None)
+        return owner, guest, board, created["entry_id"]
+
+    def queue(self, token, board):
+        return self.get(f"/api/review?storyboard_id={board}", token=token)
+
+    def vote(self, token, entry_id, choice):
+        return self.post("/api/review/vote", {"entry_id": entry_id, "vote": choice}, token=token)
+
+    def test_other_contributors_see_it_and_the_author_does_not(self):
+        owner, guest, board, entry_id = self.flagged()
+        status, theirs = self.queue(guest["token"], board)
+        self.assertEqual(200, status)
+        self.assertEqual([entry_id], [i["entry_id"] for i in theirs["items"]])
+        _, mine = self.queue(owner["token"], board)
+        self.assertEqual([], mine["items"])
+
+    def test_the_author_cannot_vote_on_their_own(self):
+        owner, _, _, entry_id = self.flagged()
+        status, payload = self.vote(owner["token"], entry_id, "looks_right")
+        self.assertEqual(403, status)
+        self.assertEqual("not_your_call", payload["error"]["code"])
+
+    def test_a_viewer_is_not_part_of_this(self):
+        owner, _, board, entry_id = self.flagged()
+        watcher = self.session("watcher")
+        self.db.grant(board, watcher["user_id"], "view", owner["user_id"])
+        self.assertEqual(403, self.queue(watcher["token"], board)[0])
+        self.assertEqual(403, self.vote(watcher["token"], entry_id, "worth_checking")[0])
+
+    def test_two_worth_checking_apply_the_public_label(self):
+        owner, guest, board, entry_id = self.flagged()
+        second = self.session("second")
+        self.db.grant(board, second["user_id"], "contribute", owner["user_id"])
+        self.vote(guest["token"], entry_id, "worth_checking")
+        self.vote(second["token"], entry_id, "worth_checking")
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(1, view["entries"][0]["being_checked"])
+        self.assertEqual([], self.queue(guest["token"], board)[1]["items"])
+
+    def test_two_looks_right_clear_it_without_a_label(self):
+        owner, guest, board, entry_id = self.flagged()
+        second = self.session("second")
+        self.db.grant(board, second["user_id"], "contribute", owner["user_id"])
+        self.vote(guest["token"], entry_id, "looks_right")
+        self.vote(second["token"], entry_id, "looks_right")
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(0, view["entries"][0]["being_checked"])
+        self.assertEqual([], self.queue(guest["token"], board)[1]["items"])
+
+    def test_one_person_is_one_vote_even_after_changing_their_mind(self):
+        owner, guest, board, entry_id = self.flagged()
+        self.vote(guest["token"], entry_id, "worth_checking")
+        _, tally = self.vote(guest["token"], entry_id, "looks_right")
+        self.assertEqual(0, tally["worth_checking"])
+        self.assertEqual(1, tally["looks_right"])
+        self.assertEqual([entry_id], [i["entry_id"] for i in self.queue(guest["token"], board)[1]["items"]])
+
+    def test_nobody_learns_who_voted(self):
+        owner, guest, board, entry_id = self.flagged()
+        _, tally = self.vote(guest["token"], entry_id, "worth_checking")
+        _, listing = self.queue(guest["token"], board)
+        blob = json.dumps([tally, listing], ensure_ascii=False)
+        self.assertNotIn(guest["user_id"], blob)
+        self.assertNotIn("guest", blob)
+
+    def test_the_owner_can_remove_it_and_that_is_a_soft_delete(self):
+        owner, _, board, entry_id = self.flagged()
+        status, payload = self.post("/api/review/dispose",
+                                    {"entry_id": entry_id, "action": "removed"},
+                                    token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual("removed", payload["disposition"])
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual([], view["entries"])
+        self.assertIsNotNone(self.db.entry(entry_id)["deleted_at"])   # 还在，只是软删
+
+    def test_only_the_owner_disposes(self):
+        _, guest, _, entry_id = self.flagged()
+        status, payload = self.post("/api/review/dispose",
+                                    {"entry_id": entry_id, "action": "kept"},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("not_the_owner", payload["error"]["code"])
+
+    def test_a_flag_nobody_touched_clears_itself_after_seven_days(self):
+        owner, guest, board, entry_id = self.flagged()
+        stale = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat(timespec="seconds")
+        self.db.conn.execute("UPDATE screening_results SET created_at = ? WHERE subject_id = ?",
+                             (stale, entry_id))
+        self.db.conn.commit()
+        self.assertEqual([], self.queue(guest["token"], board)[1]["items"])
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(0, view["entries"][0]["being_checked"])
 
 
 if __name__ == "__main__":
