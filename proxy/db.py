@@ -112,16 +112,55 @@ class Database:
         self.conn.commit()
 
     def add_entry(self, storyboard_id: str, author_id: str, species: str,
-                  fun_fact: str = None, story: str = None) -> str:
+                  fun_fact: str = None, story: str = None, video_id: str = None) -> str:
         entry_id = new_id()
         stamp = now()
         self.conn.execute(
-            "INSERT INTO entries (id, storyboard_id, author_id, species, fun_fact, story, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (entry_id, storyboard_id, author_id, species, fun_fact, story, stamp))
+            "INSERT INTO entries (id, storyboard_id, author_id, species, fun_fact, story, "
+            "video_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (entry_id, storyboard_id, author_id, species, fun_fact, story, video_id, stamp))
         self.conn.execute("UPDATE storyboards SET last_entry_at = ? WHERE id = ?", (stamp, storyboard_id))
         self.conn.commit()
         return entry_id
+
+    def add_video(self, owner_id: str, storage_key: str) -> str:
+        """只记 storage_key。EXIF 与 GPS 在客户端就剥掉了，这里连存的字段都没有。"""
+        video_id = new_id()
+        self.conn.execute(
+            "INSERT INTO videos (id, owner_id, storage_key, created_at) VALUES (?, ?, ?, ?)",
+            (video_id, owner_id, storage_key, now()))
+        self.conn.commit()
+        return video_id
+
+    def video_owner(self, video_id: str):
+        row = self.conn.execute("SELECT owner_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+        return row["owner_id"] if row else None
+
+    def grant_level(self, storyboard_id: str, user_id: str):
+        """返回 view / contribute / reshare，没有有效 grant 就是 None。"""
+        row = self.conn.execute(
+            "SELECT level FROM access_grants "
+            "WHERE storyboard_id = ? AND user_id = ? AND revoked_at IS NULL",
+            (storyboard_id, user_id)).fetchone()
+        return row["level"] if row else None
+
+    def storyboard_status(self, storyboard_id: str):
+        row = self.conn.execute("SELECT status FROM storyboards WHERE id = ?",
+                                (storyboard_id,)).fetchone()
+        return row["status"] if row else None
+
+    def timeline(self, storyboard_id: str) -> list[dict]:
+        """故事版时间线：所有贡献者的 entry。
+
+        这跟 SqliteContext.build() 不是一回事，那个只给请求者自己的内容。平台看得见全部，
+        助手看不见——两条查询故意分开，合并等于把 Tier 1 作废。作者只出 handle，不出真名。
+        """
+        rows = self.conn.execute(
+            "SELECT e.id, e.author_id, u.handle, e.species, e.fun_fact, e.story, e.video_id, "
+            "e.created_at FROM entries e JOIN users u ON u.id = e.author_id "
+            "WHERE e.storyboard_id = ? AND e.deleted_at IS NULL "
+            "ORDER BY e.created_at, e.rowid", (storyboard_id,)).fetchall()
+        return [dict(row) for row in rows]
 
     def soft_delete_entry(self, entry_id: str) -> None:
         self.conn.execute("UPDATE entries SET deleted_at = ? WHERE id = ?", (now(), entry_id))

@@ -5,14 +5,17 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from proxy.app import COPY, Deps, create_session, create_storyboard, handle, handle_stream
+from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, handle_stream,
+                       register_video, submit_entry, timeline)
 from proxy.db import Database, SqliteContext, SqliteHistory, SqliteScreeningLog
 from proxy.model import DashScope, UpstreamError, redact
 
-ROUTES = ("/api/session", "/api/storyboards", "/api/assistant")
+POST_ROUTES = ("/api/session", "/api/storyboards", "/api/videos", "/api/entries", "/api/assistant")
+GET_ROUTES = ("/api/timeline",)
 _DEPS = None
 
 
@@ -43,7 +46,7 @@ class handler(BaseHTTPRequestHandler):
             body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
-        if path not in ROUTES:
+        if path not in POST_ROUTES:
             # 先判路径再建依赖：不认识的地址不该因为缺配置而回 503
             return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
         token = (self.headers.get("authorization") or "").removeprefix("Bearer ").strip()
@@ -59,9 +62,28 @@ class handler(BaseHTTPRequestHandler):
             return self._json(*create_session(body, deps))
         if path == "/api/storyboards":
             return self._json(*create_storyboard(body, token, deps))
+        if path == "/api/videos":
+            return self._json(*register_video(body, token, deps))
+        if path == "/api/entries":
+            return self._json(*submit_entry(body, token, deps))
         if body.get("stream"):
             return self._sse(body, token, deps)
         self._json(*handle(body, token, deps))
+
+    def do_GET(self):
+        path, _, query = self.path.partition("?")
+        path = path.rstrip("/") or "/"
+        if path not in GET_ROUTES:
+            return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
+        token = (self.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        try:
+            deps = _deps()
+        except Exception as exc:
+            print(f"[proxy] deps: {redact(str(exc))[:200]}", file=sys.stderr)
+            return self._json(503, {"error": {"code": "upstream_unavailable",
+                                              "message": COPY["upstream_unavailable"]}})
+        params = {key: values[0] for key, values in parse_qs(query).items()}
+        self._json(*timeline(params, token, deps))
 
     def _sse(self, body: dict, token: str, deps) -> None:
         status, result = handle_stream(body, token, deps)
