@@ -67,7 +67,7 @@ def build_user_message(case: dict) -> str:
 
 def call(client: OpenAI, role: str, case: dict) -> str:
     model = SCREENER_MODEL if role == "screener" else CHAT_MODEL
-    effort = "minimal" if role == "screener" else "low"
+    effort = "none" if role == "screener" else "low"   # 与 qwen-integration §1 一致
     resp = client.chat.completions.create(
         model=model,
         messages=[
