@@ -1,0 +1,4 @@
+# 本机用：跑测试与红线跑批。
+# Vercel 那边不看这个文件，它按 pyproject.toml 的 [project].dependencies 装。
+openai==3.13.0
+PyYAML==6.0.3
