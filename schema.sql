@@ -86,6 +86,8 @@ CREATE TABLE screening_results (
   prompt_version TEXT,
   fail_open      BOOLEAN NOT NULL DEFAULT 0,   -- 模型超时兜底放行的标记
   downgraded_non_english BOOLEAN NOT NULL DEFAULT 0,  -- 非英语地板把 reject 压成了 review
+  disposition    TEXT CHECK (disposition IN ('kept','labelled','removed')),  -- 复核队列的结局
+  disposed_at    TIMESTAMP,              -- 处置时间。operations §1 的「处理完 30 天后删」按它算
   created_at     TIMESTAMP NOT NULL,
   CHECK (subject_type = 'submission' OR subject_id IS NOT NULL)
 );
