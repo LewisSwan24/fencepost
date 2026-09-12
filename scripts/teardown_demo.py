@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.db import Database
 
-TABLES = ("screening_results", "review_votes", "chat_messages", "share_links",
+TABLES = ("screening_results", "review_votes", "rate_limits", "chat_messages", "share_links",
           "access_grants", "entries", "videos", "storyboards", "users")
 
 
