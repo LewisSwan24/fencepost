@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.app import COPY, Deps, create_session, create_storyboard, handle, handle_stream
-from proxy.db import Database, SqliteContext, SqliteHistory
+from proxy.db import Database, SqliteContext, SqliteHistory, SqliteScreeningLog
 from proxy.model import DashScope, UpstreamError, redact
 
 ROUTES = ("/api/session", "/api/storyboards", "/api/assistant")
@@ -27,7 +27,8 @@ def _deps() -> Deps:
         default_db = ("/tmp/fencepost.db" if os.getenv("VERCEL")
                       else str(Path(__file__).resolve().parent.parent / "fencepost.db"))
         db = Database(os.getenv("FENCEPOST_DB", default_db))
-        _DEPS = Deps(client=DashScope(), history=SqliteHistory(db), context=SqliteContext(db), db=db)
+        _DEPS = Deps(client=DashScope(), history=SqliteHistory(db), context=SqliteContext(db),
+                     screening=SqliteScreeningLog(db), db=db)
     return _DEPS
 
 

@@ -71,7 +71,11 @@ CREATE TABLE chat_messages (
 
 CREATE TABLE screening_results (
   id             TEXT PRIMARY KEY,
-  entry_id       TEXT NOT NULL REFERENCES entries(id),
+  -- 指向被筛查的东西。不用 entry_id 外键：被 reject 的提交根本没建 entry，
+  -- forum 贴文也不在 entries 里。代价是没有外键约束，靠下面那条 CHECK 兜一半。
+  subject_type   TEXT NOT NULL CHECK (subject_type IN ('entry','forum_post','submission')),
+  subject_id     TEXT,                   -- subject_type='submission' 时为空：还没有行可指
+  field          TEXT NOT NULL CHECK (field IN ('fun_fact','story','forum_post')),
   verdict        TEXT NOT NULL CHECK (verdict IN ('ok','review','reject')),
   codes          TEXT NOT NULL DEFAULT '[]',   -- JSON 数组
   note           TEXT,
@@ -79,7 +83,9 @@ CREATE TABLE screening_results (
   model          TEXT,
   prompt_version TEXT,
   fail_open      BOOLEAN NOT NULL DEFAULT 0,   -- 模型超时兜底放行的标记
-  created_at     TIMESTAMP NOT NULL
+  downgraded_non_english BOOLEAN NOT NULL DEFAULT 0,  -- 非英语地板把 reject 压成了 review
+  created_at     TIMESTAMP NOT NULL,
+  CHECK (subject_type = 'submission' OR subject_id IS NOT NULL)
 );
 
 CREATE TABLE review_votes (

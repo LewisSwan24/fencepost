@@ -5,6 +5,7 @@ docs/data-model.md §1 生成的。docs/ 不进仓库，所以生成物必须进
 建不出库。改表结构走文档，改完重新生成。
 """
 
+import json
 import sqlite3
 import threading
 import uuid
@@ -150,6 +151,25 @@ class SqliteContext:
             "storyboard_visible_to_this_user": True,
             "own_entries": own,
         }
+
+
+class SqliteScreeningLog:
+    """screening_results。subject_type 决定 subject_id 指哪张表，没有外键——
+    被 reject 的提交根本没有行可指，见 data-model.md §6。"""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def record(self, row: dict) -> None:
+        self.db.conn.execute(
+            "INSERT INTO screening_results (id, subject_type, subject_id, field, verdict, codes, "
+            "note, original_text, model, prompt_version, fail_open, downgraded_non_english, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (new_id(), row["subject_type"], row.get("subject_id"), row["field"], row["verdict"],
+             json.dumps(row.get("codes") or []), row.get("note"), row.get("original_text"),
+             row.get("model"), row.get("prompt_version"), int(bool(row.get("fail_open"))),
+             int(bool(row.get("downgraded_non_english"))), now()))
+        self.db.conn.commit()
 
 
 class SqliteHistory:

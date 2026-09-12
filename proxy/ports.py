@@ -64,6 +64,16 @@ class MemoryHistory:
         self._log.pop((user_id, storyboard_id), None)
 
 
+class MemoryScreeningLog:
+    """筛查结果的落点。内存实作只是攒着，测试靠它断言服务端记了什么。"""
+
+    def __init__(self):
+        self.records: list[dict] = []
+
+    def record(self, row: dict) -> None:
+        self.records.append(row)
+
+
 class MemoryContext:
     """Tier 1：只回当前用户自己的内容。阶段 4 换成 data-model.md §2 的 build_context()。"""
 
