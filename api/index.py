@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from proxy.app import COPY, Deps, handle, handle_stream
+from proxy.app import COPY, Deps, create_session, create_storyboard, handle, handle_stream
 from proxy.db import Database, SqliteContext, SqliteHistory
 from proxy.model import DashScope, UpstreamError, redact
 
@@ -26,12 +26,15 @@ def _deps() -> Deps:
         default_db = ("/tmp/fencepost.db" if os.getenv("VERCEL")
                       else str(Path(__file__).resolve().parent.parent / "fencepost.db"))
         db = Database(os.getenv("FENCEPOST_DB", default_db))
-        _DEPS = Deps(client=DashScope(), history=SqliteHistory(db), context=SqliteContext(db))
+        _DEPS = Deps(client=DashScope(), history=SqliteHistory(db), context=SqliteContext(db), db=db)
     return _DEPS
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        # 新版 Vercel Python builder 只认 pyproject.toml 里那一个入口，所有路径都进这里，
+        # 所以路由得自己分。
+        path = self.path.split("?")[0].rstrip("/") or "/"
         length = int(self.headers.get("content-length") or 0)
         raw = self.rfile.read(length) if length else b"{}"
         try:
@@ -47,10 +50,15 @@ class handler(BaseHTTPRequestHandler):
             print(f"[proxy] deps: {redact(str(exc))[:200]}", file=sys.stderr)
             return self._json(503, {"error": {"code": "upstream_unavailable",
                                               "message": COPY["upstream_unavailable"]}})
+        if path == "/api/session":
+            return self._json(*create_session(body, deps))
+        if path == "/api/storyboards":
+            return self._json(*create_storyboard(body, token, deps))
+        if path != "/api/assistant":
+            return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
         if body.get("stream"):
             return self._sse(body, token, deps)
-        status, payload = handle(body, token, deps)
-        self._json(status, payload)
+        self._json(*handle(body, token, deps))
 
     def _sse(self, body: dict, token: str, deps) -> None:
         status, result = handle_stream(body, token, deps)

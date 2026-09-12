@@ -76,6 +76,11 @@ class Database:
         self.conn.commit()
         return user_id
 
+    def ensure_user(self, handle: str) -> str:
+        """有就返回，没有就建。demo 阶段没有注册流程，handle 就是身分。"""
+        row = self.conn.execute("SELECT id FROM users WHERE handle = ?", (handle,)).fetchone()
+        return row["id"] if row else self.add_user(handle)
+
     def add_storyboard(self, owner_id: str, title: str = None) -> str:
         """建故事版时顺手给 owner 一条 grant。
 

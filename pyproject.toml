@@ -10,4 +10,4 @@ dependencies = ["openai==3.13.0"]
 package = false          # 这是个应用，不是要构建的库，别让 uv 去 build 它
 
 [tool.vercel]
-entrypoint = "api.assistant:handler"
+entrypoint = "api.index:handler"
