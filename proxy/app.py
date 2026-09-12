@@ -30,6 +30,8 @@ COPY = {
     "signup_closed": "Sign-up is closed on this deployment.",
     "read_only_access": "You can read this storyboard, but not add to it.",
     "storyboard_closed": "This storyboard is closed to new entries.",
+    "not_your_entry": "You can only change your own entries.",
+    "gone": "That entry is no longer there.",
     "frame_consent_missing": "The frame needs the consent step before it can be sent.",
     "upstream_unavailable": "The assistant is offline right now. Writing and posting work as normal.",
     "rate_limited_chat": "You have used today's assistant allowance. Writing, posting and sharing all still work.",
@@ -316,3 +318,59 @@ def timeline(params: dict, token: str, deps: Deps):
     if deps.db.grant_level(storyboard_id, user_id) is None:
         return 403, _error("no_access")
     return 200, {"storyboard_id": storyboard_id, "entries": deps.db.timeline(storyboard_id)}
+
+
+def _own_editable_entry(body: dict, token: str, deps: Deps):
+    """取出这条 entry，并确认：是我写的、还在、故事版还收改动。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return None, refusal
+    record = deps.db.entry(body.get("entry_id") or "")
+    if record is None or record["deleted_at"]:
+        return None, (404, _error("gone"))
+    if record["author_id"] != user_id:
+        # owner 移除他人 entry 是复核队列的处置权，不走这条路（见 #18）
+        return None, (403, _error("not_your_entry"))
+    if deps.db.storyboard_status(record["storyboard_id"]) != "active":
+        return None, (409, _error("storyboard_closed"))
+    return record, None
+
+
+def delete_entry(body: dict, token: str, deps: Deps):
+    record, refusal = _own_editable_entry(body, token, deps)
+    if refusal:
+        return refusal
+    deps.db.soft_delete_entry(record["id"])
+    return 200, {"entry_id": record["id"], "deleted": True}
+
+
+def edit_entry(body: dict, token: str, deps: Deps):
+    """改过的字段重新过一次筛查。任一条被 reject，整次编辑不生效，原内容留着。"""
+    record, refusal = _own_editable_entry(body, token, deps)
+    if refusal:
+        return refusal
+    fun_fact = body.get("fun_fact", record["fun_fact"])
+    story = body.get("story", record["story"])
+    if not (fun_fact or story):
+        return 400, _error("bad_request")
+
+    changed = [(field, value) for field, value, before in
+               (("fun_fact", fun_fact, record["fun_fact"]), ("story", story, record["story"]))
+               if value and value != before]
+    if not changed:
+        return 200, {"entry_id": record["id"], "published": True, "unchanged": True}
+
+    screened = [(field, value, roles.screener(deps.client, record["species"], field, value))
+                for field, value in changed]
+    version = screened[0][2]["prompt_version"]
+    for field, value, result in screened:
+        _record_screening(deps, result, field, value, "entry", record["id"])
+
+    rejected = [result for _, _, result in screened if result["verdict"] == "reject"]
+    if rejected:
+        codes = sorted({code for result in rejected for code in result["codes"]})
+        return 200, {"entry_id": record["id"], "published": False, "reason_codes": codes,
+                     "prompt_version": version}
+
+    deps.db.update_entry(record["id"], fun_fact, story)
+    return 200, {"entry_id": record["id"], "published": True, "prompt_version": version}
