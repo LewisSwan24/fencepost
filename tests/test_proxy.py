@@ -90,16 +90,16 @@ class Screener(unittest.TestCase):
         status, payload = handle(screen(), TOKEN, deps)
         self.assertEqual(200, status)
         self.assertTrue(payload["published"])
-        self.assertEqual("review", deps.records[0]["verdict"])
-        self.assertTrue(deps.records[0]["fail_open"])
+        self.assertEqual("review", deps.screening.records[0]["verdict"])
+        self.assertTrue(deps.screening.records[0]["fail_open"])
 
     def test_bad_json_retries_once(self):
         client = FakeClient("sorry, here is my answer", OK_JSON)
         deps = deps_for(client)
         handle(screen(), TOKEN, deps)
         self.assertEqual(2, len(client.calls))
-        self.assertEqual("ok", deps.records[0]["verdict"])
-        self.assertFalse(deps.records[0]["fail_open"])
+        self.assertEqual("ok", deps.screening.records[0]["verdict"])
+        self.assertFalse(deps.screening.records[0]["fail_open"])
 
     def test_reject_tells_the_client_why(self):
         deps = deps_for(FakeClient(REJECT_JSON))
@@ -113,20 +113,20 @@ class Screener(unittest.TestCase):
         _, flagged = handle(screen(), TOKEN, review)
         _, clean = handle(screen(), TOKEN, deps_for(FakeClient(OK_JSON)))
         self.assertEqual(clean, flagged)
-        self.assertEqual("review", review.records[0]["verdict"])
+        self.assertEqual("review", review.screening.records[0]["verdict"])
 
     def test_non_english_is_never_rejected(self):
         deps = deps_for(FakeClient(REJECT_JSON))
         _, payload = handle(screen(submission="他住在四十二号，史密斯家的屋顶。"), TOKEN, deps)
         self.assertTrue(payload["published"])
-        self.assertEqual("review", deps.records[0]["verdict"])
-        self.assertTrue(deps.records[0]["downgraded_non_english"])
+        self.assertEqual("review", deps.screening.records[0]["verdict"])
+        self.assertTrue(deps.screening.records[0]["downgraded_non_english"])
 
     def test_english_reject_stays_rejected(self):
         deps = deps_for(FakeClient(REJECT_JSON))
         _, payload = handle(screen(submission="He lives at 42 Example St."), TOKEN, deps)
         self.assertFalse(payload["published"])
-        self.assertFalse(deps.records[0]["downgraded_non_english"])
+        self.assertFalse(deps.screening.records[0]["downgraded_non_english"])
 
 
 class Writer(unittest.TestCase):
