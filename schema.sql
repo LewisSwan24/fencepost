@@ -90,6 +90,17 @@ CREATE TABLE screening_results (
   CHECK (subject_type = 'submission' OR subject_id IS NOT NULL)
 );
 
+CREATE TABLE rate_limits (          -- operations §3 的三条上限
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id),
+  scope       TEXT NOT NULL CHECK (scope IN ('chat','vision','submission')),
+  used_at     TIMESTAMP NOT NULL
+  -- 一次调用一行，计数就是数窗口内的行数。过期的行在下次计数时顺手清掉，
+  -- 不靠定时任务。serverless 多实例共享的就是这张表。
+);
+
+CREATE INDEX rate_limits_lookup ON rate_limits (user_id, scope, used_at);
+
 CREATE TABLE review_votes (
   id          TEXT PRIMARY KEY,
   entry_id    TEXT NOT NULL REFERENCES entries(id),

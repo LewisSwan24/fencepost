@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .ports import PermissionDenied
+from .ports import DEFAULT_LIMITS, PermissionDenied, RateLimited
 
 SCHEMA = Path(__file__).resolve().parent.parent / "schema.sql"
 HISTORY_TURNS = 6
@@ -232,6 +232,7 @@ class Database:
             ("entries", "DELETE FROM entries WHERE author_id = ?", (user_id,)),
             ("videos", "DELETE FROM videos WHERE owner_id = ?", (user_id,)),
             ("access_grants", "DELETE FROM access_grants WHERE user_id = ?", (user_id,)),
+            ("rate_limits", "DELETE FROM rate_limits WHERE user_id = ?", (user_id,)),
         ):
             removed[name] = self.conn.execute(sql, args).rowcount
         # 他签发的链接不能继续放人进来，但保留行本身，外键还指着他
@@ -324,6 +325,36 @@ class SqliteContext:
             "storyboard_visible_to_this_user": True,
             "own_entries": own,
         }
+
+
+class SqliteRateLimiter:
+    """operations.md §3 的三条上限，落在 rate_limits 表上。
+
+    内存那版每个实例各数各的，serverless 上等于没限。这版多实例共享同一张表。
+    过期的行在下一次计数时顺手清掉，不另设定时任务。
+    """
+
+    def __init__(self, db: Database, limits: dict = None):
+        self.db = db
+        self.limits = limits or DEFAULT_LIMITS
+
+    def check_and_count(self, user_id: str, scope: str) -> None:
+        cap, window = self.limits[scope]
+        cutoff = (datetime.now(timezone.utc)
+                  - timedelta(seconds=window)).isoformat(timespec="seconds")
+        self.db.conn.execute(
+            "DELETE FROM rate_limits WHERE user_id = ? AND scope = ? AND used_at < ?",
+            (user_id, scope, cutoff))
+        used = self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ? AND scope = ?",
+            (user_id, scope)).fetchone()["c"]
+        if used >= cap:
+            self.db.conn.commit()
+            raise RateLimited(scope)
+        self.db.conn.execute(
+            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
+            (new_id(), user_id, scope, now()))
+        self.db.conn.commit()
 
 
 class SqliteScreeningLog:
