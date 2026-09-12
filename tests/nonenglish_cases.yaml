@@ -1,0 +1,191 @@
+# 非英语筛查样本集 —— 对应 operations.md §4.2
+# 每种语言 10 条：正常目击 3、乱填 2、攻击性 2、含他人信息 2、事实错误 1
+#
+# expect 是人工判断，只分两档：
+#   ok   —— 正常内容，应当照常发布
+#   flag —— 人看了觉得不该原样留着（乱填、攻击、含他人信息、事实错误）
+#
+# 里面的地址、姓名、车牌全是编的。
+
+- id: zh-1
+  language: zh
+  category: sighting
+  field: story
+  input: "昨晚十一点在后院栅栏上看到一只，尾巴毛茸茸的，盯着我看了好一会儿。"
+  expect: ok
+- id: zh-2
+  language: zh
+  category: sighting
+  field: story
+  input: "屋顶上一直有脚步声，第二天早上发现晾衣架上有一排爪印。"
+  expect: ok
+- id: zh-3
+  language: zh
+  category: sighting
+  field: story
+  input: "邻居家那棵芒果树上有一只，啃了半个芒果就顺着电线走了。"
+  expect: ok
+- id: zh-4
+  language: zh
+  category: nonsense
+  field: fun_fact
+  input: "阿斯顿发建国asdkjh撒旦解放阿斯"
+  expect: flag
+- id: zh-5
+  language: zh
+  category: nonsense
+  field: fun_fact
+  input: "。。。。。。1111111 ？？？"
+  expect: flag
+- id: zh-6
+  language: zh
+  category: abuse
+  field: forum_post
+  input: "这种畜生就该打死，谁家屋顶上有就赶尽杀绝，省得夜里吵。"
+  expect: flag
+- id: zh-7
+  language: zh
+  category: abuse
+  field: forum_post
+  input: "楼上那个白痴天天喂它，脑子有病，被咬了活该。"
+  expect: flag
+- id: zh-8
+  language: zh
+  category: pii
+  field: story
+  input: "它住在朝阳路四十二号王家的屋顶上，就是王建国他们家。"
+  expect: flag
+- id: zh-9
+  language: zh
+  category: pii
+  field: forum_post
+  input: "李明的车牌是粤A88888，他半夜开车过来喂负鼠，谁去劝劝他。"
+  expect: flag
+- id: zh-10
+  language: zh
+  category: fact
+  field: fun_fact
+  input: "负鼠会传播狂犬病，澳洲每年都有人被咬之后感染。"
+  expect: flag
+
+- id: vi-1
+  language: vi
+  category: sighting
+  field: story
+  input: "Tối qua tôi thấy một con trên hàng rào sau nhà, đuôi xù, nó nhìn tôi khá lâu."
+  expect: ok
+- id: vi-2
+  language: vi
+  category: sighting
+  field: story
+  input: "Đêm nào cũng nghe tiếng chạy trên mái, sáng ra thấy vết chân trên sào phơi đồ."
+  expect: ok
+- id: vi-3
+  language: vi
+  category: sighting
+  field: story
+  input: "Có một con trên cây xoài nhà hàng xóm, ăn nửa quả rồi bỏ đi theo dây điện."
+  expect: ok
+- id: vi-4
+  language: vi
+  category: nonsense
+  field: fun_fact
+  input: "ksjdhf aslkdjf 99999 xyzxyz khhh"
+  expect: flag
+- id: vi-5
+  language: vi
+  category: nonsense
+  field: fun_fact
+  input: "......... 1111111 ???"
+  expect: flag
+- id: vi-6
+  language: vi
+  category: abuse
+  field: forum_post
+  input: "Loại này phải đập chết hết, nhà ai có trên mái thì diệt sạch cho rồi."
+  expect: flag
+- id: vi-7
+  language: vi
+  category: abuse
+  field: forum_post
+  input: "Thằng cha trên lầu ngu như bò, ngày nào cũng cho nó ăn, bị cắn là đáng đời."
+  expect: flag
+- id: vi-8
+  language: vi
+  category: pii
+  field: story
+  input: "Nó ở trên mái nhà số 42 đường Nguyễn Huệ, nhà ông Trần Văn Minh."
+  expect: flag
+- id: vi-9
+  language: vi
+  category: pii
+  field: forum_post
+  input: "Xe của Lê Thị Hoa biển số 51A-88888, tối nào cũng chạy tới cho nó ăn."
+  expect: flag
+- id: vi-10
+  language: vi
+  category: fact
+  field: fun_fact
+  input: "Possum truyền bệnh dại, ở Úc mỗi năm đều có người bị cắn rồi nhiễm bệnh."
+  expect: flag
+
+- id: ar-1
+  language: ar
+  category: sighting
+  field: story
+  input: "رأيت واحداً على السياج خلف البيت الليلة الماضية، ذيله كثيف ووقف ينظر إليّ طويلاً."
+  expect: ok
+- id: ar-2
+  language: ar
+  category: sighting
+  field: story
+  input: "أسمع خطوات على السطح كل ليلة، وفي الصباح وجدت آثار مخالب على حبل الغسيل."
+  expect: ok
+- id: ar-3
+  language: ar
+  category: sighting
+  field: story
+  input: "كان هناك واحد على شجرة المانجو عند الجيران، أكل نصف ثمرة ثم مشى على السلك."
+  expect: ok
+- id: ar-4
+  language: ar
+  category: nonsense
+  field: fun_fact
+  input: "اسدفهسدف ٣٣٣٣٣ قثصضبي هلاا"
+  expect: flag
+- id: ar-5
+  language: ar
+  category: nonsense
+  field: fun_fact
+  input: "........ ١١١١١١ ؟؟؟"
+  expect: flag
+- id: ar-6
+  language: ar
+  category: abuse
+  field: forum_post
+  input: "يجب قتل هذه الحيوانات كلها، من وجدها على سطحه فليتخلص منها نهائياً."
+  expect: flag
+- id: ar-7
+  language: ar
+  category: abuse
+  field: forum_post
+  input: "الرجل في الشقة العلوية غبي، يطعمها كل يوم ويستحق أن تعضه."
+  expect: flag
+- id: ar-8
+  language: ar
+  category: pii
+  field: story
+  input: "يعيش على سطح المنزل رقم ٤٢ في شارع الملك، بيت عائلة أحمد محمد."
+  expect: flag
+- id: ar-9
+  language: ar
+  category: pii
+  field: forum_post
+  input: "سيارة سارة خالد رقمها ٥١أ٨٨٨٨٨ تأتي كل ليلة لإطعامه، من يكلمها."
+  expect: flag
+- id: ar-10
+  language: ar
+  category: fact
+  field: fun_fact
+  input: "الأبوسوم ينقل داء الكلب، وفي أستراليا يصاب أشخاص كل عام بعد العض."
+  expect: flag

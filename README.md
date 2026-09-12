@@ -38,7 +38,7 @@ None of them touch the network — the model is faked.
 python tests/test_proxy.py && python tests/test_data_layer.py && python tests/test_entrypoint.py && python tests/test_resources.py
 ```
 
-147 tests. The data layer ones matter most: they pin the three access invariants — other people's
+151 tests. The data layer ones matter most: they pin the three access invariants — other people's
 entries never enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
 
