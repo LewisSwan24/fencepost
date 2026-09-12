@@ -7,6 +7,7 @@ prompts.md §2.6.1 要求每次调用都带请求者身分，由代理解析权�
 
 import hashlib
 import hmac
+import secrets
 import os
 
 
@@ -23,6 +24,15 @@ def _secret() -> bytes:
 
 def _sign(user_id: str) -> str:
     return hmac.new(_secret(), user_id.encode(), hashlib.sha256).hexdigest()
+
+
+def new_share_token() -> str:
+    """分享链接的明文 token。只在签发那一次返回，库里只存哈希。"""
+    return secrets.token_urlsafe(32)
+
+
+def hash_share_token(token: str) -> str:
+    return hashlib.sha256((token or "").encode()).hexdigest()
 
 
 def issue(user_id: str) -> str:

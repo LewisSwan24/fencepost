@@ -5,6 +5,7 @@
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from . import auth, roles
 from .model import UpstreamError, redact
@@ -19,6 +20,9 @@ FIELDS = {"fun_fact", "story", "forum_post"}
 SUBJECTS = {"entry", "forum_post", "submission"}
 SPECIES = {"brushtail", "ringtail", "other", "unknown"}
 WRITE_LEVELS = {"contribute", "reshare"}          # view 只能看
+LEVEL_RANK = {"view": 0, "contribute": 1, "reshare": 2}
+# user-flow §6：默认 7 天。窗口短，链接万一流出去暴露面也短。
+SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
 
 # 给客户端的文案一律固定，ux-copy.md 里有的就用原文。
 # 上游报错、prompt 内容、key 一个字都不往外带。
@@ -32,6 +36,12 @@ COPY = {
     "storyboard_closed": "This storyboard is closed to new entries.",
     "not_your_entry": "You can only change your own entries.",
     "gone": "That entry is no longer there.",
+    "invalid_link": "That link does not work.",
+    "link_revoked": "That link has been turned off.",
+    "link_expired": "That link has expired.",
+    "link_used_up": "That link has been used as many times as it allows.",
+    "cannot_share": "You cannot hand out access to this storyboard.",
+    "not_the_owner": "Only the storyboard owner can do that.",
     "frame_consent_missing": "The frame needs the consent step before it can be sent.",
     "upstream_unavailable": "The assistant is offline right now. Writing and posting work as normal.",
     "rate_limited_chat": "You have used today's assistant allowance. Writing, posting and sharing all still work.",
@@ -374,3 +384,102 @@ def edit_entry(body: dict, token: str, deps: Deps):
 
     deps.db.update_entry(record["id"], fun_fact, story)
     return 200, {"entry_id": record["id"], "published": True, "prompt_version": version}
+
+
+# ---------- 分享链接与权限 ----------
+
+def _stamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def issue_share_link(body: dict, token: str, deps: Deps):
+    """签发一张带权限的链接。明文 token 只在这一次返回，库里只有哈希。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = body.get("storyboard_id")
+    level = body.get("level", "contribute")
+    if not storyboard_id or level not in LEVEL_RANK:
+        return 400, _error("bad_request")
+
+    mine = deps.db.grant_level(storyboard_id, user_id)
+    if mine is None:
+        return 403, _error("no_access")
+    # 签发要 reshare 档，而且给不出自己没有的档位（user-flow §6）
+    if mine != "reshare" or LEVEL_RANK[level] > LEVEL_RANK[mine]:
+        return 403, _error("cannot_share")
+
+    days = body.get("expires_in_days", SHARE_LINK_DAYS)
+    max_uses = body.get("max_uses")
+    if not isinstance(days, int) or not 1 <= days <= 90:
+        return 400, _error("bad_request")
+    if max_uses is not None and (not isinstance(max_uses, int) or max_uses < 1):
+        return 400, _error("bad_request")
+
+    plain = auth.new_share_token()
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(timespec="seconds")
+    link_id = deps.db.add_share_link(storyboard_id, user_id, auth.hash_share_token(plain),
+                                     level, expires_at, max_uses)
+    return 200, {"share_link_id": link_id, "token": plain, "level": level,
+                 "expires_at": expires_at, "max_uses": max_uses}
+
+
+def redeem_share_link(body: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    link = deps.db.share_link_by_hash(auth.hash_share_token(body.get("token") or ""))
+    if link is None:
+        return 404, _error("invalid_link")
+    if link["revoked_at"]:
+        return 403, _error("link_revoked")
+    if link["expires_at"] and link["expires_at"] <= _stamp():
+        return 403, _error("link_expired")
+    if link["max_uses"] is not None and link["used_count"] >= link["max_uses"]:
+        return 403, _error("link_used_up")
+
+    existing = deps.db.grant_level(link["storyboard_id"], user_id)
+    granted = existing
+    # 只升不降：一张 view 链接不该把 owner 降级
+    if existing is None or LEVEL_RANK[existing] < LEVEL_RANK[link["level"]]:
+        deps.db.grant(link["storyboard_id"], user_id, link["level"], link["created_by"])
+        granted = link["level"]
+    deps.db.consume_share_link(link["id"])
+    return 200, {"storyboard_id": link["storyboard_id"], "level": granted}
+
+
+def revoke_share_link(body: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    link = deps.db.share_link(body.get("share_link_id") or "")
+    if link is None:
+        return 404, _error("invalid_link")
+    if user_id not in (link["created_by"], deps.db.storyboard_owner(link["storyboard_id"])):
+        return 403, _error("not_the_owner")
+    deps.db.revoke_share_link(link["id"])
+    return 200, {"share_link_id": link["id"], "revoked": True}
+
+
+def revoke_grant(body: dict, token: str, deps: Deps):
+    """撤销某人的访问。立刻生效：上下文、历史、时间线下一次调用就都没了。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id, target = body.get("storyboard_id"), body.get("user_id")
+    if not storyboard_id or not target or target == user_id:
+        return 400, _error("bad_request")
+    if deps.db.storyboard_owner(storyboard_id) != user_id:
+        return 403, _error("not_the_owner")
+    deps.db.revoke(storyboard_id, target)
+    return 200, {"storyboard_id": storyboard_id, "user_id": target, "revoked": True}
+
+
+def dashboard(params: dict, token: str, deps: Deps):
+    """我能访问的故事版，活跃与往期分开（user-flow §9）。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    boards = deps.db.dashboard(user_id)
+    return 200, {"active": [b for b in boards if b["status"] == "active"],
+                 "past": [b for b in boards if b["status"] != "active"]}

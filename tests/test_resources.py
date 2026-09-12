@@ -352,5 +352,176 @@ class Edits(Fixture):
         self.assertEqual("storyboard_closed", payload["error"]["code"])
 
 
+class Sharing(Fixture):
+    """带权限的 QR 链接：签发、兑换、撤销。"""
+
+    def link(self, token, storyboard_id, **over):
+        body = {"storyboard_id": storyboard_id}
+        body.update(over)
+        return self.post("/api/share-links", body, token=token)
+
+    def test_only_the_hash_is_stored(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board)
+        row = self.db.share_link(issued["share_link_id"])
+        self.assertNotEqual(issued["token"], row["token_hash"])
+        self.assertEqual(64, len(row["token_hash"]))
+        rows = self.db.conn.execute("SELECT * FROM share_links").fetchall()
+        self.assertNotIn(issued["token"], json.dumps([dict(r) for r in rows]))
+
+    def test_redeeming_grants_the_level_the_link_carries(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board, level="contribute")
+        guest = self.session("guest")
+        status, redeemed = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                                     token=guest["token"])
+        self.assertEqual(200, status)
+        self.assertEqual("contribute", redeemed["level"])
+        submitted, _ = self.submit(guest["token"], board, OK_JSON)
+        self.assertEqual(200, submitted)
+
+    def test_a_view_link_cannot_write(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board, level="view")
+        guest = self.session("guest")
+        self.post("/api/share-links/redeem", {"token": issued["token"]}, token=guest["token"])
+        status, payload = self.submit(guest["token"], board)
+        self.assertEqual(403, status)
+        self.assertEqual("read_only_access", payload["error"]["code"])
+
+    def test_a_contributor_cannot_hand_out_access(self):
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        status, payload = self.link(guest["token"], board)
+        self.assertEqual(403, status)
+        self.assertEqual("cannot_share", payload["error"]["code"])
+
+    def test_an_expired_link_is_refused(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board)
+        self.db.conn.execute("UPDATE share_links SET expires_at = ? WHERE id = ?",
+                             ("2020-01-01T00:00:00+00:00", issued["share_link_id"]))
+        guest = self.session("guest")
+        status, payload = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("link_expired", payload["error"]["code"])
+
+    def test_a_used_up_link_is_refused(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board, max_uses=1)
+        first = self.session("first")
+        second = self.session("second")
+        self.post("/api/share-links/redeem", {"token": issued["token"]}, token=first["token"])
+        status, payload = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                                    token=second["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("link_used_up", payload["error"]["code"])
+
+    def test_a_revoked_link_stops_working_at_once(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board)
+        self.post("/api/share-links/revoke", {"share_link_id": issued["share_link_id"]},
+                  token=owner["token"])
+        guest = self.session("guest")
+        status, payload = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("link_revoked", payload["error"]["code"])
+
+    def test_an_unknown_token_is_not_found(self):
+        guest = self.session("guest")
+        status, payload = self.post("/api/share-links/redeem", {"token": "made-up"},
+                                    token=guest["token"])
+        self.assertEqual(404, status)
+        self.assertEqual("invalid_link", payload["error"]["code"])
+
+    def test_redeeming_never_downgrades(self):
+        owner, board = self.board()
+        _, issued = self.link(owner["token"], board, level="view")
+        _, redeemed = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                                token=owner["token"])
+        self.assertEqual("reshare", redeemed["level"])
+        self.assertEqual("reshare", self.db.grant_level(board, owner["user_id"]))
+
+    def test_the_owner_can_revoke_a_grant_and_access_stops(self):
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        seen, _ = self.get(f"/api/timeline?storyboard_id={board}", token=guest["token"])
+        self.assertEqual(200, seen)
+        self.post("/api/grants/revoke", {"storyboard_id": board, "user_id": guest["user_id"]},
+                  token=owner["token"])
+        status, payload = self.get(f"/api/timeline?storyboard_id={board}", token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("no_access", payload["error"]["code"])
+
+    def test_only_the_owner_revokes(self):
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "reshare", owner["user_id"])
+        status, payload = self.post("/api/grants/revoke",
+                                    {"storyboard_id": board, "user_id": owner["user_id"]},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("not_the_owner", payload["error"]["code"])
+
+
+class Dashboard(Fixture):
+    """我能访问的故事版，活跃与往期分开。"""
+
+    def view(self, token):
+        return self.get("/api/dashboard", token=token)[1]
+
+    def test_it_lists_only_what_i_can_reach(self):
+        owner, mine = self.board("owner")
+        stranger, theirs = self.board("stranger")
+        view = self.view(owner["token"])
+        self.assertEqual([mine], [b["id"] for b in view["active"]])
+        self.assertEqual([theirs], [b["id"] for b in self.view(stranger["token"])["active"]])
+
+    def test_archived_storyboards_move_to_past(self):
+        owner, board = self.board()
+        self.assertEqual(1, len(self.view(owner["token"])["active"]))
+        self.db.conn.execute("UPDATE storyboards SET status = 'readonly' WHERE id = ?", (board,))
+        view = self.view(owner["token"])
+        self.assertEqual([], view["active"])
+        self.assertEqual([board], [b["id"] for b in view["past"]])
+
+    def test_a_revoked_grant_drops_it_from_the_list(self):
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        self.assertEqual(1, len(self.view(guest["token"])["active"]))
+        self.post("/api/grants/revoke", {"storyboard_id": board, "user_id": guest["user_id"]},
+                  token=owner["token"])
+        self.assertEqual([], self.view(guest["token"])["active"])
+
+    def test_it_says_nothing_about_the_other_contributors(self):
+        owner, board = self.board()
+        guest = self.session("neighbour-with-a-name")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        self.submit(guest["token"], board, OK_JSON, story="theirs")
+        payload = json.dumps(self.view(owner["token"]), ensure_ascii=False)
+        self.assertNotIn("neighbour-with-a-name", payload)
+        self.assertNotIn(guest["user_id"], payload)
+
+    def test_the_entry_count_leaves_out_deleted_ones(self):
+        owner, board = self.board()
+        _, first = self.submit(owner["token"], board, OK_JSON, story="one")
+        self.submit(owner["token"], board, OK_JSON, story="two")
+        self.assertEqual(2, self.view(owner["token"])["active"][0]["entry_count"])
+        self.db.soft_delete_entry(first["entry_id"])
+        self.assertEqual(1, self.view(owner["token"])["active"][0]["entry_count"])
+
+    def test_my_level_comes_back_with_each_one(self):
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "view", owner["user_id"])
+        self.assertEqual("reshare", self.view(owner["token"])["active"][0]["level"])
+        self.assertEqual("view", self.view(guest["token"])["active"][0]["level"])
+
+
 if __name__ == "__main__":
     unittest.main()
