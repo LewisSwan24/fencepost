@@ -1,0 +1,13 @@
+# Vercel 的 Python builder 用 uv 读这个文件：[tool.vercel] 指入口，
+# [project] 里的 dependencies 决定装什么。requirements.txt 那边它不看。
+[project]
+name = "fencepost"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["openai==3.13.0"]
+
+[tool.uv]
+package = false          # 这是个应用，不是要构建的库，别让 uv 去 build 它
+
+[tool.vercel]
+entrypoint = "api.assistant:handler"

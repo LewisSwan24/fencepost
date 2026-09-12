@@ -1,0 +1,226 @@
+{
+  "_meta": {
+    "version": "0.2",
+    "date": "2026-09-11",
+    "scope": "South East Queensland urban wildlife",
+    "warning": "legal_status 字段尚未逐条核对官方来源，上线前必须逐个验证。class 决定 assistant 的行为分支，改动需同步 docs/prompts.md",
+    "classes": {
+      "protected_native": "受保护本土物种。默认分支。不得捕捉迁移伤害，需 damage mitigation permit",
+      "dangerous": "存在人身安全或公共卫生风险。助手绝不下安全性结论，绝不建议接近或处理，一律指向持牌处理者",
+      "invasive": "入侵/非保护物种。不适用保护条款，但助手仍不提供杀灭方法，指向council官方指引",
+      "unknown": "未识别。按 dangerous 处理直到确认"
+    },
+    "status": "FUTURE WORK — 未采用",
+    "decision": "2026-09-11 决定将助手范围收回 brushtail / ringtail 两种负鼠。本表不在原型中实现，保留作为报告中扩展路径评估的材料。"
+  },
+  "species": [
+    {
+      "id": "brushtail_possum",
+      "common": "Common Brushtail Possum",
+      "scientific": "Trichosurus vulpecula",
+      "class": "protected_native",
+      "notes": "常进屋顶。最常见提问来源",
+      "legal_verified": false
+    },
+    {
+      "id": "ringtail_possum",
+      "common": "Common Ringtail Possum",
+      "scientific": "Pseudocheirus peregrinus",
+      "class": "protected_native",
+      "notes": "较少进建筑，多在树冠",
+      "legal_verified": false
+    },
+    {
+      "id": "northern_brown_bandicoot",
+      "common": "Northern Brown Bandicoot",
+      "scientific": "Isoodon macrourus",
+      "class": "protected_native",
+      "notes": "草地挖锥形小坑，常被误认为害兽",
+      "legal_verified": false
+    },
+    {
+      "id": "short_beaked_echidna",
+      "common": "Short-beaked Echidna",
+      "scientific": "Tachyglossus aculeatus",
+      "class": "protected_native",
+      "notes": "受惊会掘地固定，不可拉拽",
+      "legal_verified": false
+    },
+    {
+      "id": "grey_headed_flying_fox",
+      "common": "Grey-headed Flying-fox",
+      "scientific": "Pteropus poliocephalus",
+      "class": "dangerous",
+      "notes": "蝙蝠丽沙病毒风险。仅接种疫苗的持证救护者可处理",
+      "legal_verified": false
+    },
+    {
+      "id": "black_flying_fox",
+      "common": "Black Flying-fox",
+      "scientific": "Pteropus alecto",
+      "class": "dangerous",
+      "notes": "同上",
+      "legal_verified": false
+    },
+    {
+      "id": "microbat",
+      "common": "Microbat (various)",
+      "scientific": "various",
+      "class": "dangerous",
+      "notes": "同上。常误入室内",
+      "legal_verified": false
+    },
+    {
+      "id": "australian_brush_turkey",
+      "common": "Australian Brush-turkey",
+      "scientific": "Alectura lathami",
+      "class": "protected_native",
+      "notes": "巢丘受保护，移除需许可",
+      "legal_verified": false
+    },
+    {
+      "id": "rainbow_lorikeet",
+      "common": "Rainbow Lorikeet",
+      "scientific": "Trichoglossus moluccanus",
+      "class": "protected_native",
+      "notes": "",
+      "legal_verified": false
+    },
+    {
+      "id": "australian_magpie",
+      "common": "Australian Magpie",
+      "scientific": "Gymnorhina tibicen",
+      "class": "protected_native",
+      "notes": "繁殖季（约8-10月）俯冲护巢，需安全提示",
+      "legal_verified": false
+    },
+    {
+      "id": "laughing_kookaburra",
+      "common": "Laughing Kookaburra",
+      "scientific": "Dacelo novaeguineae",
+      "class": "protected_native",
+      "notes": "",
+      "legal_verified": false
+    },
+    {
+      "id": "noisy_miner",
+      "common": "Noisy Miner",
+      "scientific": "Manorina melanocephala",
+      "class": "protected_native",
+      "notes": "本土但具攻击性，常被误认为入侵鸟",
+      "legal_verified": false
+    },
+    {
+      "id": "australian_white_ibis",
+      "common": "Australian White Ibis",
+      "scientific": "Threskiornis molucca",
+      "class": "protected_native",
+      "notes": "常被蔑称，注意文案中立",
+      "legal_verified": false
+    },
+    {
+      "id": "tawny_frogmouth",
+      "common": "Tawny Frogmouth",
+      "scientific": "Podargus strigoides",
+      "class": "protected_native",
+      "notes": "白天静止伪装，常被误判为受伤",
+      "legal_verified": false
+    },
+    {
+      "id": "bush_stone_curlew",
+      "common": "Bush Stone-curlew",
+      "scientific": "Burhinus grallarius",
+      "class": "protected_native",
+      "notes": "夜间叫声常被误报为求救",
+      "legal_verified": false
+    },
+    {
+      "id": "eastern_water_dragon",
+      "common": "Australian Water Dragon",
+      "scientific": "Intellagama lesueurii",
+      "class": "protected_native",
+      "notes": "",
+      "legal_verified": false
+    },
+    {
+      "id": "eastern_blue_tongue",
+      "common": "Eastern Blue-tongue Lizard",
+      "scientific": "Tiliqua scincoides",
+      "class": "protected_native",
+      "notes": "常被误认为蛇",
+      "legal_verified": false
+    },
+    {
+      "id": "carpet_python",
+      "common": "Carpet Python",
+      "scientific": "Morelia spilota",
+      "class": "dangerous",
+      "notes": "无毒但会咬。仍按 dangerous 处理：助手不做无毒结论",
+      "legal_verified": false
+    },
+    {
+      "id": "eastern_brown_snake",
+      "common": "Eastern Brown Snake",
+      "scientific": "Pseudonaja textilis",
+      "class": "dangerous",
+      "notes": "剧毒，布里斯班郊区常见",
+      "legal_verified": false
+    },
+    {
+      "id": "red_bellied_black_snake",
+      "common": "Red-bellied Black Snake",
+      "scientific": "Pseudechis porphyriacus",
+      "class": "dangerous",
+      "notes": "有毒",
+      "legal_verified": false
+    },
+    {
+      "id": "common_tree_snake",
+      "common": "Common Tree Snake",
+      "scientific": "Dendrelaphis punctulatus",
+      "class": "dangerous",
+      "notes": "无毒但同样不下结论",
+      "legal_verified": false
+    },
+    {
+      "id": "snake_unidentified",
+      "common": "Snake (unidentified)",
+      "scientific": "unknown",
+      "class": "dangerous",
+      "notes": "默认分支。任何蛇类提问未确认物种时走这里",
+      "legal_verified": false
+    },
+    {
+      "id": "green_tree_frog",
+      "common": "Green Tree Frog",
+      "scientific": "Ranoidea caerulea",
+      "class": "protected_native",
+      "notes": "",
+      "legal_verified": false
+    },
+    {
+      "id": "cane_toad",
+      "common": "Cane Toad",
+      "scientific": "Rhinella marina",
+      "class": "invasive",
+      "notes": "非保护物种。助手不提供杀灭方法，指向council指引；对宠物中毒风险给就医提示",
+      "legal_verified": false
+    },
+    {
+      "id": "common_myna",
+      "common": "Common Myna",
+      "scientific": "Acridotheres tristis",
+      "class": "invasive",
+      "notes": "注意与本土 Noisy Miner 区分，用户极常混淆",
+      "legal_verified": false
+    },
+    {
+      "id": "unknown",
+      "common": "Unidentified",
+      "scientific": "unknown",
+      "class": "unknown",
+      "notes": "未选物种时的默认值",
+      "legal_verified": false
+    }
+  ]
+}
