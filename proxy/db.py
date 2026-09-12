@@ -162,6 +162,18 @@ class Database:
             "ORDER BY e.created_at, e.rowid", (storyboard_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    def entry(self, entry_id: str):
+        row = self.conn.execute(
+            "SELECT id, storyboard_id, author_id, species, fun_fact, story, deleted_at "
+            "FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_entry(self, entry_id: str, fun_fact, story) -> None:
+        """没有 updated_at：data-model.md §1 里没这一列，不擅自加。"""
+        self.conn.execute("UPDATE entries SET fun_fact = ?, story = ? WHERE id = ?",
+                          (fun_fact, story, entry_id))
+        self.conn.commit()
+
     def soft_delete_entry(self, entry_id: str) -> None:
         self.conn.execute("UPDATE entries SET deleted_at = ? WHERE id = ?", (now(), entry_id))
         self.conn.commit()

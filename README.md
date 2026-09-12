@@ -38,7 +38,7 @@ None of them touch the network — the model is faked.
 python tests/test_proxy.py && python tests/test_data_layer.py && python tests/test_entrypoint.py && python tests/test_resources.py
 ```
 
-91 tests. The data layer ones matter most: they pin the three access invariants — other people's
+90 tests. The data layer ones matter most: they pin the three access invariants — other people's
 entries never enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
 
@@ -68,6 +68,8 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 | `POST /api/storyboards` | Create a storyboard and grant its owner access. |
 | `POST /api/videos` | Register a clip. Only a storage key is kept — there is no field for EXIF to land in. |
 | `POST /api/entries` | Submit an entry. Screened first, created only if nothing was rejected. Needs `contribute` or `reshare`. |
+| `POST /api/entries/edit` | Change your own entry. Changed fields go back through the Screener; a rejected edit leaves the original alone. |
+| `POST /api/entries/delete` | Soft delete your own entry. The assistant stops seeing it on the next call. |
 | `GET /api/timeline?storyboard_id=` | Every contributor's entries. Deliberately a different query from what the assistant sees. |
 | `POST /api/assistant` | Dispatch to one of the three model roles by `role`. Add `"stream": true` for server-sent events, which only the chat role supports. |
 
