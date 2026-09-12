@@ -8,13 +8,15 @@ from dataclasses import dataclass, field
 
 from . import auth, roles
 from .model import UpstreamError, redact
-from .ports import MemoryContext, MemoryHistory, MemoryRateLimiter, PermissionDenied, RateLimited
+from .ports import (MemoryContext, MemoryHistory, MemoryRateLimiter, MemoryScreeningLog,
+                    PermissionDenied, RateLimited)
 
 # 每个角色算在哪条上限。operations.md §3 只列了聊天、视觉、提交三项，没提 Writer，
 # 这里先并进聊天，文档要补一行（见阶段 3 报告）。
 SCOPE = {"neighbour": "chat", "writer": "chat", "screener": "submission"}
 
 FIELDS = {"fun_fact", "story", "forum_post"}
+SUBJECTS = {"entry", "forum_post", "submission"}
 
 # 给客户端的文案一律固定，ux-copy.md 里有的就用原文。
 # 上游报错、prompt 内容、key 一个字都不往外带。
@@ -38,7 +40,7 @@ class Deps:
     limiter: object = field(default_factory=MemoryRateLimiter)
     history: object = field(default_factory=MemoryHistory)
     context: object = field(default_factory=MemoryContext)
-    records: list = field(default_factory=list)   # 阶段 4 换成 screening_results 落库
+    screening: object = field(default_factory=MemoryScreeningLog)
     db: object = None                            # 资源端点要直接写库，助手那条路用不上
 
 
@@ -127,9 +129,21 @@ def _screener(body: dict, deps: Deps):
     submission = body.get("submission")
     if submission is None or body.get("field") not in FIELDS:
         return 400, _error("bad_request")
+    subject_type = body.get("subject_type", "submission")
+    subject_id = body.get("subject_id")
+    if subject_type not in SUBJECTS or (subject_type != "submission" and not subject_id):
+        return 400, _error("bad_request")
     internal = roles.screener(deps.client, body.get("species_selected", "unknown"),
                               body["field"], submission)
-    deps.records.append(internal)
+    deps.screening.record({
+        **internal,
+        "field": body["field"],
+        "subject_type": subject_type,
+        "subject_id": subject_id,
+        # operations.md §1：ok 不留原文，减少留存面
+        "original_text": None if internal["verdict"] == "ok" else submission,
+        "model": getattr(deps.client, "screener_model", None),
+    })
     # review 档作者无感（operations.md §2.3），所以客户端只拿得到能不能发；
     # verdict、codes、note、fail_open 留在服务端记录里。
     published = internal["verdict"] != "reject"
