@@ -52,6 +52,7 @@ CREATE TABLE share_links (             -- QR 背后的东西
   storyboard_id TEXT NOT NULL REFERENCES storyboards(id),
   token_hash    TEXT NOT NULL UNIQUE,   -- 只存哈希，不存明文 token
   created_by    TEXT NOT NULL REFERENCES users(id),
+  level         TEXT NOT NULL CHECK (level IN ('view','contribute','reshare')),
   expires_at    TIMESTAMP,
   max_uses      INTEGER,
   used_count    INTEGER NOT NULL DEFAULT 0,
