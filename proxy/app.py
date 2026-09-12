@@ -17,6 +17,8 @@ SCOPE = {"neighbour": "chat", "writer": "chat", "screener": "submission"}
 
 FIELDS = {"fun_fact", "story", "forum_post"}
 SUBJECTS = {"entry", "forum_post", "submission"}
+SPECIES = {"brushtail", "ringtail", "other", "unknown"}
+WRITE_LEVELS = {"contribute", "reshare"}          # view 只能看
 
 # 给客户端的文案一律固定，ux-copy.md 里有的就用原文。
 # 上游报错、prompt 内容、key 一个字都不往外带。
@@ -26,6 +28,8 @@ COPY = {
     "bad_request": "The assistant could not read that request.",
     "not_found": "There is nothing at that address.",
     "signup_closed": "Sign-up is closed on this deployment.",
+    "read_only_access": "You can read this storyboard, but not add to it.",
+    "storyboard_closed": "This storyboard is closed to new entries.",
     "frame_consent_missing": "The frame needs the consent step before it can be sent.",
     "upstream_unavailable": "The assistant is offline right now. Writing and posting work as normal.",
     "rate_limited_chat": "You have used today's assistant allowance. Writing, posting and sharing all still work.",
@@ -135,15 +139,7 @@ def _screener(body: dict, deps: Deps):
         return 400, _error("bad_request")
     internal = roles.screener(deps.client, body.get("species_selected", "unknown"),
                               body["field"], submission)
-    deps.screening.record({
-        **internal,
-        "field": body["field"],
-        "subject_type": subject_type,
-        "subject_id": subject_id,
-        # operations.md §1：ok 不留原文，减少留存面
-        "original_text": None if internal["verdict"] == "ok" else submission,
-        "model": getattr(deps.client, "screener_model", None),
-    })
+    _record_screening(deps, internal, body["field"], submission, subject_type, subject_id)
     # review 档作者无感（operations.md §2.3），所以客户端只拿得到能不能发；
     # verdict、codes、note、fail_open 留在服务端记录里。
     published = internal["verdict"] != "reject"
@@ -225,3 +221,98 @@ def create_storyboard(body: dict, token: str, deps: Deps):
         return 400, _error("bad_request")
     # add_storyboard 顺手给 owner 一条 grant，否则他进不了自己的故事版
     return 200, {"storyboard_id": deps.db.add_storyboard(user_id, title), "title": title}
+
+
+def _identify(token: str):
+    """放行给 (user_id, None)，认不出给 (None, (401, payload))。"""
+    try:
+        return auth.verify(token), None
+    except auth.AuthError:
+        return None, (401, _error("unauthorized"))
+
+
+def _record_screening(deps: Deps, result: dict, field: str, text: str,
+                      subject_type: str, subject_id) -> None:
+    deps.screening.record({
+        **result,
+        "field": field,
+        "subject_type": subject_type,
+        "subject_id": subject_id,
+        # operations.md §1：ok 不留原文，减少留存面
+        "original_text": None if result["verdict"] == "ok" else text,
+        "model": getattr(deps.client, "screener_model", None),
+    })
+
+
+def register_video(body: dict, token: str, deps: Deps):
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storage_key = body.get("storage_key")
+    if not isinstance(storage_key, str) or not 1 <= len(storage_key) <= 200:
+        return 400, _error("bad_request")
+    return 200, {"video_id": deps.db.add_video(user_id, storage_key)}
+
+
+def submit_entry(body: dict, token: str, deps: Deps):
+    """提交一条 entry：先筛查，通过才建。
+
+    fun_fact 与 story 各筛一次（prompts.md §4.3 的模板一次只认一个 field）。任一条被 reject
+    就整条不发，两条都不是 reject 就照常发——包括被标 review 的那种。响应里看不出 review，
+    作者无感是 operations.md §2.3 的要求。
+    """
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = body.get("storyboard_id")
+    species = body.get("species")
+    fun_fact, story = body.get("fun_fact"), body.get("story")
+    if not storyboard_id or species not in SPECIES or not (fun_fact or story):
+        return 400, _error("bad_request")
+
+    level = deps.db.grant_level(storyboard_id, user_id)
+    if level is None:
+        return 403, _error("no_access")
+    if level not in WRITE_LEVELS:
+        return 403, _error("read_only_access")
+    if deps.db.storyboard_status(storyboard_id) != "active":
+        return 409, _error("storyboard_closed")
+
+    video_id = body.get("video_id")
+    if video_id and deps.db.video_owner(video_id) != user_id:
+        # 别人的素材不能挂到自己的 entry 上
+        return 403, _error("no_access")
+
+    try:
+        deps.limiter.check_and_count(user_id, "submission")
+    except RateLimited as limited:
+        return 429, _error("rate_limited", f"rate_limited_{limited.scope}", scope=limited.scope)
+
+    screened = [(field, value, roles.screener(deps.client, species, field, value))
+                for field, value in (("fun_fact", fun_fact), ("story", story)) if value]
+    version = screened[0][2]["prompt_version"]
+    rejected = [result for _, _, result in screened if result["verdict"] == "reject"]
+
+    if rejected:
+        for field, value, result in screened:
+            _record_screening(deps, result, field, value, "submission", None)
+        codes = sorted({code for result in rejected for code in result["codes"]})
+        return 200, {"published": False, "reason_codes": codes, "prompt_version": version}
+
+    entry_id = deps.db.add_entry(storyboard_id, user_id, species, fun_fact, story, video_id)
+    for field, value, result in screened:
+        _record_screening(deps, result, field, value, "entry", entry_id)
+    return 200, {"entry_id": entry_id, "published": True, "prompt_version": version}
+
+
+def timeline(params: dict, token: str, deps: Deps):
+    """故事版时间线：所有贡献者的 entry。与助手的 Tier 1 上下文是两条不同的查询。"""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = params.get("storyboard_id")
+    if not storyboard_id:
+        return 400, _error("bad_request")
+    if deps.db.grant_level(storyboard_id, user_id) is None:
+        return 403, _error("no_access")
+    return 200, {"storyboard_id": storyboard_id, "entries": deps.db.timeline(storyboard_id)}
