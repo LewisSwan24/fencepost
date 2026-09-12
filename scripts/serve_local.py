@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 api/assistant.py 的 handler 跑在本机。
+"""把 api/index.py 的 handler 跑在本机。
 
     python scripts/serve_local.py --port 8787
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from api.assistant import handler
+from api.index import handler
 
 
 def main() -> None:
