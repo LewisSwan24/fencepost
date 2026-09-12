@@ -12,6 +12,7 @@ from proxy.app import COPY, Deps, create_session, create_storyboard, handle, han
 from proxy.db import Database, SqliteContext, SqliteHistory
 from proxy.model import DashScope, UpstreamError, redact
 
+ROUTES = ("/api/session", "/api/storyboards", "/api/assistant")
 _DEPS = None
 
 
@@ -41,6 +42,9 @@ class handler(BaseHTTPRequestHandler):
             body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
+        if path not in ROUTES:
+            # 先判路径再建依赖：不认识的地址不该因为缺配置而回 503
+            return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
         token = (self.headers.get("authorization") or "").removeprefix("Bearer ").strip()
         try:
             deps = _deps()
@@ -54,8 +58,6 @@ class handler(BaseHTTPRequestHandler):
             return self._json(*create_session(body, deps))
         if path == "/api/storyboards":
             return self._json(*create_storyboard(body, token, deps))
-        if path != "/api/assistant":
-            return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
         if body.get("stream"):
             return self._sse(body, token, deps)
         self._json(*handle(body, token, deps))
