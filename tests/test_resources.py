@@ -555,5 +555,94 @@ class Closing(Fixture):
         self.assertEqual(["before closing"], [e["story"] for e in view["entries"]])
 
 
+class Forum(Fixture):
+    """讨论串挂在故事版下，权限跟着故事版走，助手一律看不见。"""
+
+    def thread(self, token, storyboard_id, reply=OK_JSON, **over):
+        self.client.replies = [reply]
+        body = {"storyboard_id": storyboard_id, "title": "Who else hears it at 2am",
+                "body": "there is something walking on my roof every night"}
+        body.update(over)
+        return self.post("/api/forum/threads", body, token=token)
+
+    def test_a_thread_is_created_and_listed(self):
+        owner, board = self.board()
+        status, created = self.thread(owner["token"], board)
+        self.assertEqual(200, status)
+        self.assertTrue(created["published"])
+        _, listing = self.get(f"/api/forum?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(["Who else hears it at 2am"], [t["title"] for t in listing["threads"]])
+        self.assertEqual(1, listing["threads"][0]["post_count"])
+
+    def test_a_rejected_post_creates_nothing(self):
+        owner, board = self.board()
+        status, payload = self.thread(owner["token"], board, reply=REJECT_JSON,
+                                      body="He lives at 42 Example St.")
+        self.assertEqual(200, status)
+        self.assertFalse(payload["published"])
+        self.assertEqual(["pii"], payload["reason_codes"])
+        _, listing = self.get(f"/api/forum?storyboard_id={board}", token=owner["token"])
+        self.assertEqual([], listing["threads"])
+
+    def test_replies_land_in_order(self):
+        owner, board = self.board()
+        _, created = self.thread(owner["token"], board)
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        self.client.replies = [OK_JSON]
+        self.post("/api/forum/posts", {"thread_id": created["thread_id"], "body": "mine too"},
+                  token=guest["token"])
+        _, view = self.get(f"/api/forum/thread?thread_id={created['thread_id']}",
+                           token=owner["token"])
+        self.assertEqual(["there is something walking on my roof every night", "mine too"],
+                         [p["body"] for p in view["posts"]])
+        self.assertEqual(["owner", "guest"], [p["handle"] for p in view["posts"]])
+
+    def test_a_viewer_reads_but_does_not_post(self):
+        owner, board = self.board()
+        _, created = self.thread(owner["token"], board)
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "view", owner["user_id"])
+        read, _ = self.get(f"/api/forum?storyboard_id={board}", token=guest["token"])
+        self.assertEqual(200, read)
+        self.client.replies = [OK_JSON]
+        status, payload = self.post("/api/forum/posts",
+                                    {"thread_id": created["thread_id"], "body": "let me in"},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("read_only_access", payload["error"]["code"])
+
+    def test_a_stranger_sees_nothing(self):
+        owner, board = self.board()
+        self.thread(owner["token"], board)
+        stranger = self.session("stranger")
+        status, payload = self.get(f"/api/forum?storyboard_id={board}", token=stranger["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("no_access", payload["error"]["code"])
+
+    def test_the_assistant_never_sees_forum_content(self):
+        owner, board = self.board()
+        self.thread(owner["token"], board, body="SOMETHING ONLY SAID IN THE FORUM")
+        self.client.calls.clear()
+        self.client.replies = []
+        self.post("/api/assistant", {"role": "neighbour", "storyboard_id": board,
+                                     "message": "what have I been saying?"}, token=owner["token"])
+        sent = json.dumps(self.client.calls[-1], ensure_ascii=False)
+        self.assertNotIn("SOMETHING ONLY SAID IN THE FORUM", sent)
+
+    def test_a_closed_storyboard_takes_no_new_threads(self):
+        owner, board = self.board()
+        self.db.conn.execute("UPDATE storyboards SET status = 'archived' WHERE id = ?", (board,))
+        status, payload = self.thread(owner["token"], board)
+        self.assertEqual(409, status)
+        self.assertEqual("storyboard_closed", payload["error"]["code"])
+
+    def test_an_unknown_thread_is_gone(self):
+        who = self.session()
+        status, payload = self.get("/api/forum/thread?thread_id=nope", token=who["token"])
+        self.assertEqual(404, status)
+        self.assertEqual("gone", payload["error"]["code"])
+
+
 if __name__ == "__main__":
     unittest.main()
