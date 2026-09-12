@@ -21,17 +21,37 @@ const FIXTURES = {
     storyboard_id: "fixture-storyboard",
     title: "Fence at number 12",
   }),
-  "/api/entries": () => ({
-    entry_id: "fixture-entry",
-    published: true,
-    prompt_version: VERSION,
-  }),
-  "/api/assistant": () => ({
-    role: "neighbour",
-    reply:
-      "That sounds like a ringtail. The curled tail is the giveaway, since brushtails have bushy ones. Check the tip next time to be sure.",
-    prompt_version: VERSION,
-  }),
+  // 提交被拒的样子也要能演示。触发条件是确定的：正文里带这个假地址就走拒绝分支。
+  // 注意回的是 reason_codes，没有 verdict 也没有 note——作者永远看不到内部判定。
+  "/api/entries": (body) =>
+    String(body.story || "").includes("42 Example St")
+      ? { published: false, reason_codes: ["pii"], prompt_version: VERSION }
+      : { entry_id: "fixture-entry", published: true, prompt_version: VERSION },
+  "/api/assistant": (body) =>
+    body.role === "writer"
+      ? {
+          role: "writer",
+          fun_facts: [
+            {
+              text: "Ringtails build nests called dreys and carry the material with their tail.",
+              confidence: "established",
+            },
+            {
+              text: "People often say they only eat leaves, though they take fruit and flowers too.",
+              confidence: "unverified",
+            },
+          ],
+          tidied_story: "One on the fence at eleven, staring at me for a while.",
+          question: null,
+          skipped: false,
+          prompt_version: VERSION,
+        }
+      : {
+          role: "neighbour",
+          reply:
+            "That sounds like a ringtail. The curled tail is the giveaway, since brushtails have bushy ones. Check the tip next time to be sure.",
+          prompt_version: VERSION,
+        },
   "/api/forum/threads": () => ({
     thread_id: "fixture-thread",
     post_id: "fixture-post",
