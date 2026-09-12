@@ -5,8 +5,10 @@
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,14 +21,15 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 from proxy import auth                                               # noqa: E402
 from proxy.app import Deps, handle                                   # noqa: E402
 from proxy.db import (Database, SqliteContext, SqliteHistory,        # noqa: E402
-                      SqliteScreeningLog)
+                      SqliteRateLimiter, SqliteScreeningLog)
 from proxy.model import UpstreamError                                # noqa: E402
-from proxy.ports import PermissionDenied                             # noqa: E402
+from proxy.ports import PermissionDenied, RateLimited                # noqa: E402
 
 VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 
 TABLES = {"users", "videos", "storyboards", "entries", "access_grants",
-          "share_links", "chat_messages", "screening_results", "review_votes"}
+          "share_links", "chat_messages", "screening_results", "rate_limits",
+          "review_votes"}
 
 OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
 REVIEW_JSON = '{"verdict":"review","codes":["fact_conflict"],"note":"lifespan is off"}'
@@ -370,6 +373,69 @@ class Retention(Fixture):
         removed = teardown_demo.clear(self.db)
         self.assertTrue(removed["entries"] >= 1)
         self.assertEqual({0}, set(teardown_demo.counts(self.db).values()))
+
+
+class Limits(Fixture):
+    """operations §3 的三条上限，落在表上而不是内存里。"""
+
+    CAPS = {"chat": (2, 86400), "vision": (1, 3600), "submission": (2, 3600)}
+
+    def limiter(self, db=None):
+        return SqliteRateLimiter(db or self.db, self.CAPS)
+
+    def test_each_window_is_enforced(self):
+        limiter = self.limiter()
+        for scope, (cap, _) in self.CAPS.items():
+            with self.subTest(scope=scope):
+                for _ in range(cap):
+                    limiter.check_and_count(self.owner, scope)
+                with self.assertRaises(RateLimited) as caught:
+                    limiter.check_and_count(self.owner, scope)
+                self.assertEqual(scope, caught.exception.scope)
+
+    def test_scopes_are_counted_apart(self):
+        limiter = self.limiter()
+        limiter.check_and_count(self.owner, "vision")
+        limiter.check_and_count(self.owner, "chat")      # vision 用满了也不该挡住 chat
+
+    def test_people_are_counted_apart(self):
+        limiter = self.limiter()
+        limiter.check_and_count(self.owner, "vision")
+        limiter.check_and_count(self.guest, "vision")    # 别人用满不该挡住我
+
+    def test_old_uses_fall_out_of_the_window(self):
+        limiter = self.limiter()
+        stale = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(timespec="seconds")
+        self.db.conn.execute(
+            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, 'vision', ?)",
+            (uuid4().hex, self.owner, stale))
+        self.db.conn.commit()
+        limiter.check_and_count(self.owner, "vision")    # 两小时前那次不算数
+        self.assertEqual(1, self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ?",
+            (self.owner,)).fetchone()["c"])
+
+    def test_the_count_survives_a_new_process(self):
+        folder = Path(tempfile.mkdtemp())
+        path = str(folder / "limits.db")
+        try:
+            first = Database(path)
+            user = first.add_user("across-processes")
+            for _ in range(2):
+                self.limiter(first).check_and_count(user, "chat")
+            # 另一个实例，同一个库：serverless 上就是这个情形
+            second = Database(path)
+            with self.assertRaises(RateLimited):
+                self.limiter(second).check_and_count(user, "chat")
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def test_deleting_an_account_takes_its_counters(self):
+        self.limiter().check_and_count(self.guest, "chat")
+        self.db.delete_account(self.guest)
+        self.assertEqual(0, self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ?",
+            (self.guest,)).fetchone()["c"])
 
 
 if __name__ == "__main__":
