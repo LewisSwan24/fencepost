@@ -1,4 +1,4 @@
-# GENERATED from prompts.md v0.9 — do not edit by hand
+# GENERATED from prompts.md v0.10 — do not edit by hand
 
 === ROLE: WRITER ===
 
