@@ -35,12 +35,14 @@ class FakeClient:
 
     def __init__(self, *replies):
         self.replies = list(replies)
+        self.calls = []
 
     def call(self, role, system, content, history=()):
+        self.calls.append({"role": role, "content": content})
         return self.replies.pop(0) if self.replies else "a reply"
 
 
-class Resources(unittest.TestCase):
+class Fixture(unittest.TestCase):
     def setUp(self):
         self.db = Database()
         self.client = FakeClient()
@@ -81,6 +83,35 @@ class Resources(unittest.TestCase):
     def session(self, handle="neighbour-a"):
         return self.post("/api/session", {"handle": handle})[1]
 
+    def board(self, handle="owner"):
+        who = self.session(handle)
+        _, created = self.post("/api/storyboards", {"title": "Fence at number 12"},
+                               token=who["token"])
+        return who, created["storyboard_id"]
+
+    def submit(self, token, storyboard_id, *replies, **over):
+        self.client.replies = list(replies) or [OK_JSON]
+        body = {"storyboard_id": storyboard_id, "species": "brushtail", "story": "saw one"}
+        body.update(over)
+        return self.post("/api/entries", body, token=token)
+
+    def rows(self):
+        return self.db.conn.execute("SELECT * FROM screening_results ORDER BY rowid").fetchall()
+
+    def with_entry(self, story="mine, on the fence"):
+        who, board = self.board()
+        _, created = self.submit(who["token"], board, OK_JSON, story=story)
+        return who, board, created["entry_id"]
+
+    def assistant_sees(self, token, board):
+        self.client.calls.clear()
+        self.client.replies = []
+        self.post("/api/assistant", {"role": "neighbour", "storyboard_id": board,
+                                     "message": "what did I write?"}, token=token)
+        return json.dumps(self.client.calls[-1], ensure_ascii=False)
+
+
+class Resources(Fixture):
     def test_signup_is_closed_unless_switched_on(self):
         os.environ.pop("FENCEPOST_OPEN_SIGNUP")
         status, payload = self.post("/api/session", {"handle": "neighbour-a"})
@@ -141,23 +172,8 @@ class Resources(unittest.TestCase):
         self.assertEqual(COPY["not_found"], payload["error"]["message"])
 
 
-class Entries(Resources):
+class Entries(Fixture):
     """提交 entry 与读时间线。沿用 Resources 的 fixture。"""
-
-    def board(self, handle="owner"):
-        who = self.session(handle)
-        _, created = self.post("/api/storyboards", {"title": "Fence at number 12"},
-                               token=who["token"])
-        return who, created["storyboard_id"]
-
-    def submit(self, token, storyboard_id, *replies, **over):
-        self.client.replies = list(replies) or [OK_JSON]
-        body = {"storyboard_id": storyboard_id, "species": "brushtail", "story": "saw one"}
-        body.update(over)
-        return self.post("/api/entries", body, token=token)
-
-    def rows(self):
-        return self.db.conn.execute("SELECT * FROM screening_results ORDER BY rowid").fetchall()
 
     def test_a_video_is_registered_against_its_owner(self):
         who = self.session()
@@ -260,6 +276,80 @@ class Entries(Resources):
         status, payload = self.get(f"/api/timeline?storyboard_id={board}", token=stranger["token"])
         self.assertEqual(403, status)
         self.assertEqual("no_access", payload["error"]["code"])
+
+
+class Edits(Fixture):
+    """改与删。要紧的是即时性：下一次助手调用就该看到变化。"""
+
+    def test_the_author_can_delete_and_the_timeline_drops_it(self):
+        who, board, entry_id = self.with_entry()
+        status, payload = self.post("/api/entries/delete", {"entry_id": entry_id},
+                                    token=who["token"])
+        self.assertEqual(200, status)
+        self.assertTrue(payload["deleted"])
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=who["token"])
+        self.assertEqual([], view["entries"])
+
+    def test_a_deleted_entry_leaves_the_assistant_context_at_once(self):
+        who, board, entry_id = self.with_entry("mine, on the fence")
+        self.assertIn("mine, on the fence", self.assistant_sees(who["token"], board))
+        self.post("/api/entries/delete", {"entry_id": entry_id}, token=who["token"])
+        self.assertNotIn("mine, on the fence", self.assistant_sees(who["token"], board))
+
+    def test_another_contributor_cannot_delete_it(self):
+        owner, board, entry_id = self.with_entry()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        status, payload = self.post("/api/entries/delete", {"entry_id": entry_id},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("not_your_entry", payload["error"]["code"])
+
+    def test_deleting_twice_is_gone(self):
+        who, _, entry_id = self.with_entry()
+        self.post("/api/entries/delete", {"entry_id": entry_id}, token=who["token"])
+        status, payload = self.post("/api/entries/delete", {"entry_id": entry_id},
+                                    token=who["token"])
+        self.assertEqual(404, status)
+        self.assertEqual("gone", payload["error"]["code"])
+
+    def test_an_edit_is_screened_and_applied(self):
+        who, board, entry_id = self.with_entry("saw one")
+        self.client.replies = [OK_JSON]
+        status, payload = self.post("/api/entries/edit",
+                                    {"entry_id": entry_id, "story": "saw one on the fence"},
+                                    token=who["token"])
+        self.assertEqual(200, status)
+        self.assertTrue(payload["published"])
+        self.assertEqual("story", self.rows()[-1]["field"])
+        self.assertIn("saw one on the fence", self.assistant_sees(who["token"], board))
+
+    def test_a_rejected_edit_leaves_the_original_alone(self):
+        who, board, entry_id = self.with_entry("saw one")
+        self.client.replies = [REJECT_JSON]
+        status, payload = self.post("/api/entries/edit",
+                                    {"entry_id": entry_id, "story": "He lives at 42 Example St."},
+                                    token=who["token"])
+        self.assertEqual(200, status)
+        self.assertFalse(payload["published"])
+        self.assertEqual("saw one", self.db.entry(entry_id)["story"])
+        self.assertIn("saw one", self.assistant_sees(who["token"], board))
+
+    def test_an_edit_that_changes_nothing_skips_the_screener(self):
+        who, _, entry_id = self.with_entry("saw one")
+        self.client.calls.clear()
+        _, payload = self.post("/api/entries/edit", {"entry_id": entry_id, "story": "saw one"},
+                               token=who["token"])
+        self.assertTrue(payload["unchanged"])
+        self.assertEqual([], self.client.calls)
+
+    def test_a_closed_storyboard_takes_no_edits(self):
+        who, board, entry_id = self.with_entry()
+        self.db.conn.execute("UPDATE storyboards SET status = 'archived' WHERE id = ?", (board,))
+        status, payload = self.post("/api/entries/edit", {"entry_id": entry_id, "story": "later"},
+                                    token=who["token"])
+        self.assertEqual(409, status)
+        self.assertEqual("storyboard_closed", payload["error"]["code"])
 
 
 if __name__ == "__main__":

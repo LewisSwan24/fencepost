@@ -10,11 +10,12 @@ from urllib.parse import parse_qs
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, handle_stream,
-                       register_video, submit_entry, timeline)
+                       delete_entry, edit_entry, register_video, submit_entry, timeline)
 from proxy.db import Database, SqliteContext, SqliteHistory, SqliteScreeningLog
 from proxy.model import DashScope, UpstreamError, redact
 
-POST_ROUTES = ("/api/session", "/api/storyboards", "/api/videos", "/api/entries", "/api/assistant")
+POST_ROUTES = ("/api/session", "/api/storyboards", "/api/videos", "/api/entries",
+               "/api/entries/edit", "/api/entries/delete", "/api/assistant")
 GET_ROUTES = ("/api/timeline",)
 _DEPS = None
 
@@ -66,6 +67,10 @@ class handler(BaseHTTPRequestHandler):
             return self._json(*register_video(body, token, deps))
         if path == "/api/entries":
             return self._json(*submit_entry(body, token, deps))
+        if path == "/api/entries/edit":
+            return self._json(*edit_entry(body, token, deps))
+        if path == "/api/entries/delete":
+            return self._json(*delete_entry(body, token, deps))
         if body.get("stream"):
             return self._sse(body, token, deps)
         self._json(*handle(body, token, deps))
