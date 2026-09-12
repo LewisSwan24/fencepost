@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
-import api.assistant as entry                             # noqa: E402
+import api.index as entry                             # noqa: E402
 from proxy import auth                                    # noqa: E402
 from proxy.app import COPY, Deps                          # noqa: E402
 from proxy.model import UpstreamError                     # noqa: E402
