@@ -16,6 +16,7 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 from proxy import auth                                    # noqa: E402
 from proxy.app import COPY, Deps, handle, handle_stream    # noqa: E402
 from proxy.model import UpstreamError                     # noqa: E402
+from proxy import roles                                   # noqa: E402
 from proxy.ports import MemoryRateLimiter                 # noqa: E402
 
 VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
@@ -127,6 +128,32 @@ class Screener(unittest.TestCase):
         _, payload = handle(screen(submission="He lives at 42 Example St."), TOKEN, deps)
         self.assertFalse(payload["published"])
         self.assertFalse(deps.screening.records[0]["downgraded_non_english"])
+
+
+class LanguageFloor(unittest.TestCase):
+    """operations §4.3 的地板靠 looks_non_english 判断，它的边界要钉住。"""
+
+    def test_real_sentences_are_recognised(self):
+        for text in ("昨晚在栅栏上看到一只，盯着我看了好久。",
+                     "Tối qua tôi thấy một con trên hàng rào sau nhà, đuôi xù.",
+                     "رأيت واحداً على السياج خلف البيت الليلة الماضية."):
+            with self.subTest(text=text[:12]):
+                self.assertTrue(roles.looks_non_english(text))
+
+    def test_english_stays_english(self):
+        self.assertFalse(roles.looks_non_english("Saw one on the fence at the cafe last night."))
+
+    def test_text_without_letters_counts_as_english(self):
+        """纯标点和数字不带语言信号，照常可以被 reject——这是刻意的，不是漏网。
+
+        跑批里 zh-5、vi-5、ar-5 就落在这里：键盘乱敲拒掉它，不构成对哪个语言社群的歧视。
+        """
+        for text in ("。。。。。。1111111 ？？？", "........ ١١١١١١ ؟؟؟", "......... 1111111 ???"):
+            with self.subTest(text=text[:8]):
+                self.assertFalse(roles.looks_non_english(text))
+
+    def test_latin_gibberish_is_treated_like_english_gibberish(self):
+        self.assertFalse(roles.looks_non_english("ksjdhf aslkdjf 99999 xyzxyz khhh"))
 
 
 class Writer(unittest.TestCase):
