@@ -41,7 +41,9 @@ async function ensureSession() {
 }
 
 export async function me() {
-  if (!usesNetwork) return { user_id: "fixture-user", handle: HANDLE };
+  // 和 fixtures 里 GRANTS 的 owner_id 对上，否则分享页永远判不出「我是 owner」，
+  // 撤销按钮一次都不会出现。
+  if (!usesNetwork) return { user_id: "u_mel", handle: HANDLE };
   const { user_id, handle } = await ensureSession();
   return { user_id, handle };
 }
