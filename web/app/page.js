@@ -1,223 +1,131 @@
 "use client";
 
-// 这不是产品界面，是一个把整条契约从浏览器里走一遍的验证台：
-// 换令牌、建故事版、发 entry、读时间线、和助手流式对话、开讨论串。
-//
-// 真正的界面来自 Claude Design 的原型，核验通过之后再复刻。在那之前，这一页存在的意义
-// 是证明两个 Vercel 专案的形状跑得通：跨域、鉴权、SSE 都过得去。
+// 1 · My storyboards —— 我有权限的故事版，Active 与 Past 分开。
+// Past 里是 readonly 和 archived 两种状态，不是一个叫 past 的状态。
 
-import { useState } from "react";
-import { BASE, MODE, call, get, streamAssistant } from "../lib/api";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { dashboard, createStoryboard, MODE, assistantIsLive } from "../lib/api";
+import { relative } from "../lib/format";
+import { Sheet, ui } from "../components/ui";
+import styles from "./page.module.css";
 
-const SPECIES = ["brushtail", "ringtail", "other", "unknown"];
-
-function Panel({ title, children }) {
-  return (
-    <section style={{ border: "1px solid #d8d3cc", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-      <h2 style={{ fontSize: 15, margin: "0 0 12px", letterSpacing: 0.2 }}>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-const input = { padding: "6px 8px", border: "1px solid #c9c4bd", borderRadius: 5, font: "inherit" };
-const button = { ...input, cursor: "pointer", background: "#f3f0ec" };
-
-export default function Harness() {
-  const [handle, setHandle] = useState("neighbour-a");
-  const [session, setSession] = useState(null);
-  const [board, setBoard] = useState(null);
-  const [story, setStory] = useState("One on the fence at eleven, stared at me for a while.");
-  const [species, setSpecies] = useState("ringtail");
-  const [entries, setEntries] = useState([]);
-  const [question, setQuestion] = useState("Is the ringtail the one with the curly tail?");
-  const [answer, setAnswer] = useState("");
-  const [threads, setThreads] = useState([]);
-  const [note, setNote] = useState("");
+export default function Home() {
+  const router = useRouter();
+  const [boards, setBoards] = useState(null);
+  const [error, setError] = useState(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const token = session?.token;
+  useEffect(() => {
+    dashboard().then(setBoards, (e) => setError(e.message));
+  }, []);
 
-  async function run(what, job) {
+  async function create() {
     setBusy(true);
-    setNote(what + "…");
     try {
-      const result = await job();
-      setNote(what + " ✓");
-      return result;
-    } catch (error) {
-      setNote(what + " ✗ " + error.message);
-    } finally {
+      const made = await createStoryboard(title.trim());
+      router.push("/b/" + made.storyboard_id);
+    } catch (e) {
+      setError(e.message);
       setBusy(false);
     }
   }
 
   return (
-    <main>
-      <h1 style={{ fontSize: 22, marginBottom: 4 }}>Fencepost harness</h1>
-      <p style={{ color: "#6b645c", marginTop: 0 }}>
-        {MODE === "fixtures" ? "fixtures — nothing leaves this browser" : "live — " + BASE}
-        {note ? " · " + note : ""}
+    <div className={ui.screen}>
+      <div className={styles.head}>
+        <span className={styles.wordmark}>Fencepost</span>
+        <span className={styles.who}>
+          <span className={styles.initials} aria-hidden="true">mk</span>
+          mel_k
+        </span>
+      </div>
+
+      <div className={ui.body}>
+        <h1 className={styles.title}>My storyboards</h1>
+
+        {error ? <p className={styles.empty}>{error}</p> : null}
+        {!boards && !error ? <p className={styles.empty}>Loading…</p> : null}
+
+        {boards ? (
+          <>
+            <div className={ui.kicker} style={{ marginTop: 0 }}>Active</div>
+            {boards.active.length === 0 ? (
+              <p className={styles.empty}>Nothing on the go. Start one below.</p>
+            ) : (
+              boards.active.map((b) => <Card key={b.id} board={b} />)
+            )}
+
+            <div className={ui.kicker}>Past</div>
+            {boards.past.length === 0 ? (
+              <p className={styles.empty}>Nothing here yet.</p>
+            ) : (
+              boards.past.map((b) => <Card key={b.id} board={b} past />)
+            )}
+          </>
+        ) : null}
+      </div>
+
+      <div className={styles.newWrap}>
+        <button type="button" className={styles.new} onClick={() => setNewOpen(true)}
+                aria-label="New storyboard">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2.75" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </div>
+
+      <p className={styles.mode}>
+        {MODE === "fixtures"
+          ? "fixtures — nothing leaves this browser"
+          : assistantIsLive
+            ? "live — the assistant is answering for real"
+            : "live storyboards · Possum Help is running from fixtures"}
       </p>
 
-      <Panel title="1. Session">
-        <input style={input} value={handle} onChange={(e) => setHandle(e.target.value)} />{" "}
-        <button
-          style={button}
-          disabled={busy}
-          onClick={() =>
-            run("session", async () => {
-              const result = await call("/api/session", { body: { handle } });
-              setSession(result);
-            })
-          }
-        >
-          Get a token
-        </button>
-        {session ? (
-          <p style={{ color: "#6b645c" }}>
-            {session.handle} · token {String(session.token).slice(0, 12)}…
-          </p>
-        ) : null}
-      </Panel>
+      {newOpen ? (
+        <Sheet onClose={() => setNewOpen(false)} labelledBy="new-title">
+          <h2 id="new-title" className={ui.sheetTitle}>New storyboard</h2>
+          <label htmlFor="sb-title" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Title</label>
+          <input id="sb-title" value={title} onChange={(e) => setTitle(e.target.value)}
+                 placeholder="The one in the jacaranda"
+                 style={{
+                   width: "100%", height: 48, padding: "0 16px", marginTop: 6,
+                   borderRadius: 999, border: "1px solid var(--line)",
+                   background: "var(--bg)", color: "var(--text)", fontSize: 15,
+                 }} />
+          <button type="button" className={ui.btn} style={{ marginTop: 20 }}
+                  disabled={!title.trim() || busy} onClick={create}>
+            {busy ? "Creating…" : "Create"}
+          </button>
+        </Sheet>
+      ) : null}
+    </div>
+  );
+}
 
-      <Panel title="2. Storyboard">
-        <button
-          style={button}
-          disabled={!token || busy}
-          onClick={() =>
-            run("storyboard", async () => {
-              const result = await call("/api/storyboards", {
-                body: { title: "Fence at number 12" },
-                token,
-              });
-              setBoard(result.storyboard_id);
-            })
-          }
-        >
-          Create
-        </button>{" "}
-        <button
-          style={button}
-          disabled={!token || busy}
-          onClick={() => run("dashboard", () => get("/api/dashboard", token))}
-        >
-          Dashboard
-        </button>
-        {board ? <p style={{ color: "#6b645c" }}>storyboard {board}</p> : null}
-      </Panel>
-
-      <Panel title="3. Entry">
-        <select style={input} value={species} onChange={(e) => setSpecies(e.target.value)}>
-          {SPECIES.map((name) => (
-            <option key={name}>{name}</option>
-          ))}
-        </select>{" "}
-        <input
-          style={{ ...input, width: 380 }}
-          value={story}
-          onChange={(e) => setStory(e.target.value)}
-        />{" "}
-        <button
-          style={button}
-          disabled={!board || busy}
-          onClick={() =>
-            run("entry", () =>
-              call("/api/entries", { body: { storyboard_id: board, species, story }, token })
-            )
-          }
-        >
-          Post
-        </button>{" "}
-        <button
-          style={button}
-          disabled={!board || busy}
-          onClick={() =>
-            run("timeline", async () => {
-              const view = await get("/api/timeline?storyboard_id=" + board, token);
-              setEntries(view.entries);
-            })
-          }
-        >
-          Timeline
-        </button>
-        <ul>
-          {entries.map((entry) => (
-            <li key={entry.id}>
-              <strong>{entry.handle}</strong> · {entry.species} — {entry.story}
-              {entry.being_checked ? " · being checked" : ""}
-            </li>
-          ))}
-        </ul>
-      </Panel>
-
-      <Panel title="4. Assistant">
-        <input
-          style={{ ...input, width: 460 }}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-        />{" "}
-        <button
-          style={button}
-          disabled={!board || busy}
-          onClick={() =>
-            run("assistant", async () => {
-              setAnswer("");
-              await streamAssistant({
-                token,
-                storyboardId: board,
-                message: question,
-                onDelta: (piece) => setAnswer((soFar) => soFar + piece),
-              });
-            })
-          }
-        >
-          Ask (streaming)
-        </button>
-        {answer ? (
-          <p style={{ background: "#f7f5f2", padding: 12, borderRadius: 6 }}>{answer}</p>
-        ) : null}
-      </Panel>
-
-      <Panel title="5. Forum">
-        <button
-          style={button}
-          disabled={!board || busy}
-          onClick={() =>
-            run("thread", () =>
-              call("/api/forum/threads", {
-                body: {
-                  storyboard_id: board,
-                  title: "Who else hears it at 2am",
-                  body: "there is something walking on my roof every night",
-                },
-                token,
-              })
-            )
-          }
-        >
-          Start a thread
-        </button>{" "}
-        <button
-          style={button}
-          disabled={!board || busy}
-          onClick={() =>
-            run("forum", async () => {
-              const view = await get("/api/forum?storyboard_id=" + board, token);
-              setThreads(view.threads);
-            })
-          }
-        >
-          List threads
-        </button>
-        <ul>
-          {threads.map((thread) => (
-            <li key={thread.id}>
-              {thread.title} · {thread.handle} · {thread.post_count} posts
-            </li>
-          ))}
-        </ul>
-      </Panel>
-    </main>
+function Card({ board, past }) {
+  const people = board.participants
+    ? board.participants.length + (board.participants.length === 1 ? " person" : " people")
+    : null;
+  return (
+    <a href={"/b/" + board.id} className={[styles.card, past ? styles.cardPast : ""].join(" ")}>
+      <div style={{ height: past ? 110 : 148, background: "var(--surface-sunken)",
+                    opacity: past ? 0.62 : 1 }} />
+      <div className={styles.cardBody}>
+        <div className={styles.titleRow}>
+          <span className={past ? styles.cardTitlePast : styles.cardTitle}>{board.title}</span>
+          {past ? <span className={styles.readonly}>Read-only</span> : null}
+        </div>
+        <div className={styles.meta}>
+          {board.suburb ? <><span>{board.suburb}</span><span className={styles.dot} /></> : null}
+          {people ? <><span>{people}</span><span className={styles.dot} /></> : null}
+          <span>{relative(board.last_entry_at)}</span>
+        </div>
+      </div>
+    </a>
   );
 }
