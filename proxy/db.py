@@ -190,6 +190,25 @@ class Database:
                           (link_id,))
         self.conn.commit()
 
+    def redeem_link(self, link_id: str, storyboard_id: str, user_id: str,
+                    level: str, granted_by: str, upgrade: bool) -> None:
+        """兑换一张分享链接：给权限、把使用次数加一，一次提交。
+
+        分成两个方法调用过——先 grant 再 consume，各自提交。中间失败的话人进来了、
+        次数没加上，于是一张 max_uses=3 的链接可以放进第四个人。在一个带权限分享的
+        产品里，多放一个人比少放一个人严重。
+        """
+        if upgrade:
+            self.conn.execute(
+                "INSERT INTO access_grants (id, storyboard_id, user_id, level, granted_by, granted_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (storyboard_id, user_id) DO UPDATE SET "
+                "level = excluded.level, granted_at = excluded.granted_at, revoked_at = NULL",
+                (new_id(), storyboard_id, user_id, level, granted_by, now()))
+        self.conn.execute("UPDATE share_links SET used_count = used_count + 1 WHERE id = ?",
+                          (link_id,))
+        self.conn.commit()
+
     def revoke_share_link(self, link_id: str) -> None:
         self.conn.execute("UPDATE share_links SET revoked_at = ? WHERE id = ?", (now(), link_id))
         self.conn.commit()

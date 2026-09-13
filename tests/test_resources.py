@@ -438,6 +438,33 @@ class Sharing(Fixture):
         self.assertEqual(404, status)
         self.assertEqual("invalid_link", payload["error"]["code"])
 
+    def test_redeeming_grants_and_counts_in_one_write(self):
+        """授权和加次数得一起落地。
+
+        以前是两次调用各自提交：先 grant，再 consume_share_link。中间失败会让人进来
+        而次数没加上，于是一张 max_uses=3 的链接能放进第四个人——在一个靠权限分享的
+        产品里，多放一个人比少放一个人严重。这里钉住两个效果都在。
+        """
+        owner, board = self.board("owner")
+        _, link = self.post("/api/share-links",
+                            {"storyboard_id": board, "level": "contribute", "max_uses": 1},
+                            token=owner["token"])
+        guest = self.session("guest")
+        status, granted = self.post("/api/share-links/redeem", {"token": link["token"]},
+                                    token=guest["token"])
+        self.assertEqual(200, status)
+        self.assertEqual("contribute", granted["level"])
+        self.assertEqual("contribute", self.db.grant_level(board, guest["user_id"]))
+        self.assertEqual(1, self.db.share_link(link["share_link_id"])["used_count"])
+
+        # max_uses 用满之后，第二个人进不来，次数也不再动
+        other = self.session("other")
+        status, _ = self.post("/api/share-links/redeem", {"token": link["token"]},
+                              token=other["token"])
+        self.assertEqual(403, status)
+        self.assertIsNone(self.db.grant_level(board, other["user_id"]))
+        self.assertEqual(1, self.db.share_link(link["share_link_id"])["used_count"])
+
     def test_redeeming_never_downgrades(self):
         owner, board = self.board()
         _, issued = self.link(owner["token"], board, level="view")
