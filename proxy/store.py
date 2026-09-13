@@ -11,11 +11,15 @@ libSQL 就是 SQLite，这些原样成立。
 """
 
 import os
+import re
 import sqlite3
 import threading
 
 
 REMOTE_PREFIXES = ("libsql://", "https://", "http://", "file:")
+
+# 判断一条语句要不要事务。只看开头那个词就够——db.py 里没有拼接出来的动态 SQL。
+WRITE = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b", re.I)
 
 
 def open_store(path: str):
@@ -94,10 +98,10 @@ class Result:
 class LibsqlStore:
     """托管的 libSQL（Turso）。走 HTTP，没有本地文件，冷启动不会丢东西。
 
-    **和本地后端有一处语义差别，别装作没有**：这条链路上每条语句自己提交，
-    `commit()` 是空操作。db.py 里有若干处是「插一条，再插一条，然后 commit」，
-    在本地那是一个事务，在这里是两次独立写入——中间失败会留下半截状态。
-    真要原子性得用 libsql 的 batch，那是另一件事，不是这一层能偷偷解决的。
+    语义和本地后端一致，包括事务——见 _LibsqlConn。一开始这里是每条语句自己提交、
+    `commit()` 空操作，那样 db.py 里「插一条、再插一条、然后 commit」的地方就不再原子。
+    后来发现 ClientSync 除了 batch() 还有 transaction()，给的是真的 commit/rollback，
+    于是改成惰性开事务：调用点一个都不用动，那条差别也就不存在了，不需要谁去记住它。
     """
 
     remote = True
@@ -119,6 +123,11 @@ class LibsqlStore:
         client = getattr(self._local, "conn", None)
         if client is None:
             client = self._local.conn = _LibsqlConn(self._client())
+            # 和本地后端一样，外键要显式打开——SQLite 默认是关的，托管的也是。
+            # 漏了这一行，schema.sql 里所有 REFERENCES 在托管库上就全是装饰，
+            # 而且不会报错，只会在某天留下一条指向不存在的行的记录。
+            # 必须在任何事务开始之前发：PRAGMA 在事务里是不生效的。
+            client.execute("PRAGMA foreign_keys = ON")
         return client
 
     def close(self) -> None:
@@ -131,23 +140,48 @@ class LibsqlStore:
 
 
 class _LibsqlConn:
-    """把 libsql 的 client 包成 sqlite3 连接的样子。"""
+    """把 libsql 的 client 包成 sqlite3 连接的样子，事务语义也一样。
+
+    对齐的是 Python sqlite3 的默认行为，四条（都实测过，不是照记忆写的）：
+      第一条写语句开隐式事务，别的连接看不见；
+      事务内的读看得到自己还没提交的写；
+      commit() 才发布；
+      纯 SELECT 不开事务。
+
+    最后一条不是细节：读也开事务的话，一个只读请求会把事务一直挂着不关。
+    """
 
     def __init__(self, client):
         self._client = client
+        self._txn = None
+
+    def _target(self, sql: str):
+        """写语句要在事务里。事务已经开着的话读也走它，否则读不到自己刚写的东西。"""
+        if self._txn is None and WRITE.match(sql):
+            self._txn = self._client.transaction()
+        return self._txn or self._client
 
     def execute(self, sql: str, params=()) -> Result:
-        result = self._client.execute(sql, list(params))
+        result = self._target(sql).execute(sql, list(params))
         columns = list(result.columns or [])
         return Result([dict(zip(columns, tuple(row))) for row in result.rows])
 
     def executescript(self, script: str) -> None:
         # libsql 一次只吃一条语句，schema.sql 得拆开喂。
         for statement in filter(None, (s.strip() for s in script.split(";"))):
-            self._client.execute(statement)
+            self.execute(statement)
 
     def commit(self) -> None:
-        """空操作：每条语句已经自己提交了。见 LibsqlStore 的说明。"""
+        if self._txn is not None:
+            self._txn.commit()
+            self._txn = None
+
+    def rollback(self) -> None:
+        if self._txn is not None:
+            self._txn.rollback()
+            self._txn = None
 
     def close(self) -> None:
+        # 没提交的事务先扔掉再关，不然那条连接会挂在那里等
+        self.rollback()
         self._client.close()

@@ -451,12 +451,13 @@ def redeem_share_link(body: dict, token: str, deps: Deps):
         return 403, _error("link_used_up")
 
     existing = deps.db.grant_level(link["storyboard_id"], user_id)
-    granted = existing
     # 只升不降：一张 view 链接不该把 owner 降级
-    if existing is None or LEVEL_RANK[existing] < LEVEL_RANK[link["level"]]:
-        deps.db.grant(link["storyboard_id"], user_id, link["level"], link["created_by"])
-        granted = link["level"]
-    deps.db.consume_share_link(link["id"])
+    upgrade = existing is None or LEVEL_RANK[existing] < LEVEL_RANK[link["level"]]
+    granted = link["level"] if upgrade else existing
+    # 授权和加次数必须一起落地。分成两次调用时，中间失败会让人进来而次数没加，
+    # 于是一张 max_uses=3 的链接能放进第四个人。
+    deps.db.redeem_link(link["id"], link["storyboard_id"], user_id,
+                        link["level"], link["created_by"], upgrade)
     return 200, {"storyboard_id": link["storyboard_id"], "level": granted}
 
 
