@@ -1,4 +1,4 @@
-"""SQLite 数据层。
+"""数据层。SQL 都在这里，连接怎么建在 store.py。
 
 表结构不在这里抄第二份，读的是 schema.sql —— 那是 scripts/build_schema.py 从
 docs/data-model.md §1 生成的。docs/ 不进仓库，所以生成物必须进，否则别人 clone 下来
@@ -6,13 +6,12 @@ docs/data-model.md §1 生成的。docs/ 不进仓库，所以生成物必须进
 """
 
 import json
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .ports import DEFAULT_LIMITS, PermissionDenied, RateLimited
+from .store import open_store
 
 SCHEMA = Path(__file__).resolve().parent.parent / "schema.sql"
 HISTORY_TURNS = 6
@@ -35,34 +34,21 @@ def schema_sql() -> str:
 class Database:
     def __init__(self, path: str = ":memory:"):
         self.path = path
-        self._local = threading.local()
-        # 内存库没有文件可供别的线程重开，只能共享一条连接；文件库每线程各开一条。
-        self._shared = self._connect() if path == ":memory:" else None
+        # 连接怎么建、建到哪里，都在 store 里。这里只管 SQL。
+        # 地址是 libsql:// 或 http(s):// 就走托管库，其余是本地文件或 :memory:。
+        self.store = open_store(path)
         if not self.conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
         ).fetchone():
             self.conn.executescript(schema_sql())
             self.conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        # SQLite 的外键默认是关的。不开这一行，schema 里那些 REFERENCES 全是装饰。
-        conn.execute("PRAGMA foreign_keys = ON")
-        if self.path != ":memory:":
-            conn.execute("PRAGMA journal_mode = WAL")
-        return conn
-
     @property
-    def conn(self) -> sqlite3.Connection:
-        """每个线程一条连接。sqlite3 的连接不能跨线程使用，而 HTTP 服务器是多线程的——
-        这条是本机 HTTP 验证抓出来的，单元测试全在同一个线程里，看不见。"""
-        if self._shared is not None:
-            return self._shared
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = self._local.conn = self._connect()
-        return conn
+    def conn(self):
+        return self.store.conn
+
+    def close(self) -> None:
+        self.store.close()
 
     def tables(self) -> set:
         rows = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
