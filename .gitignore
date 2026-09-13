@@ -7,3 +7,6 @@ CLAUDE.md
 tests/redline_report_*.md
 .vercel/
 tests/nonenglish_report_*.md
+
+.agents/
+skills-lock.json

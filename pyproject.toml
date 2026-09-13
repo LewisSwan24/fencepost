@@ -4,9 +4,9 @@
 name = "fencepost"
 version = "0.1.0"
 requires-python = ">=3.12"
-# libsql-client 只在 FENCEPOST_DB 是 libsql:// 地址时才 import（见 proxy/store.py），
-# 但它得装进 function，否则托管库那条路一上去就 ImportError。
-dependencies = ["openai==3.13.0", "libsql-client==0.3.1"]
+# libsql 只在地址是 libsql:// 时才 import（见 proxy/store.py），但它得装进 function，
+# 否则托管库那条路一上去就 ImportError。用官方包，不是已弃用的 libsql-client。
+dependencies = ["openai==3.13.0", "libsql==0.1.11"]
 
 [tool.uv]
 package = false          # 这是个应用，不是要构建的库，别让 uv 去 build 它

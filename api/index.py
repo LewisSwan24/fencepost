@@ -16,6 +16,7 @@ from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, ha
                        review_queue,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        submit_entry, timeline)
+from proxy.env import load_env
 from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
                       SqliteScreeningLog)
 from proxy.model import DashScope, UpstreamError, redact
@@ -39,11 +40,24 @@ def _deps() -> Deps:
     # 历史、上下文、筛查记录与限流都走 SQLite；库文件路径用 FENCEPOST_DB 指定。
     global _DEPS
     if _DEPS is None:
-        # Vercel 上只有 /tmp 可写，而且每个实例一份、冷启动就没。
-        # 也就是说 serverless 上的 SQLite 只是能跑起来，不是能用——真要用得换托管数据库。
+        # 先把 .env 与 .env.local 读进来。DashScope() 自己也会调，但那是在下面几行之后，
+        # 而托管库的地址就在 .env.local 里——不先读，本机跑的时候这里取到的是 None，
+        # 于是静悄悄地退回本地文件，看起来一切正常。
+        load_env()
+        # 地址按这个顺序挑：
+        #   FENCEPOST_DB        显式指定，测试和本机文件库用它
+        #   TURSO_DATABASE_URL  托管库。vercel integration add 自动注入，没人需要手抄
+        #   /tmp                Vercel 上的退路，每实例一份、冷启动清空
+        #   本地文件            开发机
+        #
+        # /tmp 只能当退路：2026-09-13 实测，同一个 handle 在不同实例上拿到过两个不同的
+        # user_id，一次页面加载里 dashboard 列得出的故事版，timeline 回 403。
+        # serverless 上的 SQLite 是能跑，不是能用。
         default_db = ("/tmp/fencepost.db" if os.getenv("VERCEL")
                       else str(Path(__file__).resolve().parent.parent / "fencepost.db"))
-        db = Database(os.getenv("FENCEPOST_DB", default_db))
+        db = Database(os.getenv("FENCEPOST_DB")
+                      or os.getenv("TURSO_DATABASE_URL")
+                      or default_db)
         _DEPS = Deps(client=DashScope(), limiter=SqliteRateLimiter(db),
                      history=SqliteHistory(db), context=SqliteContext(db),
                      screening=SqliteScreeningLog(db), db=db)

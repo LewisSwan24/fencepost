@@ -6,6 +6,7 @@ docs/data-model.md §1 生成的。docs/ 不进仓库，所以生成物必须进
 """
 
 import json
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -31,17 +32,44 @@ def schema_sql() -> str:
     return SCHEMA.read_text(encoding="utf-8")
 
 
+def _schema_table_names() -> list[str]:
+    """schema.sql 该建出哪些表。从生成物里读，不在这里抄第二份名单。"""
+    return re.findall(r"CREATE TABLE\s+(\w+)", schema_sql(), re.I)
+
+
 class Database:
     def __init__(self, path: str = ":memory:"):
         self.path = path
         # 连接怎么建、建到哪里，都在 store 里。这里只管 SQL。
         # 地址是 libsql:// 或 http(s):// 就走托管库，其余是本地文件或 :memory:。
         self.store = open_store(path)
-        if not self.conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'"
-        ).fetchone():
-            self.conn.executescript(schema_sql())
-            self.conn.commit()
+        self._apply_schema()
+
+    def _apply_schema(self) -> None:
+        """逐条建表，已经存在的跳过。
+
+        原本是「users 表在不在」一个判断决定要不要整体建表。那个写法有个洞：建到一半
+        失败的话，users 已经建出来了，下次启动就认为建过了，剩下 11 张表永远不会补上。
+        2026-09-13 真撞上了——弃用的客户端建到第二条就挂了，库里只剩一张表，
+        而应用坚持认为一切正常。
+
+        逐条来就能自愈。代价是它只保证「表在」，不保证「表对」——列改了的话这里看不出来，
+        那种漂移由 tests/test_data_layer.py 对着文档比对。
+        """
+        # 按名字比对，不按数量。数量会被 sqlite_autoindex_* 和别人留下的表撑起来，
+        # 于是真缺了表也看不出来——这种判断坏起来是不出声的。
+        wanted = set(_schema_table_names())
+        existing = {row["name"] for row in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+        if wanted <= existing:
+            return
+        for statement in filter(None, (s.strip() for s in schema_sql().split(";"))):
+            try:
+                self.conn.execute(statement)
+            except Exception as exc:
+                if "already exists" not in str(exc).lower():
+                    raise
+        self.conn.commit()
 
     @property
     def conn(self):
@@ -53,12 +81,12 @@ class Database:
     def foreign_key_violations(self) -> list[dict]:
         """指向不存在的父行的记录。每条是 {table, rowid, parent, fkid}。
 
-        托管的 libSQL 上外键**强制不了**——`PRAGMA foreign_keys = ON` 在那个客户端上
-        发不进去，读回来永远是 0（见 tests/test_store.py 里那条以事实命名的测试）。
-        但 `PRAGMA foreign_key_check` 是检测命令不是开关，它在两个后端上都能用。
+        两个后端都强制外键（本地靠 `PRAGMA foreign_keys = ON`，官方 libsql SDK 默认就开），
+        所以正常情况下这里永远是空的。留着它是因为强制只管「从现在起」——历史数据、
+        手工改过的库、或者哪天换了不强制外键的驱动，都只有查一次才看得见。
 
-        所以强制这一层丢了，可见性这一层补回来：交付前跑一次，别让「无声失效」
-        真的无声。本地后端上这个结果应该永远是空的，因为那边外键是开着的。
+        写这个方法的起因是一次误判：弃用的 `libsql-client` 收不下那个 pragma，我据此
+        以为 libSQL 不强制外键。换成官方 SDK 之后不成立了。方法留着，结论改了。
         """
         return [dict(row) for row in self.conn.execute("PRAGMA foreign_key_check").fetchall()]
 
