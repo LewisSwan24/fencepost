@@ -50,6 +50,18 @@ class Database:
     def close(self) -> None:
         self.store.close()
 
+    def foreign_key_violations(self) -> list[dict]:
+        """指向不存在的父行的记录。每条是 {table, rowid, parent, fkid}。
+
+        托管的 libSQL 上外键**强制不了**——`PRAGMA foreign_keys = ON` 在那个客户端上
+        发不进去，读回来永远是 0（见 tests/test_store.py 里那条以事实命名的测试）。
+        但 `PRAGMA foreign_key_check` 是检测命令不是开关，它在两个后端上都能用。
+
+        所以强制这一层丢了，可见性这一层补回来：交付前跑一次，别让「无声失效」
+        真的无声。本地后端上这个结果应该永远是空的，因为那边外键是开着的。
+        """
+        return [dict(row) for row in self.conn.execute("PRAGMA foreign_key_check").fetchall()]
+
     def tables(self) -> set:
         rows = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         return {row["name"] for row in rows}
