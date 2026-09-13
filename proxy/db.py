@@ -144,6 +144,19 @@ class Database:
             (storyboard_id, user_id)).fetchone()
         return row["level"] if row else None
 
+    def grants(self, storyboard_id: str) -> list[dict]:
+        """谁现在有权限，各是哪一档。撤销过的不在里面——撤销立即生效，界面上也不留痕。
+
+        出 user_id 是因为撤销要按 id 撤：handle 不是主键，也不该被当成主键用。
+        真名不进库，所以这里最多也只有 handle。
+        """
+        rows = self.conn.execute(
+            "SELECT g.user_id, u.handle, g.level, g.granted_at FROM access_grants g "
+            "JOIN users u ON u.id = g.user_id "
+            "WHERE g.storyboard_id = ? AND g.revoked_at IS NULL "
+            "ORDER BY g.granted_at", (storyboard_id,)).fetchall()
+        return [dict(row) for row in rows]
+
     def storyboard_status(self, storyboard_id: str):
         row = self.conn.execute("SELECT status FROM storyboards WHERE id = ?",
                                 (storyboard_id,)).fetchone()
@@ -316,6 +329,12 @@ class Database:
             "SELECT storyboard_id FROM forum_threads WHERE id = ? AND deleted_at IS NULL",
             (thread_id,)).fetchone()
         return row["storyboard_id"] if row else None
+
+    def thread_title(self, thread_id: str):
+        row = self.conn.execute(
+            "SELECT title FROM forum_threads WHERE id = ? AND deleted_at IS NULL",
+            (thread_id,)).fetchone()
+        return row["title"] if row else None
 
     def threads(self, storyboard_id: str) -> list[dict]:
         rows = self.conn.execute(
