@@ -1,33 +1,33 @@
 """数据库连接层。SQL 不在这里，一条都没有。
 
 分出来只为一件事：让 db.py 那 63 条语句在换库的时候一个字都不用改。
-所以两个后端都装成 sqlite3 的样子——`.execute(sql, params)` 回一个有 `.fetchone()`
+两个后端都装成 sqlite3 的样子——`.execute(sql, params)` 回一个有 `.fetchone()`
 和 `.fetchall()` 的东西，行可以按列名取，也可以 `dict(row)`。
 
 为什么是 libSQL 而不是 Postgres：`?` 占位、`ORDER BY ... rowid`、schema.sql 里那些
 CHECK 和 TIMESTAMP，全是 SQLite 的写法，而 schema.sql 是从 docs/data-model.md §1
 生成的。换 Postgres 要改的不只是 63 条语句，还有那个生成器——它是 schema 的唯一来源。
-libSQL 就是 SQLite，这些原样成立。
+
+**用的是官方的 `libsql`，不是 `libsql-client`。** 后者是弃用包，停在 2023 年的 0.3.1，
+对现在的 Turso 有三处不兼容：WebSocket 握手被拒、HTTP 传输不支持事务、错误响应解析不了
+（`KeyError: 'result'`）。更要紧的是它收不下 `PRAGMA foreign_keys`，于是 schema 里每一条
+REFERENCES 都无声失效——我一度把这条当成 libSQL 的性质写进了文档，那是错的，
+它只是那个弃用客户端的性质。官方 SDK 上外键默认开启且真的拦（实测 2026-09-13）。
 """
 
 import os
-import re
 import sqlite3
 import threading
 
 
 REMOTE_PREFIXES = ("libsql://", "https://", "http://", "file:")
 
-# 判断一条语句要不要事务。只看开头那个词就够——db.py 里没有拼接出来的动态 SQL。
-WRITE = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b", re.I)
-
 
 def open_store(path: str):
     """按地址挑后端。libsql:// 或 http(s):// 走托管库，其余当本地文件或 :memory:。
 
-    `file:` 也走 libSQL 这条。它是 libSQL 自己的本地地址形式，留着这条口子，
-    整个数据层就能在没有 Turso 账号的情况下跑在**真客户端**上——
-    对着替身测出来的「通过」，和对着真库测出来的不是一回事。
+    `file:` 也走 libSQL 这条。留着这条口子，整个数据层就能在没有托管库的情况下跑在
+    **真客户端**上——对着替身测出来的「通过」，和对着真库测出来的不是一回事。
     普通路径（`fencepost.db`、`:memory:`）不带 scheme，不会误入。
     """
     if path.startswith(REMOTE_PREFIXES):
@@ -76,14 +76,16 @@ class SqliteStore:
 
 
 class Result:
-    """把一次查询的结果装成 sqlite3 游标的样子。行一律是 dict——
+    """把一个游标的结果装成 sqlite3 游标的样子。行一律是 dict——
 
     `row["handle"]` 和 `dict(row)` 是 db.py 唯一用到的两种取法，dict 两样都满足，
-    也不用把 libsql 自己的 Row 类型泄漏到上层。
+    也不用把驱动自己的行类型泄漏到上层。官方 SDK 的行是元组，列名在 description 里。
     """
 
-    def __init__(self, rows: list):
-        self._rows = rows
+    def __init__(self, cursor):
+        columns = [d[0] for d in (cursor.description or [])]
+        self._rows = [dict(zip(columns, tuple(row))) for row in cursor.fetchall()] \
+            if columns else []
 
     def fetchone(self):
         return self._rows[0] if self._rows else None
@@ -96,12 +98,10 @@ class Result:
 
 
 class LibsqlStore:
-    """托管的 libSQL（Turso）。走 HTTP，没有本地文件，冷启动不会丢东西。
+    """托管的 libSQL（Turso）。走网络，没有本地文件，冷启动不会丢东西。
 
-    语义和本地后端一致，包括事务——见 _LibsqlConn。一开始这里是每条语句自己提交、
-    `commit()` 空操作，那样 db.py 里「插一条、再插一条、然后 commit」的地方就不再原子。
-    后来发现 ClientSync 除了 batch() 还有 transaction()，给的是真的 commit/rollback，
-    于是改成惰性开事务：调用点一个都不用动，那条差别也就不存在了，不需要谁去记住它。
+    语义和本地后端一致：官方 SDK 就是 DBAPI 那套，事务、commit、rollback 都是真的，
+    外键默认开着。所以这一层只做一件事——把游标的元组行翻成 dict。
     """
 
     remote = True
@@ -109,79 +109,52 @@ class LibsqlStore:
     def __init__(self, url: str):
         self.path = url
         self._local = threading.local()
-        self._token = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("LIBSQL_AUTH_TOKEN")
+        self._token = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("LIBSQL_AUTH_TOKEN") or ""
 
-    def _client(self):
+    def _connect(self):
         try:
-            import libsql_client
+            import libsql
         except ImportError as exc:  # pragma: no cover —— 只在没装依赖时走到
-            raise RuntimeError("远端库需要 libsql-client：pip install libsql-client") from exc
-        return libsql_client.create_client_sync(self.path, auth_token=self._token)
+            raise RuntimeError(
+                "托管库需要官方 SDK：pip install libsql（注意不是 libsql-client，那个已弃用）"
+            ) from exc
+        # file: 是给测试用的本地地址，去掉 scheme 交给驱动当普通路径。
+        target = self.path[len("file:"):] if self.path.startswith("file:") else self.path
+        if self.path.startswith("file:"):
+            return _LibsqlConn(libsql.connect(target))
+        return _LibsqlConn(libsql.connect(target, auth_token=self._token))
 
     @property
     def conn(self):
-        client = getattr(self._local, "conn", None)
-        if client is None:
-            client = self._local.conn = _LibsqlConn(self._client())
-            # 和本地后端一样，外键要显式打开——SQLite 默认是关的，托管的也是。
-            # 漏了这一行，schema.sql 里所有 REFERENCES 在托管库上就全是装饰，
-            # 而且不会报错，只会在某天留下一条指向不存在的行的记录。
-            # 必须在任何事务开始之前发：PRAGMA 在事务里是不生效的。
-            client.execute("PRAGMA foreign_keys = ON")
-        return client
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._local.conn = self._connect()
+        return conn
 
     def close(self) -> None:
-        """必须关。libsql 的 client 背着一条事件循环线程，不关的话进程退不出去——
-        单元测试第一个撞上，多线程的 serve_local 则是每个请求线程漏一条。"""
-        client = getattr(self._local, "conn", None)
-        if client is not None:
-            client.close()
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
         self._local.conn = None
 
 
 class _LibsqlConn:
-    """把 libsql 的 client 包成 sqlite3 连接的样子，事务语义也一样。
+    """把官方 SDK 的连接包成 db.py 期望的那个形状。只翻行，不管事务——驱动自己管。"""
 
-    对齐的是 Python sqlite3 的默认行为，四条（都实测过，不是照记忆写的）：
-      第一条写语句开隐式事务，别的连接看不见；
-      事务内的读看得到自己还没提交的写；
-      commit() 才发布；
-      纯 SELECT 不开事务。
-
-    最后一条不是细节：读也开事务的话，一个只读请求会把事务一直挂着不关。
-    """
-
-    def __init__(self, client):
-        self._client = client
-        self._txn = None
-
-    def _target(self, sql: str):
-        """写语句要在事务里。事务已经开着的话读也走它，否则读不到自己刚写的东西。"""
-        if self._txn is None and WRITE.match(sql):
-            self._txn = self._client.transaction()
-        return self._txn or self._client
+    def __init__(self, conn):
+        self._conn = conn
 
     def execute(self, sql: str, params=()) -> Result:
-        result = self._target(sql).execute(sql, list(params))
-        columns = list(result.columns or [])
-        return Result([dict(zip(columns, tuple(row))) for row in result.rows])
+        return Result(self._conn.execute(sql, tuple(params)))
 
     def executescript(self, script: str) -> None:
-        # libsql 一次只吃一条语句，schema.sql 得拆开喂。
-        for statement in filter(None, (s.strip() for s in script.split(";"))):
-            self.execute(statement)
+        self._conn.executescript(script)
 
     def commit(self) -> None:
-        if self._txn is not None:
-            self._txn.commit()
-            self._txn = None
+        self._conn.commit()
 
     def rollback(self) -> None:
-        if self._txn is not None:
-            self._txn.rollback()
-            self._txn = None
+        self._conn.rollback()
 
     def close(self) -> None:
-        # 没提交的事务先扔掉再关，不然那条连接会挂在那里等
-        self.rollback()
-        self._client.close()
+        self._conn.close()
