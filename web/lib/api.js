@@ -24,22 +24,28 @@ export const assistantIsLive = MODE === "live";
 
 // 令牌只放内存。刷新就重新换一个——开放注册的前提下这没有代价，
 // 而把 bearer token 塞进 localStorage 是给自己找麻烦。
-let token = null;
+let session = null;
 let pending = null;
 
-async function ensureToken() {
-  if (token) return token;
+// 整个 session 都留着，不只是令牌：界面要用 user_id 判断「这条是不是我写的」
+// （自己的 entry 不该出现投票按钮，服务端对作者投票回 403 not_your_call）
+// 和「我是不是 owner」（撤销权限只有 owner 能做）。
+async function ensureSession() {
+  if (session) return session;
   if (!pending) {
     pending = request("/api/session", { body: { handle: HANDLE } })
-      .then((session) => {
-        token = session.token;
-        return token;
-      })
-      .finally(() => {
-        pending = null;
-      });
+      .then((got) => (session = got))
+      .finally(() => (pending = null));
   }
   return pending;
+}
+
+export async function me() {
+  // 和 fixtures 里 GRANTS 的 owner_id 对上，否则分享页永远判不出「我是 owner」，
+  // 撤销按钮一次都不会出现。
+  if (!usesNetwork) return { user_id: "u_mel", handle: HANDLE };
+  const { user_id, handle } = await ensureSession();
+  return { user_id, handle };
 }
 
 async function request(path, { method, body, auth } = {}) {
@@ -70,7 +76,7 @@ export class ApiError extends Error {
 }
 
 async function call(path, options = {}) {
-  return request(path, { ...options, auth: await ensureToken() });
+  return request(path, { ...options, auth: (await ensureSession()).token });
 }
 
 // ── 故事版 ────────────────────────────────────────────────
@@ -156,3 +162,60 @@ export async function identifyFrame({ storyboardId, imageBase64 }) {
 function delayed(value, ms = 650) {
   return new Promise((done) => setTimeout(() => done(value), ms));
 }
+
+// ── 复核（公开的社区投票，不是系统判定） ──────────────────
+export async function castVote(entryId, vote) {
+  // vote 是 looks_right 或 worth_checking。作者对自己的 entry 投票会被服务端挡回来，
+  // 所以界面在自己的 entry 上根本不显示这两个按钮。
+  if (!usesNetwork) return fixtures.castVote(entryId, vote);
+  return call("/api/review/vote", { body: { entry_id: entryId, vote } });
+}
+
+// ── 讨论区 ────────────────────────────────────────────────
+// 单独的表、单独的端点。助手的上下文物理上够不到这里，这是故意的。
+export async function forumThreads(storyboardId) {
+  if (!usesNetwork) return fixtures.forumThreads(storyboardId);
+  return call("/api/forum?storyboard_id=" + encodeURIComponent(storyboardId));
+}
+
+export async function readThread(threadId) {
+  if (!usesNetwork) return fixtures.readThread(threadId);
+  return call("/api/forum/thread?thread_id=" + encodeURIComponent(threadId));
+}
+
+export async function createThread({ storyboardId, title, body }) {
+  if (!usesNetwork) return fixtures.createThread({ storyboardId, title, body });
+  return call("/api/forum/threads", { body: { storyboard_id: storyboardId, title, body } });
+}
+
+export async function createPost({ threadId, body }) {
+  if (!usesNetwork) return fixtures.createPost({ threadId, body });
+  return call("/api/forum/posts", { body: { thread_id: threadId, body } });
+}
+
+// ── 分享与权限 ────────────────────────────────────────────
+export async function issueShareLink({ storyboardId, level, expiresInDays }) {
+  if (!usesNetwork) return fixtures.issueShareLink({ storyboardId, level, expiresInDays });
+  return call("/api/share-links", {
+    body: { storyboard_id: storyboardId, level, expires_in_days: expiresInDays },
+  });
+}
+
+export async function redeemShareLink(token) {
+  if (!usesNetwork) return fixtures.redeemShareLink(token);
+  return call("/api/share-links/redeem", { body: { token } });
+}
+
+export async function grants(storyboardId) {
+  if (!usesNetwork) return fixtures.grants(storyboardId);
+  return call("/api/grants?storyboard_id=" + encodeURIComponent(storyboardId));
+}
+
+export async function revokeGrant({ storyboardId, userId }) {
+  if (!usesNetwork) return fixtures.revokeGrant({ storyboardId, userId });
+  return call("/api/grants/revoke", { body: { storyboard_id: storyboardId, user_id: userId } });
+}
+
+// 演示用的离线降级。设成 offline 就让助手区显示降级文案，输入框照常可用——
+// 这是 prototype-user-flow 要的那个状态，不是错误处理。
+export const assistantOffline = process.env.NEXT_PUBLIC_FENCEPOST_ASSISTANT === "offline";

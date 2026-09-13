@@ -378,3 +378,124 @@ export function submitEntry(body) {
   }
   return { entry_id: entry.id, published: true, prompt_version: PROMPT_VERSION };
 }
+
+// ── 讨论区（离线数据集） ──
+// 单独的表、单独的端点。助手够不到这里，是设计如此，不是碰巧。
+const FORUM = {
+  sb_jacaranda: [
+    {
+      id: "t1", handle: "dan_h", title: "Anyone else's mango tree getting stripped?",
+      created_at: "2026-09-11T19:22:00+10:00", post_count: 4,
+      posts: [
+        { id: "t1p0", handle: "dan_h", created_at: "2026-09-11T19:22:00+10:00",
+          body: "Half the fruit is gone and what's left has bites out of it. Assuming it's the same one that's been on the fence, but I've never actually seen it in the tree." },
+        { id: "t1p1", handle: "aroha_t", created_at: "2026-09-11T20:04:00+10:00",
+          body: "Same here with the lillypilly. They go for the soft stuff first and leave the rest on the ground." },
+        { id: "t1p2", handle: "mel_k", created_at: "2026-09-11T21:40:00+10:00",
+          body: "Mine only started once the fruit got ripe. Netting helped but you have to get the edges right or they just walk under it." },
+        { id: "t1p3", handle: "sione_f", created_at: "2026-09-12T08:15:00+10:00",
+          body: "Picked the last of ours early this year and it was fine on the windowsill. Beat them to it basically." },
+      ],
+    },
+    {
+      id: "t2", handle: "sione_f", title: "What actually keeps them out of the roof?",
+      created_at: "2026-09-09T22:10:00+10:00", post_count: 3,
+      posts: [
+        { id: "t2p0", handle: "sione_f", created_at: "2026-09-09T22:10:00+10:00",
+          body: "Had one going up the drainpipe every night for a fortnight. Before I spend money on it — what worked for people here?" },
+        { id: "t2p1", handle: "dan_h", created_at: "2026-09-10T07:35:00+10:00",
+          body: "Sealing the gaps once it's out, and doing it at night when you know it's not in there. Ours came back for a week and gave up." },
+        { id: "t2p2", handle: "mel_k", created_at: "2026-09-10T19:02:00+10:00",
+          body: "Ours was the gap where the gutter meets the eave. Took a torch and a lot of squinting to find it." },
+      ],
+    },
+  ],
+  sb_roof: [],
+};
+
+let forumSeq = 0;
+
+export function forumThreads(storyboardId) {
+  const threads = (FORUM[storyboardId] || []).map(({ posts, ...rest }) => rest);
+  return { storyboard_id: storyboardId, threads };
+}
+
+export function readThread(threadId) {
+  for (const list of Object.values(FORUM)) {
+    const thread = list.find((t) => t.id === threadId);
+    if (thread) return { thread_id: threadId, title: thread.title, posts: thread.posts.map((p) => ({ ...p })) };
+  }
+  return { thread_id: threadId, posts: [] };
+}
+
+export function createThread({ storyboardId, title, body }) {
+  forumSeq += 1;
+  const id = "t_new_" + forumSeq;
+  const now = new Date().toISOString();
+  const thread = {
+    id, handle: "mel_k", title, created_at: now, post_count: 1,
+    posts: [{ id: id + "p0", handle: "mel_k", body, created_at: now }],
+  };
+  (FORUM[storyboardId] || (FORUM[storyboardId] = [])).unshift(thread);
+  return { thread_id: id, post_id: thread.posts[0].id, published: true, prompt_version: PROMPT_VERSION };
+}
+
+export function createPost({ threadId, body }) {
+  for (const list of Object.values(FORUM)) {
+    const thread = list.find((t) => t.id === threadId);
+    if (!thread) continue;
+    forumSeq += 1;
+    const post = { id: "p_new_" + forumSeq, handle: "mel_k", body, created_at: new Date().toISOString() };
+    thread.posts.push(post);
+    thread.post_count = thread.posts.length;
+    return { thread_id: threadId, post_id: post.id, published: true, prompt_version: PROMPT_VERSION };
+  }
+  return { thread_id: threadId, published: false, reason_codes: [], prompt_version: PROMPT_VERSION };
+}
+
+// ── 复核投票 ──
+export function castVote(entryId, vote) {
+  return { entry_id: entryId, worth_checking: vote === "worth_checking" ? 1 : 0, looks_right: vote === "looks_right" ? 1 : 0 };
+}
+
+// ── 分享与权限 ──
+const GRANTS = {
+  sb_jacaranda: [
+    { user_id: "u_mel", handle: "mel_k", level: "reshare", granted_at: "2026-08-28T10:00:00+10:00" },
+    { user_id: "u_dan", handle: "dan_h", level: "reshare", granted_at: "2026-08-29T18:40:00+10:00" },
+    { user_id: "u_aroha", handle: "aroha_t", level: "contribute", granted_at: "2026-09-02T09:15:00+10:00" },
+    { user_id: "u_sione", handle: "sione_f", level: "contribute", granted_at: "2026-09-06T20:02:00+10:00" },
+    { user_id: "u_priya", handle: "priya_r", level: "view", granted_at: "2026-09-11T12:30:00+10:00" },
+  ],
+  sb_roof: [
+    { user_id: "u_mel", handle: "mel_k", level: "reshare", granted_at: "2026-07-25T22:00:00+10:00" },
+  ],
+};
+
+export function grants(storyboardId) {
+  return { storyboard_id: storyboardId, owner_id: "u_mel",
+           grants: (GRANTS[storyboardId] || []).map((g) => ({ ...g })) };
+}
+
+export function revokeGrant({ storyboardId, userId }) {
+  GRANTS[storyboardId] = (GRANTS[storyboardId] || []).filter((g) => g.user_id !== userId);
+  return { storyboard_id: storyboardId, user_id: userId, revoked: true };
+}
+
+export function issueShareLink({ storyboardId, level, expiresInDays }) {
+  const days = expiresInDays || 7;
+  return {
+    share_link_id: "sl_" + Math.random().toString(36).slice(2, 8),
+    token: "fixture-" + Math.random().toString(36).slice(2, 14),
+    level,
+    expires_at: new Date(Date.now() + days * 86400000).toISOString(),
+    max_uses: null,
+  };
+}
+
+export function redeemShareLink(token) {
+  if (String(token).startsWith("fixture-")) return { storyboard_id: "sb_jacaranda", level: "contribute" };
+  const error = new Error("This link doesn't work.");
+  error.status = 404;
+  throw error;
+}

@@ -644,6 +644,18 @@ class Forum(Fixture):
         self.assertEqual(404, status)
         self.assertEqual("gone", payload["error"]["code"])
 
+    def test_reading_a_thread_carries_its_title(self):
+        owner, board = self.board("owner")
+        self.client.replies = [OK_JSON]
+        _, made = self.post("/api/forum/threads",
+                            {"storyboard_id": board, "title": "That clicking noise",
+                             "body": "Never heard it before."}, token=owner["token"])
+        status, view = self.get(f"/api/forum/thread?thread_id={made['thread_id']}",
+                                token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual("That clicking noise", view["title"])
+        self.assertEqual(1, len(view["posts"]))
+
 
 class Review(Fixture):
     """operations §2：谁看得见、怎么投、两票定音、七天自动清、owner 有最终处置权。"""
@@ -748,6 +760,50 @@ class Review(Fixture):
         self.assertEqual([], self.queue(guest["token"], board)[1]["items"])
         _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
         self.assertEqual(0, view["entries"][0]["being_checked"])
+
+
+class Grants(Fixture):
+    """GET /api/grants —— 分享那一屏要知道谁有权限、各是哪一档。"""
+
+    def test_the_owner_sees_themselves_and_everyone_they_let_in(self):
+        owner, board = self.board("owner")
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        status, payload = self.get(f"/api/grants?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual(owner["user_id"], payload["owner_id"])
+        self.assertEqual({("owner", "reshare"), ("guest", "contribute")},
+                         {(g["handle"], g["level"]) for g in payload["grants"]})
+
+    def test_a_revoked_grant_leaves_the_list(self):
+        owner, board = self.board("owner")
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        self.post("/api/grants/revoke", {"storyboard_id": board, "user_id": guest["user_id"]},
+                  token=owner["token"])
+        _, payload = self.get(f"/api/grants?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(["owner"], [g["handle"] for g in payload["grants"]])
+
+    def test_a_read_only_viewer_cannot_see_the_list(self):
+        owner, board = self.board("owner")
+        watcher = self.session("watcher")
+        self.db.grant(board, watcher["user_id"], "view", owner["user_id"])
+        status, payload = self.get(f"/api/grants?storyboard_id={board}", token=watcher["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("cannot_share", payload["error"]["code"])
+
+    def test_a_stranger_gets_nothing(self):
+        _, board = self.board("owner")
+        stranger = self.session("stranger")
+        status, _ = self.get(f"/api/grants?storyboard_id={board}", token=stranger["token"])
+        self.assertEqual(403, status)
+
+    def test_the_list_carries_the_user_id_revoking_needs(self):
+        owner, board = self.board("owner")
+        _, payload = self.get(f"/api/grants?storyboard_id={board}", token=owner["token"])
+        target = payload["grants"][0]
+        # 拿名单里的 user_id 直接去撤销，不需要再查一次
+        self.assertEqual(owner["user_id"], target["user_id"])
 
 
 if __name__ == "__main__":

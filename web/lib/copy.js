@@ -4,6 +4,7 @@
 // 不要就地改——改文档，再改这里。剩下的是原型带来的新文案，已经同步进 ux-copy.md。
 
 export const COPY = {
+  levelLabel: { view: "Can view", contribute: "Can add sightings", reshare: "Can reshare" },
   // 逐字
   maskBlocked: "There's still a face or plate showing. Mask it to continue.",
   maskLede: "Anything that identifies a person or a house needs covering.",
@@ -43,7 +44,33 @@ export const COPY = {
   backToEditing: "Back to editing",
   addSighting: "Add your sighting",
   askAssistant: "Ask Possum Help",
+  discussion: "Discussion",
+  newThread: "Start a thread",
+  reply: "Reply",
+  shareTitle: "Share this storyboard",
+  shareLede: "The code carries the access you set here. It isn't a public link.",
+  qrNote: "Placeholder graphic. A real code is generated when you share.",
+  whatTheyCanDo: "What they can do",
+  linkExpires: "Link expires",
+  whoHasAccess: "Who has access",
+  revoke: "Revoke",
+  noAccessTitle: "This link doesn't work",
+  noAccessBody: "Ask whoever shared it with you for a new one.",
 };
+
+// 三档权限，从小到大，后面一档包含前面一档。id 与 schema 的 CHECK 一致。
+export const LEVELS = [
+  { id: "view", label: "Can view", sub: "Read the storyboard and the discussion" },
+  { id: "contribute", label: "Can add sightings", sub: "Write their own entries on this storyboard" },
+  { id: "reshare", label: "Can reshare", sub: "Pass the QR code on to someone else" },
+];
+
+export const EXPIRY = [
+  { id: 1, label: "24 hours" },
+  { id: 7, label: "7 days" },
+  { id: 30, label: "30 days" },
+  { id: 90, label: "90 days" },
+];
 
 // Screener 只回 reason_codes。作者看到的是这些句子，看不到 verdict，也看不到 note。
 export const REASON_COPY = {
