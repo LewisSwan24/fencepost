@@ -55,20 +55,39 @@ node --test lib/fixtures.test.mjs
 
 ```
 app/
-  page.js              1 · My storyboards
-  b/[id]/page.js       故事版时间线
-  b/[id]/add/          投稿流，一步一个路由
-    DraftContext.js    草稿跨路由活在这里
-    page.js            2 · Capture
-    frame/             3 · Pick a frame
-    mask/              4 · Mask + 5 · 同意弹窗
-    species/           6 · Which one is it?
-    write/             7 · Write it up
-    blocked/           8b · 被拦下
-components/ui.js       共用外壳与控件
-lib/api.js             三种模式的客户端
-lib/fixtures.js        助手应答与离线数据
-lib/copy.js            用户可见文案，一处定义
+  page.js                    1 · My storyboards
+  b/[id]/page.js             9 · 故事版详情（时间线、复核标签、讨论入口、助手抽屉）
+  b/[id]/add/                投稿流，一步一个路由
+    DraftContext.js          草稿跨路由活在这里
+    page.js                  2 · Capture
+    frame/                   3 · Pick a frame
+    mask/                    4 · Mask + 5 · 同意弹窗
+    species/                 6 · Which one is it?
+    write/                   7 · Write it up
+    blocked/                 8b · 被拦下
+  b/[id]/forum/              11 · 讨论区（列表 + 帖子详情）
+  b/[id]/share/              12 · 分享：QR 占位、三档权限、有效期、谁有权限
+  s/[token]/                 13 · 扫码落地，兑换后进故事版
+  no-access/                 14 · 链接不管用
+components/ui.js             共用外壳与控件
+components/Chat.js           10 · Possum Help 对话
+components/QrPlaceholder.js  占位图形，不是真码
+lib/api.js                   三种模式的客户端
+lib/fixtures.js              助手应答与离线数据
+lib/copy.js                  用户可见文案，一处定义
 ```
 
-第二期（故事版详情、Possum Help 对话、Forum）与第三期（分享、权限、无权限态）见 #23。
+## 几处界面按服务端的规矩收缩，不是装样子
+
+- 自己的 entry 上没有投票按钮（服务端对作者回 `not_your_call`）
+- `view` 档的人也没有（服务端回 `read_only_access`，理由是「复核是贡献者之间的事」）
+- 撤销只对 owner 出现（`revoke_grant` 回 `not_the_owner`）
+- 归档的故事版没有投稿入口
+
+每一条都是「服务端会拒绝，所以界面不给这个按钮」，不是「界面藏起来就当没有」——
+两者的区别在于前者被绕过也没用。
+
+## 无权限态
+
+`/no-access` 不取任何数据，也不区分链接是过期还是被撤销。区分了，一条死链就成了探测
+工具：换个 token 试，从措辞差别里能读出「这个故事版存在」。

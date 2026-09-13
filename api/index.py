@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, handle_stream,
                        cast_review_vote, close_storyboard, create_post, create_thread,
                        dashboard, delete_entry, dispose_entry,
-                       edit_entry, issue_share_link, list_threads, read_thread, review_queue,
+                       edit_entry, issue_share_link, list_grants, list_threads, read_thread,
+                       review_queue,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        submit_entry, timeline)
 from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
@@ -27,7 +28,7 @@ POST_ROUTES = ("/api/session", "/api/storyboards", "/api/storyboards/close",
                "/api/review/dispose", "/api/assistant")
 GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
               "/api/forum": list_threads, "/api/forum/thread": read_thread,
-              "/api/review": review_queue}
+              "/api/review": review_queue, "/api/grants": list_grants}
 _DEPS = None
 # 两个 Vercel 专案的代价就是这一条：前端跨域来调，得放行。
 # 生产环境把 FENCEPOST_ALLOWED_ORIGIN 设成前端的域名，别留星号。

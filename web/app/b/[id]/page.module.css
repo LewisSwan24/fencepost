@@ -42,3 +42,50 @@
   padding: 13px 18px; border-radius: 999px; background: var(--text); color: var(--on-accent);
   font-size: 14px; font-weight: 600; text-align: center; animation: fp-fade 0.25s ease;
 }
+
+.quiet { color: var(--text-dim); }
+.shared {
+  display: inline-flex; align-items: center; gap: 8px; margin: 0 8px;
+  padding: 6px 13px; border-radius: 999px; background: var(--surface);
+  font-size: 12px; color: var(--text-muted); white-space: nowrap;
+}
+
+.forumRow {
+  display: flex; align-items: center; width: 100%; margin-top: 18px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: transparent; color: var(--text);
+}
+.forumRow:hover { background: rgba(244, 235, 220, 0.05); }
+.forumLabel { flex: 1; text-align: left; font-size: 15px; font-weight: 600; }
+
+/* 公开的复核标签。用叶绿而不是警告色——这不是错误，是邻居在核对一处细节。 */
+.checked { margin-top: 12px; }
+.checkedHead {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 10px 14px; border: 0; border-radius: var(--radius-md);
+  background: rgba(174, 191, 146, 0.13); color: var(--color-accent-2-300);
+  font-size: 13px; font-weight: 600;
+}
+.checkedHead:hover { background: rgba(174, 191, 146, 0.2); }
+.checkedBody {
+  padding: 14px 15px 15px; border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: rgba(174, 191, 146, 0.07); animation: fp-fade 0.2s ease;
+}
+.checkedText { font-size: 13.5px; line-height: 1.6; color: var(--text-body); margin: 0; text-wrap: pretty; }
+.votes { display: flex; gap: 9px; margin-top: 14px; }
+/* 两个投票按钮完全等重：一个不比另一个更像「正确答案」。 */
+.vote {
+  flex: 1; min-height: 42px; border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill); background: transparent; color: var(--text);
+  font-size: 13.5px; font-weight: 600;
+}
+.vote:hover { background: rgba(244, 235, 220, 0.08); }
+.thanks { margin: 13px 0 0; font-size: 13px; color: var(--leaf); }
+
+.actions { display: flex; gap: 10px; }
+.action {
+  flex: 1; min-height: 48px; border: 1px solid var(--line);
+  border-radius: var(--radius-pill); background: var(--surface); color: var(--text);
+  font-size: 14px; font-weight: 600;
+}
+.action:hover { background: var(--surface-raised); }
