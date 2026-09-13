@@ -53,6 +53,19 @@ def main() -> None:
         print(f"{args.db} 现在有：")
         for name, number in counts(db).items():
             print(f"  {name:22} {number}")
+
+        # 托管的 libSQL 上外键强制不了（客户端收不下那个 pragma），所以交付前查一次。
+        # 本地后端这里应该永远是空的——那边外键是开着的，有东西就说明别处出了问题。
+        bad = db.foreign_key_violations()
+        if bad:
+            print(f"\n指向不存在父行的记录 {len(bad)} 条：")
+            for row in bad[:10]:
+                print(f"  {row['table']} 的第 {row['rowid']} 行 → 找不到对应的 {row['parent']}")
+            if len(bad) > 10:
+                print(f"  …… 还有 {len(bad) - 10} 条")
+        else:
+            print("\n引用完整性：没有指向不存在父行的记录。")
+
         print("\n加 --yes 才会真删。")
         return
 

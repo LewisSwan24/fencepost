@@ -272,6 +272,17 @@ class TheRealClientRunsTheRealDataLayer(unittest.TestCase):
         row = conn.execute("SELECT owner_id FROM storyboards WHERE id = 'sb_orphan'").fetchone()
         self.assertEqual("nobody-at-all", row["owner_id"])   # 属主不存在，照样躺在库里
 
+        # 强制这一层丢了，可见性补回来：foreign_key_check 是检测命令，两个后端都能用。
+        bad = self.db.foreign_key_violations()
+        self.assertEqual(1, len(bad), "查得出来才算有救")
+        self.assertEqual("storyboards", bad[0]["table"])
+        self.assertEqual("users", bad[0]["parent"])
+
+    def test_a_clean_database_reports_no_violations(self):
+        owner = self.db.ensure_user("mel_k")
+        self.db.add_entry(self.db.add_storyboard(owner, "ok"), owner, "ringtail", None, "fine")
+        self.assertEqual([], self.db.foreign_key_violations())
+
     def test_revoking_takes_the_grant_out_of_the_list(self):
         owner = self.db.ensure_user("mel_k")
         guest = self.db.ensure_user("dan_h")
