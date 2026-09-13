@@ -1,0 +1,10 @@
+.centred {
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: 100dvh; padding: 54px 28px max(42px, env(safe-area-inset-bottom));
+}
+.mark {
+  width: 44px; height: 44px; border-radius: 999px; background: var(--surface);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 22px;
+}
+.title { font-size: 25px; margin: 0 0 12px; }
+.body { font-size: 16px; line-height: 1.6; color: var(--text-body); margin: 0; }

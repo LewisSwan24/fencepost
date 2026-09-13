@@ -108,9 +108,7 @@ export default function Home() {
 }
 
 function Card({ board, past }) {
-  const people = board.participants
-    ? board.participants.length + (board.participants.length === 1 ? " person" : " people")
-    : null;
+  // entry_count 是 dashboard 真给的；participants 和 suburb 它不给，所以不画。
   return (
     <a href={"/b/" + board.id} className={[styles.card, past ? styles.cardPast : ""].join(" ")}>
       <div style={{ height: past ? 110 : 148, background: "var(--surface-sunken)",
@@ -121,8 +119,8 @@ function Card({ board, past }) {
           {past ? <span className={styles.readonly}>Read-only</span> : null}
         </div>
         <div className={styles.meta}>
-          {board.suburb ? <><span>{board.suburb}</span><span className={styles.dot} /></> : null}
-          {people ? <><span>{people}</span><span className={styles.dot} /></> : null}
+          <span>{board.entry_count === 1 ? "1 sighting" : board.entry_count + " sightings"}</span>
+          <span className={styles.dot} />
           <span>{relative(board.last_entry_at)}</span>
         </div>
       </div>

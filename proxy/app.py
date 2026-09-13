@@ -487,6 +487,26 @@ def revoke_grant(body: dict, token: str, deps: Deps):
     return 200, {"storyboard_id": storyboard_id, "user_id": target, "revoked": True}
 
 
+def list_grants(params: dict, token: str, deps: Deps):
+    """谁有这个故事版的权限，各是哪一档。分享那一屏要它。
+
+    要 reshare 才看得到：这是「谁能进来」的名单，只读的人看它没有用途。
+    出 owner_id 是给界面判断该不该显示撤销——撤销只有 owner 能做（见 revoke_grant），
+    没有这个字段，界面就只能让所有人都看到一个按下去必然 403 的按钮。
+    """
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    storyboard_id = params.get("storyboard_id")
+    if not storyboard_id:
+        return 400, _error("bad_request")
+    if deps.db.grant_level(storyboard_id, user_id) != "reshare":
+        return 403, _error("cannot_share")
+    return 200, {"storyboard_id": storyboard_id,
+                 "owner_id": deps.db.storyboard_owner(storyboard_id),
+                 "grants": deps.db.grants(storyboard_id)}
+
+
 def dashboard(params: dict, token: str, deps: Deps):
     """我能访问的故事版，活跃与往期分开（user-flow §9）。"""
     user_id, refusal = _identify(token)
@@ -614,7 +634,10 @@ def read_thread(params: dict, token: str, deps: Deps):
     refusal = _forum_gate(storyboard_id, user_id, deps, writing=False)
     if refusal:
         return refusal
-    return 200, {"thread_id": thread_id, "posts": deps.db.posts(thread_id)}
+    # 带上标题：没有它，帖子详情页顶着一个「Discussion」，看不出在读什么，
+    # 分享出去的链接更是一片空白——标题本来就和帖子一起可见，不是额外的泄漏。
+    return 200, {"thread_id": thread_id, "title": deps.db.thread_title(thread_id),
+                 "posts": deps.db.posts(thread_id)}
 
 
 # ---------- 复核队列 ----------

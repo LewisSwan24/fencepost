@@ -1,0 +1,38 @@
+.log { max-height: 46dvh; overflow-y: auto; padding-bottom: 6px; }
+.log::-webkit-scrollbar { width: 0; }
+.disclosure { font-size: 15px; line-height: 1.65; color: var(--text-body); margin: 0; text-wrap: pretty; }
+.disclosure strong { font-weight: 700; color: var(--text); }
+.offline {
+  padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--line);
+  font-size: 14.5px; line-height: 1.6; color: var(--text-muted); margin: 0; text-wrap: pretty;
+}
+.rowMe { display: flex; justify-content: flex-end; margin-top: 14px; }
+.rowIt { display: flex; margin-top: 14px; }
+/* 助手这边没有头像也没有名字标签，就是一段文字。 */
+.me {
+  max-width: 84%; padding: 10px 15px; border-radius: var(--radius-md);
+  background: var(--surface-raised); font-size: 14.5px; line-height: 1.55;
+}
+.it { max-width: 100%; font-size: 15px; line-height: 1.65; color: var(--text-body); text-wrap: pretty; }
+.working { margin-top: 16px; font-size: 14px; }
+
+.chips { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
+.chip {
+  width: 100%; text-align: left; padding: 11px 15px; border: 1px solid var(--line);
+  border-radius: var(--radius-md); background: transparent; color: var(--text-muted);
+  font-size: 13.5px; line-height: 1.45;
+}
+.chip:hover { background: rgba(244, 235, 220, 0.06); color: var(--text); }
+
+.compose { display: flex; align-items: center; gap: 9px; margin-top: 16px; }
+.input {
+  flex: 1; min-width: 0; height: 48px; padding: 0 18px; border-radius: var(--radius-pill);
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 14.5px;
+}
+.input:focus { border-color: var(--accent-hover); outline: none; }
+.send {
+  width: 48px; height: 48px; flex: none; border: 0; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent);
+  display: flex; align-items: center; justify-content: center;
+}
+.send:hover:not(:disabled) { background: var(--accent-hover); }
