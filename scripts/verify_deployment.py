@@ -209,8 +209,11 @@ def main():
     if deltas and spread < 1.0:
         print("注意：帧跨度不到 1 秒。可能是平台把响应缓冲了，也可能只是这次答得短。"
               "两者的区别在浏览器里看得最清楚——字是一个个出来，还是憋一下整段蹦出来。")
-    print("注意：Vercel 上库在 /tmp，每个实例一份。限流计数因此是每实例的，不是全局的——"
-          "这一圈请求落在同一个实例上才数得准，冷启动会把计数清零。")
+    print("注意：限流准不准取决于部署连的是哪种库。连托管库（TURSO_DATABASE_URL 或 "
+          "FENCEPOST_DB 指向 libsql://）时计数是全局的；退回 /tmp 的 SQLite 时每实例一份，"
+          "冷启动清零，这一圈落在同一个实例上才数得准。")
+    print("这次跑通只说明链路对。要证明数据不再蒸发，隔几分钟再跑一次，"
+          "看上一次建的东西还在不在——第二次才是验收。")
     if failures == 0:
         print("链路通了。把 FENCEPOST_OPEN_SIGNUP 删掉再交。")
     sys.exit(1 if failures else 0)
