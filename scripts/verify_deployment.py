@@ -26,6 +26,7 @@ import argparse
 import http.cookiejar
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -34,6 +35,7 @@ class Client:
     def __init__(self, base, bypass=None):
         self.base = base.rstrip("/")
         self.bypass = bypass
+        self.frame_times = []      # 每一帧到达的时刻，用来判平台有没有缓冲
         # 带 _vercel_share 的链接是靠 cookie 放行的，所以整个会话得共用一个 jar
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -60,10 +62,13 @@ class Client:
             response = err
         if stream:
             frames = []
+            started = time.monotonic()
+            self.frame_times = []
             for line in response:
                 line = line.decode().strip()
                 if line.startswith("data: "):
                     frames.append(json.loads(line[6:]))
+                    self.frame_times.append(time.monotonic() - started)
             return response.status, frames
         raw = response.read()
         try:
@@ -78,7 +83,9 @@ def main():
     parser.add_argument("url")
     parser.add_argument("--bypass", help="Vercel protection bypass token")
     parser.add_argument("--share", help="带 _vercel_share 的临时链接，用它换放行 cookie")
-    parser.add_argument("--handle", default="verify-bot")
+    # 默认 handle 每次不同：submission 是每小时 20 次，同一个用户一小时内跑第二遍必撞额度，
+    # 而那看起来像是服务坏了。2026-09-13 就这样误判过一次。
+    parser.add_argument("--handle", default=f"verify-{int(time.time()) % 1000000}")
     args = parser.parse_args()
 
     client = Client(args.url, args.bypass)
@@ -149,8 +156,9 @@ def main():
     # 响应长得一模一样（这是 operations §2.3 要的，作者无感）。差别只在这条 entry 会被标
     # review，从 being_checked 看得出来。2026-09-13 真部署上就是靠这个抓到 key 是错的。
     flagged = [e for e in shown if e.get("being_checked")]
-    record("Screener 真跑了", not flagged,
-           "被标 review —— 是 fail-open 放行的，上游没通" if flagged else "干净放行")
+    record("Screener 真跑了", bool(shown) and not flagged,
+           "被标 review —— 是 fail-open 放行的，上游没通" if flagged else
+           "干净放行" if shown else "没有 entry 可看，这一项判不了")
 
     status, answer = client.send("/api/assistant", token=token, body={
         "role": "neighbour", "storyboard_id": storyboard,
@@ -158,12 +166,20 @@ def main():
     reply = answer.get("reply") or ""
     record("助手（非流式）", status == 200 and bool(reply), reply[:52] or str(answer)[:52])
 
+    # 问得长一点，好让生成本身占掉几秒——不然「跨度小」既可能是被缓冲，也可能只是答得快。
     status, frames = client.send("/api/assistant", token=token, stream=True, body={
         "role": "neighbour", "storyboard_id": storyboard, "stream": True,
-        "message": "In one sentence, what do ringtails eat?"})
+        "message": "What do ringtails eat, and what should I do if one gets into the roof?"})
     deltas = [f for f in frames if "delta" in f]
     record("助手（流式）", status == 200 and len(deltas) > 1 and frames[-1].get("done"),
            f"{len(frames)} 帧 / {len(deltas)} 个增量")
+
+    # 平台如果把整条响应攒完再一次性吐出来，所有帧会挤在同一瞬间到达。帧数看不出这件事，
+    # 到达时刻能。这是 issue #6 第三条验收标准，本来以为只能靠人眼在浏览器里看。
+    times = client.frame_times
+    spread = times[-1] - times[0] if len(times) > 1 else 0.0
+    record("流式没被平台缓冲", spread >= 1.0,
+           f"首帧 {times[0]:.2f}s，末帧 {times[-1]:.2f}s，跨度 {spread:.2f}s" if times else "没有帧")
 
     status, draft = client.send("/api/assistant", token=token, body={
         "role": "writer", "species_selected": "ringtail",
@@ -190,9 +206,9 @@ def main():
            f"第 {spent} 次 → HTTP {status}" + (f" {hit.get('message', '')[:40]}" if hit else ""))
 
     print(f"\n{len(checks) - failures}/{len(checks)} 通过")
-    if deltas:
-        print("注意：帧数只说明 SSE 格式对，说明不了 Vercel 有没有把整条响应缓冲起来一次性吐出。"
-              "要确认是逐块到达的，得在浏览器里看字一个个出来。")
+    if deltas and spread < 1.0:
+        print("注意：帧跨度不到 1 秒。可能是平台把响应缓冲了，也可能只是这次答得短。"
+              "两者的区别在浏览器里看得最清楚——字是一个个出来，还是憋一下整段蹦出来。")
     print("注意：Vercel 上库在 /tmp，每个实例一份。限流计数因此是每实例的，不是全局的——"
           "这一圈请求落在同一个实例上才数得准，冷启动会把计数清零。")
     if failures == 0:
