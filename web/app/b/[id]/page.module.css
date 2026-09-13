@@ -1,0 +1,44 @@
+.cover { width: 100%; height: 150px; border-radius: var(--radius-lg); background: var(--surface-sunken); }
+.title { font-size: 25px; margin: 16px 0 8px; }
+.meta { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-dim); }
+.dot { width: 3px; height: 3px; border-radius: 999px; background: var(--color-neutral-700); }
+.people { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.who {
+  font-size: 12px; padding: 5px 11px; border-radius: 999px;
+  background: var(--surface); color: var(--text-muted);
+}
+.banner {
+  display: flex; gap: 11px; margin-top: 16px; padding: 13px 15px;
+  border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--line);
+  font-size: 13.5px; line-height: 1.55; color: var(--text-muted); text-wrap: pretty;
+}
+.rule { height: 1px; background: rgba(244, 235, 220, 0.11); margin: 24px 0 20px; }
+
+.entry { margin-bottom: 30px; }
+.entryNew {
+  padding: 14px; border-radius: var(--radius-lg);
+  background: var(--accent-wash); outline: 1px solid rgba(246, 160, 107, 0.4);
+}
+.entryHead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.handle { font-size: 13px; font-weight: 600; }
+.when { font-size: 12px; color: var(--text-dim); }
+.species {
+  margin-left: auto; font-size: 11px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-raised); color: var(--text-muted); white-space: nowrap;
+}
+.shot { width: 100%; height: 170px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+.fact {
+  margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--leaf-wash);
+}
+.factKicker {
+  font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--leaf); margin-bottom: 5px;
+}
+.factText { font-size: 13.5px; line-height: 1.5; color: var(--text-body); }
+.story { margin-top: 12px; font-size: 15px; line-height: 1.6; color: var(--text-body); text-wrap: pretty; }
+.toast {
+  position: fixed; left: 20px; right: 20px; bottom: 96px; z-index: 20;
+  max-width: 390px; margin: 0 auto;
+  padding: 13px 18px; border-radius: 999px; background: var(--text); color: var(--on-accent);
+  font-size: 14px; font-weight: 600; text-align: center; animation: fp-fade 0.25s ease;
+}
