@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-从 docs/prompts.md 抽出可运行的 prompt 文件。
+Extract runnable prompt files from docs/prompts.md.
 
-docs/prompts.md 是唯一来源，prompts/*.txt 是生成物 —— 不要手改生成物。
-改完文档跑一次：
+docs/prompts.md is the single source and prompts/*.txt are generated — never hand-edit the
+generated files. After changing the document, run:
 
     python scripts/build_prompts.py
 
-输出:
+Outputs:
     prompts/shared.txt      SHARED RULES
     prompts/neighbour.txt   ROLE: NEIGHBOUR + CONTEXT BOUNDARY + VISION RULES
     prompts/writer.txt      ROLE: WRITER
     prompts/screener.txt    ROLE: SCREENER + few-shot
-    prompts/VERSION         文档版本号，随每次模型调用一起记录
+    prompts/VERSION         the document version, recorded with every model call
 """
 
 import re
@@ -20,12 +20,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# 仓库里在 docs/ 下；散装目录里在同级。两种都认。
+# In the repository it sits under docs/; in a loose directory, alongside. Both are accepted.
 SRC = next((c for c in (ROOT / "docs" / "prompts.md", ROOT / "prompts.md") if c.exists()),
            ROOT / "docs" / "prompts.md")
 OUT = ROOT / "prompts"
 
-# 生成物 → 按顺序拼接的区块起始标记
+# generated file → the start markers of the blocks, joined in that order
 LAYOUT = {
     "shared": ["=== SHARED RULES ==="],
     "neighbour": ["=== ROLE: NEIGHBOUR ===", "=== CONTEXT BOUNDARY ===", "=== VISION RULES ==="],
@@ -37,34 +37,36 @@ FEWSHOT_ANCHOR = 'Input: "Brushtail possums are marsupials'
 
 
 def extract_block(text: str, start_marker: str) -> str:
-    """取出 start_marker 到下一个 === END ... === 之间的内容（含首尾标记）。"""
+    """Take everything from start_marker to the next === END ... === (markers included)."""
     i = text.find(start_marker)
     if i == -1:
-        sys.exit(f"prompts.md 里找不到区块: {start_marker}")
+        sys.exit(f"Block not found in prompts.md: {start_marker}")
     end = re.search(r"^=== END [A-Z: ]+===$", text[i:], re.MULTILINE)
     if not end:
-        sys.exit(f"区块没有结束标记: {start_marker}")
+        sys.exit(f"Block has no end marker: {start_marker}")
     return text[i : i + end.end()].strip()
 
 
 def extract_fewshot(text: str) -> str:
     i = text.find(FEWSHOT_ANCHOR)
     if i == -1:
-        sys.exit("找不到 Screener 的 few-shot 区块")
+        sys.exit("Cannot find the Screener few-shot block")
     fence = text.find("```", i)
     if fence == -1:
-        sys.exit("few-shot 区块没有闭合的 ```")
+        sys.exit("The few-shot block has no closing fence")
     return text[i:fence].strip()
 
 
 def extract_version(text: str) -> str:
-    m = re.search(r"^> 版本：(v[\d.]+)", text, re.MULTILINE)
+    # The source document heads its version line in either language; accept both, so the
+    # generator does not depend on which one docs/prompts.md happens to use.
+    m = re.search(r"^> (?:Version|\u7248\u672c)[:\uff1a]\s*(v[\d.]+)", text, re.MULTILINE)
     return m.group(1) if m else "unknown"
 
 
 def main() -> None:
     if not SRC.exists():
-        sys.exit(f"找不到 {SRC}")
+        sys.exit(f"Cannot find {SRC}")
     text = SRC.read_text(encoding="utf-8")
 
     OUT.mkdir(exist_ok=True)
@@ -75,18 +77,20 @@ def main() -> None:
         if name == "screener":
             parts.append("EXAMPLES\n\n" + extract_fewshot(text))
         body = "\n\n".join(parts)
-        # 只查生成物：prompts.md §0 的占位符说明表本身就写着这些名字，扫全文必然误报
+        # Only scan the generated files: the placeholder table in prompts.md §0 lists these
+        # names itself, so scanning the whole document would always report false positives
         leftover = re.findall(r"\[(?:PLATFORM_NAME|ASSISTANT_NAME|RESCUE_CONTACT)\]", body)
         if leftover:
-            print(f"  警告: {name}.txt 里还有 {len(leftover)} 处未替换的占位符")
+            print(f"  warning: {name}.txt still has {len(leftover)} unreplaced placeholders")
         header = f"# GENERATED from prompts.md {version} — do not edit by hand\n\n"
         path = OUT / f"{name}.txt"
         path.write_text(header + body + "\n", encoding="utf-8", newline="\n")
-        print(f"  {path.relative_to(ROOT)}  ({len(body.splitlines())} 行)")
+        print(f"  {path.relative_to(ROOT)}  ({len(body.splitlines())} lines)")
 
     (OUT / "VERSION").write_text(version + "\n", encoding="utf-8")
     print(f"  prompts/VERSION  ({version})")
-    print("\n提醒: 每次模型调用要把这个版本号一起写进 screening_results / chat_messages。")
+    print("\nReminder: every model call must record this version in "
+          "screening_results / chat_messages.")
 
 
 if __name__ == "__main__":

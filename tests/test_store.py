@@ -1,12 +1,13 @@
-"""连接层。
+"""The connection layer.
 
-这里的测试有一段历史值得留着：先用的是 `libsql-client`（弃用包，停在 2023 年），
-在它上面量出「外键在 libSQL 上不生效」，还把这条当成 libSQL 的性质写进了文档。
-那是错的——换上官方的 `libsql` SDK 之后外键默认开启且真的拦。教训是：
-在一个不受支持的客户端上量出来的性质，是那个客户端的性质，不是那个数据库的。
+There is a piece of history here worth keeping: this started on `libsql-client` (the
+deprecated package, frozen in 2023), measured "foreign keys do not work on libSQL"
+against it, and wrote that up as a property of libSQL. That was wrong — with the official
+`libsql` SDK they are on by default and really do bite. The lesson is that a property
+measured on an unsupported client is a property of that client, not of the database.
 
-需要 Python 3.12（Vercel 的运行时版本）才装得上 libsql；3.14 上没有 wheel，
-那几条会跳过，只剩不依赖驱动的部分。
+Installing libsql needs Python 3.12 (the Vercel runtime version); there is no wheel for
+3.14, so those cases skip and only the driver-free parts run.
 """
 
 import sys
@@ -20,7 +21,7 @@ from proxy.store import LibsqlStore, Result, SqliteStore, open_store       # noq
 
 
 class FakeCursor:
-    """驱动游标的最小替身：description 给列名，fetchall 给元组行。"""
+    """Minimal stand-in for a driver cursor: description gives names, fetchall gives tuples."""
 
     def __init__(self, columns, rows, rowcount=None):
         self.description = [(c,) for c in columns] if columns else None
@@ -44,12 +45,15 @@ class PickingABackend(unittest.TestCase):
         self.assertIs(open_store("libsql://demo.turso.io").remote, True)
 
     def test_the_token_never_lives_in_the_url(self):
-        # 令牌只从环境变量取。塞进 URL 的话它会跟着日志和报错到处跑。
+        # The token comes only from the environment. In the URL it would travel with every
+        # log line and every error message.
         self.assertNotIn("token", LibsqlStore("libsql://demo.turso.io").path)
 
 
 class TranslatingRows(unittest.TestCase):
-    """驱动回的是元组，db.py 要的是能按列名取的东西。翻译错了到处都错。"""
+    """The driver returns tuples and db.py wants column names. A wrong translation
+    here breaks everything downstream.
+    """
 
     def test_a_row_reads_by_column_name(self):
         row = Result(FakeCursor(["id", "handle"], [("u1", "mel_k")])).fetchone()
@@ -57,11 +61,12 @@ class TranslatingRows(unittest.TestCase):
         self.assertEqual({"id": "u1", "handle": "mel_k"}, dict(row))
 
     def test_no_rows_gives_none_not_an_empty_list(self):
-        # db.py 到处是 `row["x"] if row else None`。这里回 [] 的话每一处都炸。
+        # db.py is full of `row["x"] if row else None`. Returning [] here blows up every
+        # one of them.
         self.assertIsNone(Result(FakeCursor(["id"], [])).fetchone())
 
     def test_a_statement_with_no_columns_is_not_a_row(self):
-        # INSERT / CREATE 的游标没有 description，别把它当成一行空数据。
+        # An INSERT or CREATE cursor has no description; do not read it as one empty row.
         self.assertEqual([], Result(FakeCursor(None, [])).fetchall())
 
     def test_fetchall_keeps_the_order_it_was_given(self):
@@ -70,13 +75,15 @@ class TranslatingRows(unittest.TestCase):
 
 
 class CountingTheRowsAStatementChanged(unittest.TestCase):
-    """db.py 有五处 `execute(...).rowcount`。托管库那条路上它一度根本不存在。"""
+    """db.py reads `execute(...).rowcount` in five places. On the hosted path it once
+    did not exist at all.
+    """
 
     def test_the_driver_count_comes_through(self):
         self.assertEqual(3, Result(FakeCursor(None, [], rowcount=3)).rowcount)
 
     def test_a_driver_that_does_not_report_one_gives_minus_one(self):
-        """没有总比 AttributeError 好：-1 是 DBAPI 表示「不知道」的约定值。"""
+        """Absent beats AttributeError: -1 is the DBAPI convention for unknown."""
         self.assertEqual(-1, Result(FakeCursor(None, [])).rowcount)
 
 
@@ -97,12 +104,13 @@ except ImportError:                                    # pragma: no cover
     libsql = None
 
 
-@unittest.skipIf(libsql is None, "没装 libsql（需要 Python 3.12，Vercel 的运行时版本）")
+@unittest.skipIf(libsql is None, "libsql not installed (needs Python 3.12, the Vercel runtime)")
 class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
-    """不是替身。用 libSQL 自己的 file: 地址，把真的 SQL 跑在真的驱动上。
+    """Not a stand-in. Real SQL on the real driver, through libSQL's own file: address.
 
-    托管库和这里的区别只剩「走网络」，引擎是同一个——所以连表、EXISTS 子查询、
-    ON CONFLICT、ORDER BY rowid、外键，在这里成立，在 Turso 上也成立。
+    The only difference from the hosted database is the network; the engine is the same —
+    so joins, EXISTS subqueries, ON CONFLICT, ORDER BY rowid and foreign keys holding here
+    means they hold on Turso.
     """
 
     def setUp(self):
@@ -130,12 +138,12 @@ class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
 
     def test_a_storyboard_with_an_entry_reads_back(self):
         owner = self.db.ensure_user("mel_k")
-        self.assertEqual(owner, self.db.ensure_user("mel_k"))     # 幂等，不是每次新建
+        self.assertEqual(owner, self.db.ensure_user("mel_k"))     # idempotent, not a new row
         board = self.db.add_storyboard(owner, "The one in the jacaranda")
-        # add_storyboard 顺手给 owner 一条 grant，走的是 ON CONFLICT DO UPDATE
+        # add_storyboard also hands the owner a grant, through ON CONFLICT DO UPDATE
         self.assertEqual("reshare", self.db.grant_level(board, owner))
         self.db.add_entry(board, owner, "ringtail", None, "sat in the jacaranda")
-        rows = self.db.timeline(board)                            # 连表 + EXISTS + rowid 排序
+        rows = self.db.timeline(board)                            # join + EXISTS + rowid ordering
         self.assertEqual(1, len(rows))
         self.assertEqual("mel_k", rows[0]["handle"])
         self.assertEqual(0, rows[0]["being_checked"])
@@ -151,10 +159,12 @@ class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
         self.assertIsNone(self.db.grant_level(board, guest))
 
     def test_foreign_keys_are_enforced(self):
-        """一度以为这条在 libSQL 上是不成立的。那是弃用客户端的毛病，不是 libSQL 的。
+        """I once believed this did not hold on libSQL. That was the deprecated
+        client's fault, not libSQL's.
 
-        官方 SDK 上外键默认就开着，孤儿行插不进去。SqliteStore 那边要显式发 pragma
-        才有同样的效果，两边最终行为一致。
+        On the official SDK foreign keys are on by default and an orphan row will not
+        insert. SqliteStore has to send the pragma explicitly to get the same effect; the
+        end behaviour matches.
         """
         with self.assertRaises(Exception) as caught:
             self.db.conn.execute(
@@ -165,7 +175,9 @@ class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
         self.assertEqual([], self.db.foreign_key_violations())
 
     def test_a_failed_statement_takes_the_earlier_write_with_it(self):
-        """同一个事务里后一条失败，前一条也不该落地。多写序列的原子性就靠这个。"""
+        """If the second statement in a transaction fails, the first must not land
+        either. Atomicity of multi-write sequences rests on this.
+        """
         self.db.ensure_user("mel_k")
         count = "SELECT COUNT(*) AS c FROM users"
         before = self.db.conn.execute(count).fetchone()["c"]
@@ -173,17 +185,19 @@ class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
                              ("u2", "dan_h", "2026-09-13T11:01:00+00:00"))
         with self.assertRaises(Exception):
             self.db.conn.execute("INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
-                                 ("u3", "mel_k", "2026-09-13T11:02:00+00:00"))   # handle 重了
+                                 ("u3", "mel_k", "2026-09-13T11:02:00+00:00"))   # duplicate handle
         self.db.conn.rollback()
         self.assertEqual(before, self.db.conn.execute(count).fetchone()["c"])
 
     def test_the_lazy_settlers_run_on_the_real_driver(self):
-        """这一条是这个文件存在的理由。
+        """This one is the reason this file exists.
 
-        `settle_review()` 和 `purge_screening()` 都靠 `execute(...).rowcount` 返回
-        「清掉了几条」。本地 sqlite3 自带这个属性，托管库那层包装原先没有，于是这两个
-        方法在 Turso 上一律 AttributeError → 500。整套测试当时全绿，因为它们只在本地
-        后端上跑过。2026-09-14 线上发一条 entry 直接 500 才发现。
+        `settle_review()` and `purge_screening()` both rely on `execute(...).rowcount` to
+        say how many rows they cleared. Local sqlite3 supplies that attribute; the wrapper
+        for the hosted database did not, so on Turso both methods raised AttributeError and
+        came back 500. The whole suite was green at the time, because they had only ever
+        run against the local backend. It surfaced on 2026-09-14, when posting a live entry
+        returned 500.
         """
         self.assertEqual(0, self.db.settle_review())
         self.assertEqual(0, self.db.purge_screening())

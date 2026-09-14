@@ -58,7 +58,8 @@
 .forumRow:hover { background: rgba(244, 235, 220, 0.05); }
 .forumLabel { flex: 1; text-align: left; font-size: 15px; font-weight: 600; }
 
-/* 公开的复核标签。用叶绿而不是警告色——这不是错误，是邻居在核对一处细节。 */
+/* The public review label. Leaf green rather than a warning colour: this is not an error,
+   it is neighbours checking a detail. */
 .checked { margin-top: 12px; }
 .checkedHead {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
@@ -73,7 +74,7 @@
 }
 .checkedText { font-size: 13.5px; line-height: 1.6; color: var(--text-body); margin: 0; text-wrap: pretty; }
 .votes { display: flex; gap: 9px; margin-top: 14px; }
-/* 两个投票按钮完全等重：一个不比另一个更像「正确答案」。 */
+/* The two vote buttons carry exactly equal weight: neither looks more like the right answer. */
 .vote {
   flex: 1; min-height: 42px; border: 1px solid var(--line-strong);
   border-radius: var(--radius-pill); background: transparent; color: var(--text);
@@ -90,9 +91,10 @@
 }
 .action:hover { background: var(--surface-raised); }
 
-/* ── 作者自己的条目上那两个动作 ──
-   只在自己的条目上出现，归档后也不出现——服务端两种情况都会拒。
-   刻意做得安静：它们是「需要时找得到」，不是时间线上的主要动作。 */
+/* ── The two actions on your own entry ──
+   They appear only on your own entries, and not at all once archived — the server refuses
+   both cases. Deliberately quiet: they are there to be found when needed, not a main
+   action on the timeline. */
 .own {
   display: flex; gap: 8px; margin-top: 14px;
   padding-top: 12px; border-top: 1px solid var(--line);
@@ -104,7 +106,7 @@
 }
 .ownBtn:hover { color: var(--text); border-color: var(--text-dim); }
 
-/* 编辑面板 */
+/* The edit panel */
 .editSpecies {
   display: inline-block; margin: 0 0 14px;
   border: 1px solid var(--line); border-radius: 999px;
@@ -122,7 +124,8 @@
   color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer;
 }
 
-/* 改动被拒。不是报错的红——用户没做错事，是这段话不能这样发。 */
+/* A refused edit. Not an error red: the user did nothing wrong, that passage simply cannot
+   go up as written. */
 .rejected {
   margin-top: 16px; padding: 13px 14px;
   border: 1px solid var(--line); border-radius: var(--radius-md);
@@ -131,7 +134,7 @@
 .rejectedHead { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
 .rejectedText { font-size: 14px; line-height: 1.55; margin: 0 0 8px; color: var(--text-body); }
 
-/* 完结的入口。安静，但不藏——罕用、不可逆、只有 owner 有。 */
+/* The way into closing. Quiet, but not hidden — rare, irreversible and owner-only. */
 .closeRow {
   display: block; width: 100%; margin-top: 26px; padding: 14px;
   border: 1px solid var(--line); border-radius: var(--radius-md);
@@ -140,7 +143,8 @@
 }
 .closeRow:hover { color: var(--text); border-color: var(--text-dim); }
 
-/* owner 留下的那句结语。引述的样子，因为它是一个人说的话，不是系统提示。 */
+/* The closing line the owner left. Set as a quotation, because it is a person speaking and
+   not a system message. */
 .closedNote {
   margin: 14px 0 0; padding: 14px 16px;
   border-left: 2px solid var(--line); background: var(--surface-sunken);

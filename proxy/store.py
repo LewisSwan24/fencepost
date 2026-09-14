@@ -1,18 +1,22 @@
-"""数据库连接层。SQL 不在这里，一条都没有。
+"""Database connection layer. There is no SQL in here, not one statement.
 
-分出来只为一件事：让 db.py 那 63 条语句在换库的时候一个字都不用改。
-两个后端都装成 sqlite3 的样子——`.execute(sql, params)` 回一个有 `.fetchone()`
-和 `.fetchall()` 的东西，行可以按列名取，也可以 `dict(row)`。
+It exists for one reason: so the 63 statements in db.py need not change a character when
+the database changes. Both backends dress up as sqlite3 — `.execute(sql, params)` returns
+something with `.fetchone()` and `.fetchall()`, and a row can be read by column name or
+turned into a dict.
 
-为什么是 libSQL 而不是 Postgres：`?` 占位、`ORDER BY ... rowid`、schema.sql 里那些
-CHECK 和 TIMESTAMP，全是 SQLite 的写法，而 schema.sql 是从 docs/data-model.md §1
-生成的。换 Postgres 要改的不只是 63 条语句，还有那个生成器——它是 schema 的唯一来源。
+Why libSQL and not Postgres: `?` placeholders, `ORDER BY ... rowid`, and the CHECK and
+TIMESTAMP forms in schema.sql are all SQLite spellings, and schema.sql is generated from
+docs/data-model.md §1. Moving to Postgres would mean rewriting not only those 63
+statements but that generator, and the generator is the single source of the schema.
 
-**用的是官方的 `libsql`，不是 `libsql-client`。** 后者是弃用包，停在 2023 年的 0.3.1，
-对现在的 Turso 有三处不兼容：WebSocket 握手被拒、HTTP 传输不支持事务、错误响应解析不了
-（`KeyError: 'result'`）。更要紧的是它收不下 `PRAGMA foreign_keys`，于是 schema 里每一条
-REFERENCES 都无声失效——我一度把这条当成 libSQL 的性质写进了文档，那是错的，
-它只是那个弃用客户端的性质。官方 SDK 上外键默认开启且真的拦（实测 2026-09-13）。
+**This uses the official `libsql`, not `libsql-client`.** The latter is deprecated, frozen
+at 0.3.1 from 2023, and incompatible with current Turso in three places: the WebSocket
+handshake is refused, the HTTP transport has no transactions, and error responses fail to
+parse (`KeyError: 'result'`). More seriously it swallows `PRAGMA foreign_keys`, so every
+REFERENCES in the schema silently does nothing — I once wrote that up as a property of
+libSQL itself, and that was wrong. It is a property of that deprecated client. On the
+official SDK foreign keys are on by default and really do bite (measured 2026-09-13).
 """
 
 import os
@@ -24,11 +28,13 @@ REMOTE_PREFIXES = ("libsql://", "https://", "http://", "file:")
 
 
 def open_store(path: str):
-    """按地址挑后端。libsql:// 或 http(s):// 走托管库，其余当本地文件或 :memory:。
+    """Pick a backend from the address. libsql:// or http(s):// means the hosted
+    database; anything else is a local file or :memory:.
 
-    `file:` 也走 libSQL 这条。留着这条口子，整个数据层就能在没有托管库的情况下跑在
-    **真客户端**上——对着替身测出来的「通过」，和对着真库测出来的不是一回事。
-    普通路径（`fencepost.db`、`:memory:`）不带 scheme，不会误入。
+    `file:` takes the libSQL path too. Keeping that opening lets the whole data layer run
+    against the **real client** with no hosted database — a pass measured against a
+    stand-in is not the same thing as a pass measured against the real driver. Ordinary
+    paths (`fencepost.db`, `:memory:`) carry no scheme and cannot wander in by accident.
     """
     if path.startswith(REMOTE_PREFIXES):
         return LibsqlStore(path)
@@ -36,20 +42,22 @@ def open_store(path: str):
 
 
 class SqliteStore:
-    """本机与测试用的。行为和之前内联在 db.py 里的完全一样。"""
+    """For local work and tests. Behaves exactly as the code inlined in db.py used to."""
 
     remote = False
 
     def __init__(self, path: str):
         self.path = path
         self._local = threading.local()
-        # 内存库没有文件可供别的线程重开，只能共享一条连接；文件库每线程各开一条。
+        # An in-memory database has no file for another thread to reopen, so one connection
+        # is shared; a file-backed one gets a connection per thread.
         self._shared = self._connect() if path == ":memory:" else None
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        # SQLite 的外键默认是关的。不开这一行，schema 里那些 REFERENCES 全是装饰。
+        # SQLite has foreign keys off by default. Without this line every REFERENCES in the
+        # schema is decoration.
         conn.execute("PRAGMA foreign_keys = ON")
         if self.path != ":memory:":
             conn.execute("PRAGMA journal_mode = WAL")
@@ -57,8 +65,9 @@ class SqliteStore:
 
     @property
     def conn(self) -> sqlite3.Connection:
-        """每个线程一条连接。sqlite3 的连接不能跨线程使用，而 HTTP 服务器是多线程的——
-        这条是本机 HTTP 验证抓出来的，单元测试全在同一个线程里，看不见。"""
+        """One connection per thread. A sqlite3 connection cannot be used across
+        threads and the HTTP server is threaded — caught by the local HTTP check, since the
+        unit tests all run on one thread and never see it."""
         if self._shared is not None:
             return self._shared
         conn = getattr(self._local, "conn", None)
@@ -67,7 +76,7 @@ class SqliteStore:
         return conn
 
     def close(self) -> None:
-        """关掉本线程这条。别的线程各自的连接由它们自己了断。"""
+        """Close this thread's connection. Other threads close their own."""
         conn = self._shared or getattr(self._local, "conn", None)
         if conn is not None:
             conn.close()
@@ -76,27 +85,32 @@ class SqliteStore:
 
 
 class Result:
-    """把一个游标的结果装成 sqlite3 游标的样子。行一律是 dict——
+    """Dress a driver cursor up as a sqlite3 cursor. Rows are always dicts.
 
-    `row["handle"]` 和 `dict(row)` 是 db.py 唯一用到的两种取法，dict 两样都满足，
-    也不用把驱动自己的行类型泄漏到上层。官方 SDK 的行是元组，列名在 description 里。
+    `row["handle"]` and `dict(row)` are the only two forms db.py uses, and a dict satisfies
+    both without leaking the driver's own row type upwards. The official SDK returns tuples,
+    with the column names in description.
     """
 
     def __init__(self, cursor):
         columns = [d[0] for d in (cursor.description or [])]
         self._rows = [dict(zip(columns, tuple(row))) for row in cursor.fetchall()] \
             if columns else []
-        # db.py 里有五处 `execute(...).rowcount`，全是 UPDATE / DELETE 之后数改了几行。
-        # 这个类原先没有这个属性，于是那五条语句在托管库上一律 AttributeError → 500。
+        # db.py reads `execute(...).rowcount` in five places, each counting the rows an
+        # UPDATE or DELETE touched. This class had no such attribute, so all five statements
+        # raised AttributeError against the hosted database and came back as a 500.
         #
-        # 2026-09-14 是踩出来的：把 purge_screening 接到投稿那条路径之后，线上发 entry
-        # 当场 FUNCTION_INVOCATION_FAILED。但真正的毛病比那次改动老得多——
-        # `settle_review()` 一直在用 rowcount，也就是说 `/api/review` 和
-        # `/api/review/vote` 打托管库从来就是 500。没人发现，是因为复核那两屏还没做，
-        # 没有任何界面调过它们，而 verify_deployment.py 也没覆盖复核这条链路。
+        # Found the hard way on 2026-09-14: wiring purge_screening into the submission path
+        # made posting an entry fail live with FUNCTION_INVOCATION_FAILED. The real fault was
+        # far older than that change — `settle_review()` has always used rowcount, which
+        # means `/api/review` and `/api/review/vote` had been 500ing against the hosted
+        # database from the start. Nobody noticed, because the two review screens did not
+        # exist yet so no interface ever called them, and verify_deployment.py did not cover
+        # that chain either.
         #
-        # 本地 sqlite3 自带 rowcount，所以整套测试一直是绿的。两个后端只在这里分岔，
-        # 这也正是「对着替身测出来的通过，和对着真库测出来的不是一回事」。
+        # Local sqlite3 supplies rowcount, so the whole suite stayed green. This is the only
+        # place the two backends diverge, and it is exactly why a pass against a stand-in is
+        # not a pass against the real database.
         self.rowcount = getattr(cursor, "rowcount", -1)
 
     def fetchone(self):
@@ -110,10 +124,11 @@ class Result:
 
 
 class LibsqlStore:
-    """托管的 libSQL（Turso）。走网络，没有本地文件，冷启动不会丢东西。
+    """Hosted libSQL (Turso). Over the network, no local file, nothing lost on a cold start.
 
-    语义和本地后端一致：官方 SDK 就是 DBAPI 那套，事务、commit、rollback 都是真的，
-    外键默认开着。所以这一层只做一件事——把游标的元组行翻成 dict。
+    The semantics match the local backend: the official SDK is plain DBAPI, transactions,
+    commit and rollback are real, and foreign keys are on by default. So this layer does one
+    thing — turn the cursor's tuple rows into dicts.
     """
 
     remote = True
@@ -126,11 +141,13 @@ class LibsqlStore:
     def _connect(self):
         try:
             import libsql
-        except ImportError as exc:  # pragma: no cover —— 只在没装依赖时走到
+        except ImportError as exc:  # pragma: no cover — only reached without the dependency
             raise RuntimeError(
-                "托管库需要官方 SDK：pip install libsql（注意不是 libsql-client，那个已弃用）"
+                "The hosted database needs the official SDK: pip install libsql "
+                "(note: libsql-client is a different, deprecated package)"
             ) from exc
-        # file: 是给测试用的本地地址，去掉 scheme 交给驱动当普通路径。
+        # file: is a local address the tests use; strip the scheme and hand the driver an
+        # ordinary path.
         target = self.path[len("file:"):] if self.path.startswith("file:") else self.path
         if self.path.startswith("file:"):
             return _LibsqlConn(libsql.connect(target))
@@ -151,7 +168,7 @@ class LibsqlStore:
 
 
 class _LibsqlConn:
-    """把官方 SDK 的连接包成 db.py 期望的那个形状。只翻行，不管事务——驱动自己管。"""
+    """Wrap the SDK connection in the shape db.py wants. Rows only; the driver does the rest."""
 
     def __init__(self, conn):
         self._conn = conn

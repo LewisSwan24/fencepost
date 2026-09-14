@@ -1,5 +1,6 @@
-// 时间显示。原型里这两个函数写在 fixtures 里，那是因为它没有别的地方放；
-// 真实现里它们和数据无关，所以单独一个文件。
+// Time display. In the prototype these two functions lived in fixtures, because there was
+// nowhere else to put them; in the real implementation they have nothing to do with data,
+// so they get a file of their own.
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -17,10 +18,11 @@ export function relative(iso, now = new Date()) {
   return then.getDate() + " " + MONTHS[then.getMonth()];
 }
 
-// 往后看的那一面。`relative()` 只会往回算：任何未来时间都落进 days <= 0 那个分支，
-// 一律回 "today"。分享页拿它显示码的有效期，于是一张 10 月 30 日才过期的码
-// 写着「Expires today」——足以让人把一张好好的码作废重发。
-// 2026-09-14 在本机跑 fixtures 看出来的，不是想出来的。
+// The forward-looking half. `relative()` only ever counts backwards: any future time falls
+// into the days <= 0 branch and comes back as "today". The share screen used it for a
+// code expiry, so a code expiring on 30 October read "Expires today" — enough to make
+// somebody revoke a perfectly good code and issue another. Found running fixtures locally
+// on 2026-09-14, not reasoned about.
 export function until(iso, now = new Date()) {
   if (!iso) return "";
   const then = new Date(iso);
@@ -46,8 +48,10 @@ export function countLabel(n, one, many) {
   return n === 1 ? "1 " + one : n + " " + many;
 }
 
-// 头像上那两个字母。handle 是 `mel_k` 这种，取每段的首字母；只有一段就取前两个字符。
-// 首页原先把「mk / mel_k」写死在标记里，于是换个 handle 登录，页头还在说你是 mel_k。
+// The two letters on an avatar. A handle looks like `mel_k`, so take the first letter of
+// each part; with only one part, take the first two characters. The home page used to have
+// "mk / mel_k" hard-coded in the markup, so signing in with a different handle left the
+// header still saying you were mel_k.
 export function initials(handle) {
   const parts = String(handle || "").split(/[_.\-\s]+/).filter(Boolean);
   if (!parts.length) return "?";

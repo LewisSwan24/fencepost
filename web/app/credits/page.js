@@ -1,8 +1,10 @@
-// 图片鸣谢。CC BY-SA 4.0 要求署名，并且要求标明有没有改动——这是许可条件，不是礼貌，
-// 所以它在应用里，不只在 README 里。
+// Image credits. CC BY-SA 4.0 requires attribution and requires saying whether anything
+// was changed — a licence condition rather than a courtesy, which is why this is in the
+// app and not only in the README.
 //
-// 第一段是这一页最要紧的部分：说清这些照片不是用户拍的。界面上它们挨着别人的故事，
-// 不声明就等于暗示「这就是他拍到的那只」。
+// The first paragraph is the important part of this page: it says these photographs are
+// not the users'. In the interface they sit next to other people's stories, and not
+// saying so implies "this is the one they filmed".
 
 import { FRAMES } from "../../lib/frames";
 import styles from "./credits.module.css";

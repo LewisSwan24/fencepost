@@ -16,7 +16,7 @@ export function BackButton({ onClick, label = "Back" }) {
   );
 }
 
-// 五步进度条。写 entry 是第五步。
+// The five-step progress bar. Writing the entry is step five.
 export function Steps({ at }) {
   return (
     <div className={styles.steps}>
@@ -28,8 +28,9 @@ export function Steps({ at }) {
   );
 }
 
-// 帧位。原型里是可拖图的占位组件；这里不接真素材，画一块夜色就够了，
-// 说明写在上面——不要放真实照片，也不要放卡通负鼠。
+// A frame slot. In the prototype this was a draggable image placeholder; here it takes no
+// real material, so a patch of night is enough, with the explanation above it — no real
+// photographs, and no cartoon possum either.
 export function Frame({ height = 200, label, children }) {
   return (
     <div className={styles.frame} style={{ height }}>
@@ -48,7 +49,7 @@ export function Spinner({ label }) {
   );
 }
 
-// 能接焦点的东西，用来把 Tab 关在对话框里。
+// Things that can take focus, used to keep Tab inside the dialog.
 const FOCUSABLE = 'a[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])';
 
 export function Sheet({ onClose, children, labelledBy }) {
@@ -57,11 +58,13 @@ export function Sheet({ onClose, children, labelledBy }) {
 
   useEffect(() => {
     opener.current = document.activeElement;
-    // 焦点移到面板本身，而不是里面第一个输入框：这是个手机形状的界面，自动聚焦
-    // 文本框会把软键盘顶起来盖掉半屏。APG 明确允许聚焦对话框容器。
+    // Focus goes to the panel itself rather than the first field inside it: this is a
+    // phone-shaped interface, and auto-focusing a textarea throws the software keyboard up
+    // over half the screen. The APG explicitly allows focusing the dialog container.
     box.current?.focus();
     return () => {
-      // 关掉之后回到刚才按下的那个按钮，而不是丢回 <body> 让人从页首重新 Tab 一遍。
+      // On close, focus returns to the control that opened it rather than being dropped on
+      // <body>, leaving somebody to Tab from the top of the page again.
       const back = opener.current;
       if (back && document.contains(back)) back.focus();
     };
@@ -74,8 +77,9 @@ export function Sheet({ onClose, children, labelledBy }) {
       return;
     }
     if (event.key !== "Tab") return;
-    // aria-modal="true" 是在跟读屏软件说「外面那一切都不存在」。不把 Tab 关住，
-    // 这句话就是假的 —— 人会一路 Tab 到刚被声明为不存在的那半个页面上去。
+    // aria-modal="true" tells a screen reader that everything outside does not exist.
+    // Without trapping Tab that statement is false — somebody Tabs straight out into the
+    // half of the page just declared not to be there.
     const items = Array.from(box.current?.querySelectorAll(FOCUSABLE) || [])
       .filter((el) => !el.disabled && el.offsetParent !== null);
     if (!items.length) return;

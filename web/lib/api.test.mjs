@@ -1,22 +1,25 @@
 // node --test lib/api.test.mjs
 //
-// 钉的是**访客的身分**。
+// What this pins down is **a visitor's identity**.
 //
-// 原先所有访客共用一个 handle，`author_id` 在他们之间相等：访客 A 能改能删访客 B
-// 写的条目。owner 那一层挡住了，访客彼此之间没有。
+// Every visitor used to share one handle, which made `author_id` equal between them:
+// visitor A could edit and delete what visitor B wrote. The owner layer stopped that;
+// nothing stood between two visitors.
 //
-// 还有一条更要紧的：`NEXT_PUBLIC_FENCEPOST_HANDLE` 的默认值曾经是 `mel_k`，
-// 而那是 demo 故事版的 owner——谁忘了配这个变量，每位访客就都成了 owner。
+// And one thing that matters more: the default for `NEXT_PUBLIC_FENCEPOST_HANDLE` used to
+// be `mel_k`, who owns the demo storyboard — so anyone who forgot to configure that
+// variable turned every visitor into the owner.
 //
-// 每条用例都 import 一份**新的**模块实例（靠查询串绕开缓存）：handle 会缓存在
-// 模块级变量里，共用一份的话后一条测的是前一条留下的状态。
+// Each case imports a **fresh** module instance (a query string defeats the cache): the
+// handle is cached in a module-level variable, and sharing one would have each case
+// measuring the state the last one left behind.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 let seq = 0;
 
-// 装好 window / crypto 的桩，再拿一份干净的 api.js
+// Install the window and crypto stubs, then take a clean copy of api.js
 async function freshApi({ store = {}, crypto, brokenStorage = false } = {}) {
   globalThis.window = {
     localStorage: brokenStorage
@@ -25,7 +28,7 @@ async function freshApi({ store = {}, crypto, brokenStorage = false } = {}) {
       : { getItem: (k) => (k in store ? store[k] : null),
           setItem: (k, v) => { store[k] = String(v); } },
   };
-  // Node 的 globalThis.crypto 是只读 getter，直接赋值不生效，得 defineProperty。
+  // Node's globalThis.crypto is a read-only getter; assigning does nothing, so defineProperty.
   if (crypto !== undefined) {
     Object.defineProperty(globalThis, "crypto", { value: crypto, configurable: true, writable: true });
   }
@@ -33,36 +36,37 @@ async function freshApi({ store = {}, crypto, brokenStorage = false } = {}) {
   return import(`./api.js?case=${seq}`);
 }
 
-test("没配固定 handle 时，默认值不是 mel_k", async () => {
-  // 回归测试。默认值退回 owner 的那一版，等于把 owner 权限发给所有访客——
-  // 而这种错不会报错，只会安安静静把 demo 的控制权送出去。
+test("with no fixed handle configured, the default is not mel_k", async () => {
+  // A regression test. A default that falls back to the owner hands owner rights to every
+  // visitor — and that kind of mistake raises nothing; it quietly gives the demo away.
   const api = await freshApi();
   assert.notEqual(api.HANDLE, "mel_k");
   assert.equal(api.HANDLE, "");
 });
 
-test("每个浏览器拿到自己的 handle，并且记住它", async () => {
+test("each browser gets its own handle, and remembers it", async () => {
   const store = {};
   const api = await freshApi({ store });
   const first = api.visitorHandle();
   assert.match(first, /^guest_[0-9a-f]{16}$/);
   assert.equal(store["fencepost.handle"], first);
-  // 同一个浏览器再问一次还是同一个人——自己写的条目才还归自己
+  // Asking again in the same browser gives the same person, so your entries stay yours
   assert.equal(api.visitorHandle(), first);
 });
 
-test("两个浏览器拿到的是两个人", async () => {
-  // 这就是这次改动的全部意义：他们不再是同一个用户。
-  // 每份模块取完自己的 handle 再装下一份：globalThis.window 是共用的，
-  // 先装两份再取的话，第一份读到的是第二份的 store。
+test("two browsers get two people", async () => {
+  // This is the whole point of the change: they are no longer the same user.
+  // Each module takes its own handle before the next stub is installed: globalThis.window
+  // is shared, and installing both first would have the first read the second's store.
   const first = (await freshApi({ store: {} })).visitorHandle();
   const second = (await freshApi({ store: {} })).visitorHandle();
   assert.notEqual(first, second);
 });
 
-test("handle 走的是 CSPRNG，不是 Math.random", async () => {
-  // 开放注册下「知道一个 handle」就等于「能以那个人登录」，所以这个值不该出自
-  // 一个看几个输出就能反推状态的 PRNG（V8 的 Math.random 是 xorshift128+）。
+test("the handle comes from a CSPRNG, not Math.random", async () => {
+  // Under open sign-up, knowing a handle is the same as being able to sign in as that
+  // person, so this value should not come out of a PRNG whose state can be recovered from
+  // a handful of outputs (V8's Math.random is xorshift128+).
   const seen = [];
   const api = await freshApi({
     store: {},
@@ -75,24 +79,25 @@ test("handle 走的是 CSPRNG，不是 Math.random", async () => {
     },
   });
   const h = api.visitorHandle();
-  assert.deepEqual(seen, [8], "没有调用 crypto.getRandomValues");
+  assert.deepEqual(seen, [8], "crypto.getRandomValues was not called");
   assert.equal(h, "guest_" + "ab".repeat(8));
 });
 
-test("handle 落在服务端接受的长度里", async () => {
-  // 服务端：空、纯空白、超过 40 字符都会被 400 挡回来
+test("the handle fits the length the server accepts", async () => {
+  // Server side: empty, all whitespace, or over 40 characters all come back 400
   const api = await freshApi({ store: {} });
   const h = api.visitorHandle();
   assert.ok(h.trim().length > 0);
   assert.ok(h.length <= 40);
 });
 
-test("localStorage 用不了也不能崩，也不能每次换一个人", async () => {
-  // 无痕模式下 getItem/setItem 会抛。这一次浏览里至少还得是同一个身分，
-  // 否则每个请求都是新用户，连自己刚发的东西都不认得。
+test("an unusable localStorage must not crash, or change who you are each time", async () => {
+  // In private mode getItem and setItem throw. Within one browsing session you still have
+  // to be the same identity, or every request is a new user who does not recognise what
+  // they just posted.
   const api = await freshApi({ brokenStorage: true });
   const a = api.visitorHandle();
   const b = api.visitorHandle();
   assert.match(a, /^guest_/);
-  assert.equal(a, b, "同一次会话里换了身分");
+  assert.equal(a, b, "the identity changed inside one session");
 });

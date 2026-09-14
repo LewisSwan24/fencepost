@@ -1,7 +1,8 @@
-"""入口层测试。走真 HTTP，因为 do_POST 里那几条路径别的测试碰不到。
+"""Entrypoint tests. Real HTTP, because the paths inside do_POST are not reachable from
+the other tests.
 
-缺配置崩掉那一条是真部署打出来的：函数直接抛异常，Vercel 只回一句
-FUNCTION_INVOCATION_FAILED。这里把它钉住。
+The crash-on-missing-config case came from a real deployment: the function raised and
+Vercel answered with nothing but FUNCTION_INVOCATION_FAILED. This pins it down.
 
     python tests/test_entrypoint.py
 """
@@ -106,7 +107,7 @@ class Entrypoint(unittest.TestCase):
 
 
 class Cors(unittest.TestCase):
-    """两个 Vercel 专案就要跨域，浏览器会先发预检。"""
+    """Two Vercel projects means cross-origin, and a browser sends a preflight first."""
 
     def setUp(self):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), entry.handler)
@@ -138,10 +139,11 @@ class Cors(unittest.TestCase):
 
 
 class WhichOriginIsAllowed(unittest.TestCase):
-    """FENCEPOST_ALLOWED_ORIGIN 收清单，因为同一个前端挂着好几个生产别名。
+    """FENCEPOST_ALLOWED_ORIGIN takes a list, because one front end carries several
+    production aliases.
 
-    直接测 _allow_origin：它读的是模块级常量，而那个常量在 import 的时候就定好了，
-    起完服务器再改环境变量已经晚了。
+    _allow_origin is tested directly: it reads a module-level constant fixed at import
+    time, so changing the environment variable after the server starts is already too late.
     """
 
     def choose(self, configured, requested):
@@ -153,7 +155,9 @@ class WhichOriginIsAllowed(unittest.TestCase):
             entry.ALLOWED_ORIGINS = original
 
     def test_unset_still_means_a_star(self):
-        """本机开发和上面那两条测试都靠它，收紧线上配置别顺手弄坏这个默认。"""
+        """Local development and both tests above rely on this default; tightening the
+        production configuration should not quietly break it.
+        """
         self.assertEqual("*", self.choose("*", "https://anything.example"))
 
     def test_a_listed_alias_is_echoed_back(self):
@@ -162,13 +166,13 @@ class WhichOriginIsAllowed(unittest.TestCase):
             self.choose("https://a.example, https://b.example", "https://b.example"))
 
     def test_an_unlisted_origin_does_not_get_a_star(self):
-        """回星号等于白设。"""
+        """A wildcard makes the setting pointless."""
         self.assertEqual(
             "https://a.example",
             self.choose("https://a.example, https://b.example", "https://evil.example"))
 
     def test_no_origin_header_at_all_is_fine(self):
-        """服务端之间的调用不带 Origin —— verify_deployment.py 就是这么跑的。"""
+        """Server-to-server calls carry no Origin — verify_deployment.py runs exactly that way."""
         self.assertEqual("https://a.example", self.choose("https://a.example", None))
 
 

@@ -1,12 +1,14 @@
-// 钉住作者被拦下时读到的那句话。
+// Pins down the sentence an author reads when they are stopped.
 //
 //   node --test lib/copy.test.mjs
 //
-// 为什么值得单独一个文件：这些句子是 ux-copy.md §1 的逐字搬运，而 §1 不在仓库里
-// （CLAUDE.md：docs/ 不进仓库），所以没有任何自动手段能发现「搬错了」。
-// 这个文件就是那道人工对照留下的痕迹——2026-09-14 对照时发现三处不一致：
-// 配了两个 Screener 根本不发的码（safety、scope），漏了五个真会发的，
-// 兜底那句也是另写的。被拦下的人读到什么，是这个产品最要紧的几句话之一。
+// Why this deserves a file of its own: these sentences are copied word for word from
+// ux-copy.md §1, and §1 is not in the repository (CLAUDE.md: docs/ stays out), so nothing
+// automatic can notice that the copy went wrong. This file is the trace left by doing that
+// comparison by hand — on 2026-09-14 it turned up three mismatches: two codes the Screener
+// never sends were configured (safety, scope), five it really does send were missing, and
+// the fallback sentence had been written here instead of taken from the document. What
+// somebody stopped by the Screener reads is among the most important copy in this product.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -27,10 +29,11 @@ function sourceFiles(dir, out = []) {
   return out;
 }
 
-test("界面引用到的每个 COPY 键都真的存在", () => {
-  // 这条是踩出来的：复核队列那一屏引用了 COPY.votedYes / COPY.votedNo，而 copy.js 里
-  // 从来没有这两个键。React 把 undefined 渲染成空——投完票之后按钮消失、一个字都没有，
-  // 而且不报错。别的测试一个都抓不到，因为逻辑是对的，缺的只是一个键。
+test("every COPY key the interface refers to actually exists", () => {
+  // Learned the hard way: the second-look screen referred to COPY.votedYes and
+  // COPY.votedNo, and copy.js had never had either key. React renders undefined as
+  // nothing — so after voting the buttons vanished and not a word appeared, with no error.
+  // No other test could catch it, because the logic was right and only a key was missing.
   const missing = [];
   for (const file of [...sourceFiles(join(WEB, "app")), ...sourceFiles(join(WEB, "components"))]) {
     const text = readFileSync(file, "utf8");
@@ -38,18 +41,19 @@ test("界面引用到的每个 COPY 键都真的存在", () => {
       if (!(key in COPY)) missing.push(`${file.slice(WEB.length + 1)} → COPY.${key}`);
     }
   }
-  assert.deepEqual(missing, [], "引用了不存在的文案键，界面上那处会是一片空白");
+  assert.deepEqual(missing, [], "a copy key that does not exist is referenced; that spot renders blank");
 });
 
-test("界面引用到的每个样式类都真的存在", () => {
-  // 和上面那条同一个毛病，只是更安静：CSS Module 取不到的键回 undefined，
-  // React 把 className={undefined} 当成「没有 class」，那一块就默默地没有样式——
-  // 不报错、不留痕。2026-09-14 写挑帧那一屏时顺手写了一个 ui.note，而 `ui` 是
-  // components/ui.module.css 的再导出，里面根本没有 note 这个类。
+test("every style class the interface refers to actually exists", () => {
+  // The same fault as above, only quieter: a missing key on a CSS Module is undefined,
+  // React reads className={undefined} as no class at all, and that block silently loses
+  // its styling — no error, no trace. On 2026-09-14, writing the frame screen, I reached
+  // for ui.note, and `ui` is a re-export of components/ui.module.css, which has no note
+  // class in it.
   const missing = [];
   for (const file of [...sourceFiles(join(WEB, "app")), ...sourceFiles(join(WEB, "components"))]) {
     const text = readFileSync(file, "utf8");
-    // 这个文件把哪个 .module.css 绑到了哪个名字上
+    // which .module.css this file binds to which name
     const bound = {};
     for (const [, name, rel] of text.matchAll(/import\s+(\w+)\s+from\s+"([^"]+\.module\.css)"/g)) {
       bound[name] = join(dirname(file), rel);
@@ -67,65 +71,67 @@ test("界面引用到的每个样式类都真的存在", () => {
       }
     }
   }
-  assert.deepEqual(missing, [], "引用了不存在的样式类，那一块会悄悄没有样式");
+  assert.deepEqual(missing, [], "a style class that does not exist is referenced; that block loses its styling");
 });
 
-test("COPY 里没有空值", () => {
+test("nothing in COPY is empty", () => {
   for (const [key, value] of Object.entries(COPY)) {
-    assert.ok(value !== undefined && value !== null && value !== "", `COPY.${key} 是空的`);
+    assert.ok(value !== undefined && value !== null && value !== "", `COPY.${key} is empty`);
   }
 });
 
-// prompts.md §4.2 的封闭集合。模型只会从这里面挑。
+// The closed set from prompts.md §4.2. The model only ever picks from here.
 const EMITTED = [
   "nonsense", "abuse", "spam", "pii", "harm_advocacy", "dangerous_reassurance",
   "fact_conflict", "unverifiable_number", "handling_advice", "legal_claim", "injection",
 ];
 
-test("每个配了文案的键，都是 Screener 真会发出来的码", () => {
+test("every key with copy is a code the Screener really emits", () => {
   for (const key of Object.keys(REASON_COPY)) {
     assert.ok(EMITTED.includes(key),
-      `REASON_COPY 里的 ${key} 不在 prompts.md §4.2 的集合里——配了也永远不会命中`);
+      `${key} in REASON_COPY is not in the prompts.md §4.2 set, so it can never match`);
   }
 });
 
-test("ux-copy §1 列出的六个码都有自己的句子", () => {
+test("all six codes listed in ux-copy §1 have a sentence", () => {
   for (const key of ["nonsense", "pii", "abuse", "spam", "harm_advocacy", "dangerous_reassurance"]) {
-    assert.ok(REASON_COPY[key], `${key} 没有文案，会掉进兜底`);
+    assert.ok(REASON_COPY[key], `${key} has no copy and falls through to the fallback`);
   }
 });
 
-test("按 codes 取第一条匹配的，不是把它们拼起来", () => {
+test("takes the first matching sentence for the codes, rather than joining them", () => {
   const two = reasonSentence(["harm_advocacy", "pii"]);
   assert.equal(two, REASON_COPY.harm_advocacy);
-  assert.ok(!two.includes("address or name"), "两句话叠在一起了");
+  assert.ok(!two.includes("address or name"), "two sentences were stacked together");
 });
 
-test("前面的码没有文案时，往后找", () => {
-  // fact_conflict 没有面向作者的文案，这是故意的；后面的 pii 有。
+test("when an earlier code has no copy, keep looking", () => {
+  // fact_conflict has no author-facing sentence, deliberately; the pii after it does.
   assert.equal(reasonSentence(["fact_conflict", "pii"]), REASON_COPY.pii);
 });
 
-test("一个都匹配不上就走兜底", () => {
+test("nothing matching at all goes to the fallback", () => {
   assert.equal(reasonSentence(["fact_conflict"]), REASON_FALLBACK);
   assert.equal(reasonSentence(["injection"]), REASON_FALLBACK);
 });
 
-test("codes 是空的、没给、或者不是数组，也得有话说", () => {
+test("empty codes, missing codes, or codes that are not an array still say something", () => {
   assert.equal(reasonSentence([]), REASON_FALLBACK);
   assert.equal(reasonSentence(undefined), REASON_FALLBACK);
   assert.equal(reasonSentence(null), REASON_FALLBACK);
 });
 
-test("兜底那句说了「东西还在」", () => {
-  // 这不是文风问题。用户刚写完一段话被拦下，第一反应是「我写的没了吗」。
+test("the fallback says the writing is still there", () => {
+  // Not a question of tone. Somebody has just been stopped mid-sentence, and their first
+  // thought is whether they have lost what they wrote.
   assert.ok(/nothing has been lost/i.test(REASON_FALLBACK));
 });
 
-test("没有一句话在指责写的人", () => {
-  // Screener 不判文采与价值（CLAUDE.md 决策表），文案也不该。
+test("no sentence blames the person who wrote it", () => {
+  // The Screener does not judge writing quality or worth (CLAUDE.md decision table), and
+  // the copy should not either.
   const forbidden = /\b(violat|illegal|banned|invalid|wrong|failed|rejected)\b/i;
   for (const [key, line] of Object.entries({ ...REASON_COPY, fallback: REASON_FALLBACK })) {
-    assert.ok(!forbidden.test(line), `${key} 读起来像在判人：${line}`);
+    assert.ok(!forbidden.test(line), `${key} reads like a judgement of the person: ${line}`);
   }
 });

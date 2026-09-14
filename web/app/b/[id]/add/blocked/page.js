@@ -1,10 +1,11 @@
 "use client";
 
-// 8b · 投稿被拦下。
+// 8b · The submission was stopped.
 //
-// 作者看到的只有 reason_codes 翻出来的那句话。没有 verdict，没有 note，
-// 没有任何能被读成「系统对你下了判断」的东西。输入的内容原样留着——
-// 草稿活在 add 那层 layout 的 context 里，退回去还在。
+// All the author sees is the sentence the reason_codes map to. No verdict, no note,
+// nothing that could be read as the system passing judgement on them. What they typed
+// stays exactly as it was — the draft lives in the context on the add layout, so going
+// back finds it there.
 
 import { use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";

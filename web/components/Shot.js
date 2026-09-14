@@ -1,18 +1,22 @@
 import styles from "./Shot.module.css";
 
-// 一帧夜间画面。有图就铺图，没有就是夜色——两种情况下高度和圆角一样，
-// 所以图片到位前后版面不会跳。
+// A single night frame. With a picture it shows the picture, without one it shows the dark
+// — the height and the corner radius are the same either way, so the layout does not jump
+// before and after an image arrives.
 //
-// 有东西压在画面上时（children），底下铺一层自下而上的暗罩：没有这层，总会有某张图
-// 恰好在那个位置是亮的，字当场看不清。所以它跟着 children 走，不是永远都铺——
-// 空铺一层的结果只是把每张照片白白压暗一次。
+// When something sits on top of the frame (children), a bottom-up dark wash goes
+// underneath: without it, sooner or later a picture is bright exactly there and the text
+// becomes unreadable. So it follows children rather than always being present — laying it
+// down over nothing only darkens every photograph for no reason.
 //
-// 素材放 web/public/frames/。两条硬要求来自 CLAUDE.md 的安全底线：
-//   上传前剥掉 EXIF/GPS——照片里带着拍摄地点，而这个产品讲的正是别暴露住址；
-//   人脸和车牌必须遮挡。
-// 剥 EXIF 得在放进来之前做，浏览器不会替你做。
-// radius 取 md | lg | none。"none" 给列表卡片用：卡片自己是圆角加 overflow:hidden，
-// 图再圆一次就在卡片的弧线里套出第二道弧线。
+// Material lives in web/public/frames/. Two hard requirements from the CLAUDE.md safety
+// lines:
+//   strip EXIF and GPS before adding anything — a photograph carries where it was taken,
+//   and this product is about not giving away where you live;
+//   faces and number plates have to be covered.
+// Stripping EXIF has to happen before the file gets here; a browser will not do it for you.
+// radius takes md | lg | none. "none" is for the list card: the card is already rounded
+// with overflow:hidden, and rounding the image again nests a second curve inside the card.
 export default function Shot({ src, alt, height = 170, radius = "md", graded = false, children }) {
   return (
     <div
@@ -20,12 +24,14 @@ export default function Shot({ src, alt, height = 170, radius = "md", graded = f
       style={{ height }}
     >
       {src ? (
-        // 没给 alt 就当装饰图，读屏器会跳过——比念一串文件名好。
+        // With no alt it counts as decorative and a screen reader skips it, which beats
+        // reading out a filename.
         <img className={[styles.img, graded ? styles.graded : ""].join(" ")}
              src={src} alt={alt || ""} loading="lazy" />
       ) : null}
-      {/* 暗罩只在真有东西压在画面上时才铺。它是为了让那些文字读得清，不是装饰；
-          没有 children 还铺一层，就是白白把每张照片压暗一次。 */}
+      {/* The wash appears only when something really sits on the frame. It is there to
+          keep that text readable rather than as decoration; laying it down with no
+          children only darkens every photograph for nothing. */}
       {children ? <span className={styles.scrim} aria-hidden="true" /> : null}
       {children}
     </div>

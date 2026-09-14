@@ -1,14 +1,15 @@
-"""代理依赖的三样外部东西。阶段 3 是内存实作，阶段 4 换成 SQLite。
+"""The three outside things the proxy depends on. Stage 3 is in memory, stage 4 is SQLite.
 
-历史与上下文之所以是端口而不是请求体字段：prompts.md §2.6.1 规定前端不得决定
-拼什么，服务端必须自己按 (user, storyboard) 去取。留成参数就等于把边界交给客户端。
+History and context are ports rather than request-body fields because prompts.md §2.6.1
+says the front end must not decide what gets assembled: the server looks it up itself by
+(user, storyboard). Leaving them as parameters would hand that boundary to the client.
 """
 
 import os
 import time
 from collections import deque
 
-# operations.md §3。三个值都可用环境变量覆盖，默认与文档一致。
+# operations.md §3. All three can be overridden by environment variable; defaults match the doc.
 DEFAULT_LIMITS = {
     "chat": (int(os.getenv("LIMIT_CHAT_PER_DAY", "200")), 86400),
     "vision": (int(os.getenv("LIMIT_VISION_PER_HOUR", "10")), 3600),
@@ -23,7 +24,7 @@ class RateLimited(Exception):
 
 
 class PermissionDenied(Exception):
-    """没有有效 grant。data-model.md §2 要求直接拒绝，不是返回空上下文。"""
+    """No valid grant. data-model.md §2 asks for a refusal, not an empty context."""
 
 
 class MemoryRateLimiter:
@@ -44,7 +45,7 @@ class MemoryRateLimiter:
 
 
 class MemoryHistory:
-    """按 (user, storyboard) 分区，最近 6 条，不摘要（prompts.md §2.4）。"""
+    """Partitioned by (user, storyboard), last 6 messages, never summarised (prompts.md §2.4)."""
 
     TURNS = 6
 
@@ -56,16 +57,19 @@ class MemoryHistory:
 
     def append(self, user_id: str, storyboard_id: str, role: str, content: str,
                prompt_version: str = None, model: str = None) -> None:
-        # prompt_version 与 model 是 CLAUDE.md 工作约定 2 要落库的字段，内存实作只接住签名
+        # prompt_version and model are what working rule 2 in CLAUDE.md requires be written
+        # to the database; the in-memory version only accepts the signature.
         self._log.setdefault((user_id, storyboard_id), []).append({"role": role, "content": content})
 
     def drop_partition(self, user_id: str, storyboard_id: str) -> None:
-        """权限撤销时立刻停用该分区，不等 TTL（prompts.md §2.6.3 第 2 条）。"""
+        """Revoking access disables that partition at once, without waiting for a TTL
+        (prompts.md §2.6.3, item 2).
+        """
         self._log.pop((user_id, storyboard_id), None)
 
 
 class MemoryScreeningLog:
-    """筛查结果的落点。内存实作只是攒着，测试靠它断言服务端记了什么。"""
+    """Where screening results land. In memory it only collects; tests assert against it."""
 
     def __init__(self):
         self.records: list[dict] = []
@@ -75,7 +79,7 @@ class MemoryScreeningLog:
 
 
 class MemoryContext:
-    """Tier 1：只回当前用户自己的内容。阶段 4 换成 data-model.md §2 的 build_context()。"""
+    """Tier 1: only this user's own content. Stage 4 swaps in data-model.md §2 build_context()."""
 
     def __init__(self):
         self.grants: set[tuple[str, str]] = set()

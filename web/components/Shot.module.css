@@ -6,7 +6,8 @@
 }
 .md { border-radius: var(--radius-md); }
 .lg { border-radius: var(--radius-lg); }
-/* 列表卡片用：卡片自己圆角 + overflow:hidden，图不能再圆一次 */
+/* For the list card: the card is already rounded with overflow:hidden, so the image must
+   not be rounded again */
 .none { border-radius: 0; }
 
 .img {
@@ -16,8 +17,9 @@
   display: block;
 }
 
-/* 自下而上的暗罩。文字和标签压在画面上，没有这层，总会有某张图恰好在那儿是亮的。
-   只在 Shot 收到 children 时才铺——见 Shot.js。 */
+/* A bottom-up dark wash. Text and labels sit on the picture, and without this, sooner or
+   later one of them is bright exactly there. Laid down only when Shot has children — see
+   Shot.js. */
 .scrim {
   position: absolute;
   inset: 0;
@@ -25,11 +27,13 @@
   pointer-events: none;
 }
 
-/* 白天拍的照片压成夜色。四张素材里只有一张是真夜拍，而整个产品发生在傍晚到深夜——
-   不压的话，一条时间线上会同时出现正午和午夜。
-   数值是对着部署试出来的，不是拍脑袋定的：0.55 配上那层暗罩，深色毛的负鼠在
-   小卡片上直接糊成一块黑；0.62 还读得出是傍晚，动物也还看得见。
-   调过色就是衍生作品，/credits 里逐张标了哪些被改过。 */
+/* Daytime photographs pushed towards night. Only one of the four is a real night shot, and
+   the whole product happens between dusk and the small hours — without this, one timeline
+   would hold both midday and midnight.
+   The values were found against the deployment rather than guessed: at 0.55, with the wash
+   on top, a dark-furred possum collapses into a black smear on a small card; at 0.62 it
+   still reads as dusk and the animal is still visible.
+   A graded image is a derivative work, and /credits lists which ones were changed. */
 .graded {
   filter: brightness(0.62) saturate(0.7) contrast(1.06) hue-rotate(-6deg);
 }

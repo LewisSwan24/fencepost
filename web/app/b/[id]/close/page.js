@@ -1,13 +1,15 @@
 "use client";
 
-// owner 主动完结一个故事版，并留一句结语（user-flow §9）。
+// An owner closing a storyboard deliberately, leaving a closing line (user-flow §9).
 //
-// 为什么是单独一屏，不是一个确认弹窗：这件事不可逆，而且它会顺手删掉这个故事版上的
-// 助手对话（db.close_storyboard 里那条 DELETE）。四条后果要摆出来给人读完，
-// 弹窗放不下，也不该让人在一个盖住内容的小框里做这种决定。
+// Why a screen of its own rather than a confirm sheet: this is irreversible, and it also
+// deletes the assistant conversation on this storyboard (the DELETE inside
+// db.close_storyboard). Four consequences have to be laid out to be read, a sheet cannot
+// hold them, and nobody should make this decision inside a small box covering the content.
 //
-// 这一屏还刻意说了「你不必这么做」：30 天没动静会自动转只读。完结是给「这件事结束了」
-// 这样的时刻用的，不是一项维护义务。
+// This screen also says deliberately that you do not have to do it: 30 days quiet turns a
+// storyboard read-only by itself. Closing is for the moment when something has ended, not
+// a maintenance duty.
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -16,14 +18,14 @@ import { COPY } from "../../../../lib/copy";
 import { BackButton, ui } from "../../../../components/ui";
 import styles from "./close.module.css";
 
-const NOTE_LIMIT = 280;      // 和服务端 _plain_text(..., 280) 对齐
+const NOTE_LIMIT = 280;      // matches the server's _plain_text(..., 280)
 
 export default function CloseStoryboard({ params }) {
   const { id } = use(params);
   const router = useRouter();
 
   const [view, setView] = useState(null);
-  const [allowed, setAllowed] = useState(null);   // null=还不知道，true/false=知道了
+  const [allowed, setAllowed] = useState(null);   // null = not known yet, true/false = known
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -34,8 +36,10 @@ export default function CloseStoryboard({ params }) {
       async (got) => {
         if (!live) return;
         setView(got);
-        // 已经归档的也当作不允许：服务端其实会让 owner 再关一次，而那会**悄悄盖掉
-        // 上一句结语**。这是这一屏唯一一处比服务端更紧的地方，方向是安全的那一边。
+        // An already archived board counts as not allowed either: the server would in fact
+        // let an owner close it again, and that would **quietly overwrite the previous
+        // closing line**. This is the one place this screen is stricter than the server,
+        // and it errs on the safe side.
         const owner = await isOwner(id, got.level);
         if (live) setAllowed(owner && !isArchived(got.status));
       },
@@ -44,8 +48,9 @@ export default function CloseStoryboard({ params }) {
     return () => { live = false; };
   }, [id]);
 
-  // 不该来的人别停在这一屏上。没有专门的拒绝态——这不是「你没有权限」，
-  // 而是「这里没有这个东西」，送回故事版就好。
+  // Somebody who should not be here should not sit on this screen. There is no dedicated
+  // refusal state — this is not "you lack permission" but "there is nothing here", so send
+  // them back to the storyboard.
   useEffect(() => {
     if (allowed === false) router.replace("/b/" + id);
   }, [allowed, id, router]);
@@ -100,8 +105,8 @@ export default function CloseStoryboard({ params }) {
               />
               <div className={styles.hintRow}>
                 <span className={styles.hint}>{COPY.closeNoteHint}</span>
-                {/* 只在快到头的时候才出现。一个从头挂到尾的计数器是在催人写短，
-                    而这句话本来就没有非写不可的理由。 */}
+                {/* Only appears near the limit. A counter present from the first character
+                    is pressure to write less, and this line has no obligation to exist. */}
                 {left <= 40 ? <span className={styles.count}>{left}</span> : null}
               </div>
             </div>

@@ -2,7 +2,8 @@ import { Caprasimo, Figtree } from "next/font/google";
 import "./globals.css";
 import styles from "./layout.module.css";
 
-// 设计系统指定的两款。Caprasimo 只给字标用，理由见 globals.css 里那段注释。
+// The two faces the design system specifies. Caprasimo is for the wordmark only — the
+// reason is in the comment in globals.css.
 const body = Figtree({ subsets: ["latin"], weight: ["400", "600", "700"], variable: "--font-body" });
 const display = Caprasimo({ subsets: ["latin"], weight: "400", variable: "--font-display" });
 
@@ -21,8 +22,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${body.variable} ${display.variable}`}>
       <body>
-        {/* 移动优先。桌面上不画假手机框——真部署的东西假装成手机很别扭；
-            给一个最大宽度让它在大屏上收住就够了。 */}
+        {/* Mobile first. No fake phone frame on the desktop — something really deployed
+            pretending to be a phone is awkward; a maximum width that holds it in on a
+            large screen is enough. */}
         <div className={styles.shell}>{children}</div>
       </body>
     </html>

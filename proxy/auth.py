@@ -1,8 +1,9 @@
-"""请求者身分。
+"""Who is making this request.
 
-prompts.md §2.6.1 要求每次调用都带请求者身分，由代理解析权限后才拼上下文。
-做法是 HMAC 签名令牌 `<user_id>.<签名>`，密钥在 FENCEPOST_TOKEN_SECRET。
-不建表、不引依赖；客户端没有密钥就伪造不出别人的身分。
+prompts.md §2.6.1 wants every call to carry the requester's identity, so the proxy can
+resolve their access before it assembles any context. The mechanism is an HMAC-signed
+token, `<user_id>.<signature>`, keyed on FENCEPOST_TOKEN_SECRET.
+No table, no dependency; without the secret a client cannot forge somebody else.
 """
 
 import hashlib
@@ -12,7 +13,7 @@ import os
 
 
 class AuthError(Exception):
-    """一律不解释哪里不对，免得成为爆破提示。"""
+    """Never say which part was wrong, or this becomes a cracking hint."""
 
 
 def _secret() -> bytes:
@@ -27,7 +28,7 @@ def _sign(user_id: str) -> str:
 
 
 def new_share_token() -> str:
-    """分享链接的明文 token。只在签发那一次返回，库里只存哈希。"""
+    """Plaintext share-link token. Returned once at issue time; only its hash is stored."""
     return secrets.token_urlsafe(32)
 
 
@@ -40,7 +41,7 @@ def issue(user_id: str) -> str:
 
 
 def verify(token: str) -> str:
-    """返回 user_id。签名比对走 compare_digest，不用 ==。"""
+    """Return the user_id. The signature check uses compare_digest, not ==."""
     user_id, dot, signature = (token or "").rpartition(".")
     if not dot or not user_id or not signature:
         raise AuthError("unauthorized")

@@ -1,5 +1,5 @@
-"""单个端点，按 role 分发。四条硬规则在这里收口：
-限流、fail-open、Writer 校验、报错不外泄。
+"""One endpoint, dispatched by role. Four hard rules close here:
+rate limiting, fail-open, Writer validation, and never leaking an error outward.
 """
 
 import os
@@ -12,20 +12,21 @@ from .model import UpstreamError, redact
 from .ports import (MemoryContext, MemoryHistory, MemoryRateLimiter, MemoryScreeningLog,
                     PermissionDenied, RateLimited)
 
-# 每个角色算在哪条上限。operations.md §3 只列了聊天、视觉、提交三项，没提 Writer，
-# 这里先并进聊天，文档要补一行（见阶段 3 报告）。
+# Which ceiling each role counts against. operations.md §3 lists chat, vision and
+# submission and says nothing about the Writer, so it is folded into chat for now; the
+# doc needs a line added (see the stage 3 report).
 SCOPE = {"neighbour": "chat", "writer": "chat", "screener": "submission"}
 
 FIELDS = {"fun_fact", "story", "forum_post"}
 SUBJECTS = {"entry", "forum_post", "submission"}
 SPECIES = {"brushtail", "ringtail", "other", "unknown"}
-WRITE_LEVELS = {"contribute", "reshare"}          # view 只能看
+WRITE_LEVELS = {"contribute", "reshare"}          # view can only look
 LEVEL_RANK = {"view": 0, "contribute": 1, "reshare": 2}
-# user-flow §6：默认 7 天。窗口短，链接万一流出去暴露面也短。
+# user-flow §6: seven days by default. A short window means a leaked link is exposed briefly.
 SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
 
-# 给客户端的文案一律固定，ux-copy.md 里有的就用原文。
-# 上游报错、prompt 内容、key 一个字都不往外带。
+# Copy sent to the client is always fixed; where ux-copy.md has a line, that line is used.
+# Upstream errors, prompt contents and keys never travel outward, not a word.
 COPY = {
     "unauthorized": "Sign in again to keep using the assistant.",
     "no_access": "You do not have access to this storyboard.",
@@ -58,7 +59,7 @@ class Deps:
     history: object = field(default_factory=MemoryHistory)
     context: object = field(default_factory=MemoryContext)
     screening: object = field(default_factory=MemoryScreeningLog)
-    db: object = None                            # 资源端点要直接写库，助手那条路用不上
+    db: object = None                            # resource endpoints write directly; the assistant path does not
 
 
 def _error(code: str, copy_key: str = None, **extra) -> dict:
@@ -66,15 +67,18 @@ def _error(code: str, copy_key: str = None, **extra) -> dict:
 
 
 def _plain_text(value, limit: int, multiline: bool = False):
-    """校验一段自由文本，回 (清理后的值, 是否合法)。
+    """Validate a piece of free text, returning (cleaned value, is it acceptable).
 
-    给的是**没过 Screener 的那几个字段**用的：故事版标题、论坛主题标题、归档结语。
-    它们只走这一层，所以这一层要把非模型能判的那些挡掉：类型不对、超长、藏控制字符、
-    以及「只打了几个空格」——那种东西入库之后在界面上就是一块空白，谁也看不出是什么。
+    This is for **the fields the Screener never sees**: the storyboard title, the forum
+    thread title, the closing line. They pass through this layer alone, so this layer has to
+    stop what no model is needed for — wrong type, too long, hidden control characters, and
+    "a few spaces", which lands in the database and shows up in the interface as a blank
+    nobody can identify.
 
-    `None` 原样放行（可选字段）；strip 之后为空也当没给，而不是存一个空字符串。
-    为什么不把它们也送去 Screener：见 operations.md §1.1。简单说是那两条路径上根本
-    没有一次模型调用可以搭车，而 `review` 这档对一个标题没有能落脚的地方。
+    `None` passes through untouched (an optional field); empty after strip counts as not
+    given rather than as an empty string. Why these are not screened as well: see
+    operations.md §1.1. In short, neither path has a model call to ride along with, and a
+    `review` verdict has nowhere to land on a title.
     """
     if value is None:
         return None, True
@@ -92,7 +96,10 @@ def _plain_text(value, limit: int, multiline: bool = False):
 
 
 def _admit(body: dict, token: str, deps: Deps):
-    """认身分、认 role、扣配额。放行给 (user_id, None)，拦下给 (None, (status, payload))。"""
+    """Identify, check the role, charge the quota.
+
+    Allowed returns (user_id, None); blocked returns (None, (status, payload)).
+    """
     try:
         user_id = auth.verify(token)
     except auth.AuthError:
@@ -105,7 +112,8 @@ def _admit(body: dict, token: str, deps: Deps):
     try:
         deps.limiter.check_and_count(user_id, SCOPE[role])
         if role == "neighbour" and body.get("image_b64"):
-            # §2.5.1 第 5 条是客户端的确认步骤，这里再拦一道：没带确认就不发帧。
+            # §2.5.1 item 5 is a client-side confirmation step; this blocks it again, so no
+            # frame is sent without the confirmation.
             if not body.get("frame_consent"):
                 return None, (400, _error("frame_consent_missing"))
             deps.limiter.check_and_count(user_id, "vision")
@@ -116,7 +124,7 @@ def _admit(body: dict, token: str, deps: Deps):
 
 
 def handle(body: dict, token: str, deps: Deps):
-    """返回 (http_status, payload)。payload 永远是可以直接发给客户端的东西。"""
+    """Returns (http_status, payload). The payload is always safe to hand to the client."""
     body = body or {}
     user_id, refusal = _admit(body, token, deps)
     if refusal:
@@ -132,7 +140,7 @@ def handle(body: dict, token: str, deps: Deps):
     except PermissionDenied:
         return 403, _error("no_access")
     except UpstreamError:
-        # Neighbour 超时不伪造回复（prompts.md §5），客户端自己给重试按钮。
+        # A Neighbour timeout never fabricates a reply (prompts.md §5); the client offers a retry.
         return 503, _error("upstream_unavailable")
     except Exception as exc:
         print(f"[proxy] unhandled: {redact(str(exc))[:300]}", file=sys.stderr)
@@ -144,13 +152,14 @@ def _neighbour(body: dict, user_id: str, deps: Deps):
     message = body.get("message")
     if not storyboard_id or not message:
         return 400, _error("bad_request")
-    # 权限门与上下文都在服务端。请求体里就算带了 history/context 也一概不看。
+    # The permission gate and the context both live on the server. history and context in
+    # the request body are ignored even when present.
     _settle(deps)
     context = deps.context.build(user_id, storyboard_id)
     history = deps.history.recent(user_id, storyboard_id)
     result = roles.neighbour(deps.client, context, history, message, body.get("image_b64"))
     deps.history.append(user_id, storyboard_id, "user", message)
-    # 每次模型调用都要把 prompt 版本号一起落库（CLAUDE.md 工作约定 2）
+    # Every model call stores the prompt version alongside it (CLAUDE.md working rule 2)
     deps.history.append(user_id, storyboard_id, "assistant", result["reply"],
                         prompt_version=result["prompt_version"],
                         model=getattr(deps.client, "chat_model", None))
@@ -181,8 +190,8 @@ def _screener(body: dict, user_id: str, deps: Deps):
                               body["field"], submission)
     _record_screening(deps, internal, body["field"], submission, subject_type, subject_id,
                       author_id=user_id)
-    # review 档作者无感（operations.md §2.3），所以客户端只拿得到能不能发；
-    # verdict、codes、note、fail_open 留在服务端记录里。
+    # A review verdict is invisible to the author (operations.md §2.3), so the client is
+    # told only whether it can post; verdict, codes, note and fail_open stay server-side.
     published = internal["verdict"] != "reject"
     payload = {"role": "screener", "published": published, "prompt_version": internal["prompt_version"]}
     if not published:
@@ -191,9 +200,10 @@ def _screener(body: dict, user_id: str, deps: Deps):
 
 
 class StreamSession:
-    """流本身，外加一个跑完整趟之后才执行的落库动作。
+    """The stream itself, plus a storing step that runs only after the whole run finishes.
 
-    中途断掉就不落库。§5 说 Neighbour 失败不伪造回复，半截回复也是伪造。
+    Cutting out halfway stores nothing. §5 says a failed Neighbour must not fabricate a
+    reply, and half a reply is a fabrication too.
     """
 
     def __init__(self, stream, deps: Deps, user_id: str, storyboard_id: str, message: str):
@@ -216,7 +226,9 @@ class StreamSession:
 
 
 def handle_stream(body: dict, token: str, deps: Deps):
-    """流式只开给 Neighbour。成功返回 (200, StreamSession)，失败与 handle 同形状。"""
+    """Streaming is open to the Neighbour only. Success returns (200, StreamSession);
+    failure takes the same shape as handle.
+    """
     body = body or {}
     if body.get("role") != "neighbour":
         return 400, _error("bad_request")
@@ -235,13 +247,14 @@ def handle_stream(body: dict, token: str, deps: Deps):
     return 200, StreamSession(stream, deps, user_id, storyboard_id, message)
 
 
-# ---------- 资源端点 ----------
+# ---------- resource endpoints ----------
 
 def create_session(body: dict, deps: Deps):
-    """demo 级的身分：给一个 handle 就签令牌，没有密码。
+    """Demo-grade identity: hand over a handle and get a token, with no password.
 
-    所以它默认关着。任何人拿别人的 handle 都能换到令牌，这在真环境里就是冒充，
-    要开得显式设 FENCEPOST_OPEN_SIGNUP。
+    Which is why it is off by default. Anyone can exchange somebody else's handle for a
+    token, and in a real environment that is impersonation, so turning it on means setting
+    FENCEPOST_OPEN_SIGNUP explicitly.
     """
     if not os.getenv("FENCEPOST_OPEN_SIGNUP"):
         return 403, _error("signup_closed")
@@ -257,39 +270,46 @@ def create_storyboard(body: dict, token: str, deps: Deps):
         user_id = auth.verify(token)
     except auth.AuthError:
         return 401, _error("unauthorized")
-    # 标题不过 Screener，所以这一层要把模型之外能判的都判了：类型、长度、控制字符、
-    # 以及「只打了几个空格」。理由与取舍见 operations.md §1.1。
+    # The title never reaches the Screener, so this layer judges everything no model is
+    # needed for: type, length, control characters, and "a few spaces". Reasons and
+    # trade-offs in operations.md §1.1.
     title, ok = _plain_text(body.get("title"), 120)
     if not ok:
         return 400, _error("bad_request")
-    # add_storyboard 顺手给 owner 一条 grant，否则他进不了自己的故事版
+    # add_storyboard hands the owner a grant too, or they cannot enter their own storyboard
     return 200, {"storyboard_id": deps.db.add_storyboard(user_id, title), "title": title}
 
 
 def _settle(deps: Deps) -> None:
-    """碰故事版之前先结算：30 天没动静的翻成只读。没有 cron，谁碰谁结算。"""
+    """Settle before touching a storyboard: 30 days quiet turns it read-only.
+
+    No cron; whoever touches it settles it.
+    """
     if deps.db is not None:
         deps.db.settle_stale()
 
 
 def _purge(deps: Deps) -> None:
-    """处置满 30 天的筛查记录该删了（operations.md §1 留存表）。
+    """Screening records disposed of more than 30 days ago should go (operations.md §1,
+    the retention table).
 
-    和 settle_stale / settle_review 同一套办法：不设 cron，谁碰这张表谁顺手清。
-    这条承诺原先是空的——`purge_screening()` 写了、测了，却没有任何调用方，
-    于是留存表上那一行「处理完 + 30 天后删除」从来没有发生过。
+    Same approach as settle_stale and settle_review: no cron, whoever touches this table
+    clears it in passing. This promise used to be empty — `purge_screening()` was written
+    and tested but had no caller at all, so the line in the retention table saying deleted
+    30 days after disposal had never once happened.
 
-    **位置和另外两个不一样，是故意的：这个要放在权限门之后。** 另外两个只是翻状态位，
-    这个是 DELETE；而线上 `FENCEPOST_OPEN_SIGNUP` 是开着的（CLAUDE.md 决策表），
-    「带着合法令牌」等于「互联网上的任何人」。一个马上就要被拒的调用者，
-    不该能驱动一次全表删除。
+    **Its position differs from the other two on purpose: this one goes after the
+    permission gate.** The other two only flip a status bit; this one DELETEs. And
+    `FENCEPOST_OPEN_SIGNUP` is on in production (CLAUDE.md decision table), which makes
+    holding a valid token the same thing as being anybody on the internet. A caller who is
+    about to be refused should not be able to drive a table-wide delete.
     """
     if deps.db is not None:
         deps.db.purge_screening()
 
 
 def _identify(token: str):
-    """放行给 (user_id, None)，认不出给 (None, (401, payload))。"""
+    """Allowed gives (user_id, None); unrecognised gives (None, (401, payload))."""
     try:
         return auth.verify(token), None
     except auth.AuthError:
@@ -304,7 +324,7 @@ def _record_screening(deps: Deps, result: dict, field: str, text: str,
         "subject_type": subject_type,
         "subject_id": subject_id,
         "author_id": author_id,
-        # operations.md §1：ok 不留原文，减少留存面
+        # operations.md §1: an ok verdict keeps no original text, to reduce what is retained
         "original_text": None if result["verdict"] == "ok" else text,
         "model": getattr(deps.client, "screener_model", None),
     })
@@ -321,11 +341,12 @@ def register_video(body: dict, token: str, deps: Deps):
 
 
 def submit_entry(body: dict, token: str, deps: Deps):
-    """提交一条 entry：先筛查，通过才建。
+    """Submit an entry: screen first, create only if it passes.
 
-    fun_fact 与 story 各筛一次（prompts.md §4.3 的模板一次只认一个 field）。任一条被 reject
-    就整条不发，两条都不是 reject 就照常发——包括被标 review 的那种。响应里看不出 review，
-    作者无感是 operations.md §2.3 的要求。
+    fun_fact and story are screened separately (the prompts.md §4.3 template takes one field
+    at a time). If either is rejected the whole entry stays unposted; if neither is, it posts
+    as normal — including when it was marked review. The response gives no sign of review,
+    because operations.md §2.3 requires that the author is never told.
     """
     user_id, refusal = _identify(token)
     if refusal:
@@ -349,7 +370,7 @@ def submit_entry(body: dict, token: str, deps: Deps):
 
     video_id = body.get("video_id")
     if video_id and deps.db.video_owner(video_id) != user_id:
-        # 别人的素材不能挂到自己的 entry 上
+        # Somebody else's footage cannot be hung on your own entry
         return 403, _error("no_access")
 
     try:
@@ -375,7 +396,10 @@ def submit_entry(body: dict, token: str, deps: Deps):
 
 
 def timeline(params: dict, token: str, deps: Deps):
-    """故事版时间线：所有贡献者的 entry。与助手的 Tier 1 上下文是两条不同的查询。"""
+    """The storyboard timeline: entries from every contributor.
+
+    A different query from the assistant's Tier 1 context.
+    """
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
@@ -389,7 +413,7 @@ def timeline(params: dict, token: str, deps: Deps):
 
 
 def _own_editable_entry(body: dict, token: str, deps: Deps):
-    """取出这条 entry，并确认：是我写的、还在、故事版还收改动。"""
+    """Fetch this entry and confirm: I wrote it, it still exists, the storyboard still takes changes."""
     user_id, refusal = _identify(token)
     if refusal:
         return None, refusal
@@ -397,7 +421,7 @@ def _own_editable_entry(body: dict, token: str, deps: Deps):
     if record is None or record["deleted_at"]:
         return None, (404, _error("gone"))
     if record["author_id"] != user_id:
-        # owner 移除他人 entry 是复核队列的处置权，不走这条路（见 #18）
+        # An owner removing somebody else's entry is a review-queue disposal, not this path (see #18)
         return None, (403, _error("not_your_entry"))
     if deps.db.storyboard_status(record["storyboard_id"]) != "active":
         return None, (409, _error("storyboard_closed"))
@@ -413,7 +437,9 @@ def delete_entry(body: dict, token: str, deps: Deps):
 
 
 def edit_entry(body: dict, token: str, deps: Deps):
-    """改过的字段重新过一次筛查。任一条被 reject，整次编辑不生效，原内容留着。"""
+    """Changed fields go through screening again. If either is rejected the whole edit
+    is dropped and the original text stays.
+    """
     record, refusal = _own_editable_entry(body, token, deps)
     if refusal:
         return refusal
@@ -444,14 +470,17 @@ def edit_entry(body: dict, token: str, deps: Deps):
     return 200, {"entry_id": record["id"], "published": True, "prompt_version": version}
 
 
-# ---------- 分享链接与权限 ----------
+# ---------- share links and access ----------
 
 def _stamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def issue_share_link(body: dict, token: str, deps: Deps):
-    """签发一张带权限的链接。明文 token 只在这一次返回，库里只有哈希。"""
+    """Issue a link carrying an access level.
+
+    The plaintext token is returned this once; the database holds only a hash.
+    """
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
@@ -463,7 +492,7 @@ def issue_share_link(body: dict, token: str, deps: Deps):
     mine = deps.db.grant_level(storyboard_id, user_id)
     if mine is None:
         return 403, _error("no_access")
-    # 签发要 reshare 档，而且给不出自己没有的档位（user-flow §6）
+    # Issuing needs reshare, and nobody can hand out a level they do not hold (user-flow §6)
     if mine != "reshare" or LEVEL_RANK[level] > LEVEL_RANK[mine]:
         return 403, _error("cannot_share")
 
@@ -497,11 +526,11 @@ def redeem_share_link(body: dict, token: str, deps: Deps):
         return 403, _error("link_used_up")
 
     existing = deps.db.grant_level(link["storyboard_id"], user_id)
-    # 只升不降：一张 view 链接不该把 owner 降级
+    # Upgrade only, never downgrade: a view link must not demote the owner
     upgrade = existing is None or LEVEL_RANK[existing] < LEVEL_RANK[link["level"]]
     granted = link["level"] if upgrade else existing
-    # 授权和加次数必须一起落地。分成两次调用时，中间失败会让人进来而次数没加，
-    # 于是一张 max_uses=3 的链接能放进第四个人。
+    # Granting and counting the use have to land together. As two calls, a failure between
+    # them lets somebody in without counting the use, so a max_uses=3 link admits a fourth.
     deps.db.redeem_link(link["id"], link["storyboard_id"], user_id,
                         link["level"], link["created_by"], upgrade)
     return 200, {"storyboard_id": link["storyboard_id"], "level": granted}
@@ -521,7 +550,7 @@ def revoke_share_link(body: dict, token: str, deps: Deps):
 
 
 def revoke_grant(body: dict, token: str, deps: Deps):
-    """撤销某人的访问。立刻生效：上下文、历史、时间线下一次调用就都没了。"""
+    """Revoke somebody's access. Immediate: context, history and timeline are gone on the next call."""
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
@@ -535,15 +564,18 @@ def revoke_grant(body: dict, token: str, deps: Deps):
 
 
 def list_share_links(params: dict, token: str, deps: Deps):
-    """这个故事版发出去过的链接。分享那一屏要它，才知道有什么可以关掉。
+    """The links this storyboard has issued. The share screen needs it to know what can
+    be turned off.
 
-    门和 list_grants 一样是 reshare：能签发的人才该看得见签发过什么。
-    出 owner_id 是同一个理由——撤销一张链接要么是 owner，要么是签发它的人本人
-    （见 revoke_share_link），界面靠这两个字段决定给谁看那个按钮。
+    The gate is reshare, the same as list_grants: only somebody who can issue should see
+    what has been issued. owner_id comes back for the same reason — revoking a link takes
+    either the owner or the person who issued it (see revoke_share_link), and the interface
+    uses those two fields to decide who gets the button.
 
-    **回的东西里没有 token，也不可能有。** 库里只存 SHA-256，明文在签发那一刻
-    出现过一次就没了。这不是少给了什么：一个事后还能把码取回来的接口，
-    等于把一份可兑换的权限长期挂在界面上。
+    **There is no token in the response, and there cannot be.** The database stores only a
+    SHA-256; the plaintext existed for one moment at issue time and is gone. This is not
+    something withheld: an endpoint that could fetch a code back afterwards would be a
+    redeemable grant left hanging on a screen.
     """
     user_id, refusal = _identify(token)
     if refusal:
@@ -559,11 +591,12 @@ def list_share_links(params: dict, token: str, deps: Deps):
 
 
 def list_grants(params: dict, token: str, deps: Deps):
-    """谁有这个故事版的权限，各是哪一档。分享那一屏要它。
+    """Who holds access to this storyboard, and at what level. The share screen needs it.
 
-    要 reshare 才看得到：这是「谁能进来」的名单，只读的人看它没有用途。
-    出 owner_id 是给界面判断该不该显示撤销——撤销只有 owner 能做（见 revoke_grant），
-    没有这个字段，界面就只能让所有人都看到一个按下去必然 403 的按钮。
+    Reshare is required to see it: this is the list of who can get in, and it has no use to
+    somebody with read-only access. owner_id comes back so the interface can decide whether
+    to show the revoke control — only an owner can revoke (see revoke_grant), and without
+    that field the interface could only show everybody a button certain to 403.
     """
     user_id, refusal = _identify(token)
     if refusal:
@@ -579,7 +612,7 @@ def list_grants(params: dict, token: str, deps: Deps):
 
 
 def dashboard(params: dict, token: str, deps: Deps):
-    """我能访问的故事版，活跃与往期分开（user-flow §9）。"""
+    """The storyboards I can reach, active and past kept apart (user-flow §9)."""
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
@@ -590,7 +623,7 @@ def dashboard(params: dict, token: str, deps: Deps):
 
 
 def close_storyboard(body: dict, token: str, deps: Deps):
-    """owner 主动完结，可以附一句结语。归档不等于删除。"""
+    """The owner closing it deliberately, with an optional closing line. Archived is not deleted."""
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
@@ -604,10 +637,10 @@ def close_storyboard(body: dict, token: str, deps: Deps):
     return 200, {"storyboard_id": storyboard_id, "status": "archived", "closed_note": note}
 
 
-# ---------- 论坛 ----------
+# ---------- forum ----------
 
 def _forum_gate(storyboard_id: str, user_id: str, deps: Deps, writing: bool):
-    """论坛的权限跟着故事版走：有 grant 才看得到，能写要 contribute 以上。"""
+    """Forum access follows the storyboard: a grant to see it, contribute or above to write."""
     _settle(deps)
     level = deps.db.grant_level(storyboard_id, user_id)
     if level is None:
@@ -621,7 +654,7 @@ def _forum_gate(storyboard_id: str, user_id: str, deps: Deps, writing: bool):
 
 
 def _screen_forum_body(body_text: str, user_id: str, deps: Deps):
-    """返回 (result, refusal)。被 reject 就不建贴文，记录挂 submission。"""
+    """Returns (result, refusal). A rejection creates no post and records against submission."""
     result = roles.screener(deps.client, "other", "forum_post", body_text)
     if result["verdict"] == "reject":
         _record_screening(deps, result, "forum_post", body_text, "submission", None, user_id)
@@ -647,18 +680,20 @@ def create_thread(body: dict, token: str, deps: Deps):
     except RateLimited as limited:
         return 429, _error("rate_limited", f"rate_limited_{limited.scope}", scope=limited.scope)
 
-    # 标题跟着正文一起送去筛查。它本来一个字都没查过，于是
-    # 「Anyone else seen the one at the Smiths', 42 Example St?」配一段干净的正文
-    # 就能挂在所有人眼前——而 pii 正是 Screener 要拦的第一条。
+    # The title is screened together with the body. It used to go unchecked entirely, so
+    # "Anyone else seen the one at the Smiths', 42 Example St?" with a clean body could sit
+    # in front of everyone — and pii is the first thing the Screener exists to catch.
     #
-    # 合成一段送，不是单独再调一次：同一个帖子判两次要花两次模型调用、两份额度，
-    # 还会出现「正文过了标题没过」这种没地方安放的状态。标题本来就是这篇帖子的一部分。
+    # Joined into one piece rather than screened by a second call: judging one post twice
+    # costs two model calls and two slices of quota, and produces states like "the body
+    # passed but the title did not" with nowhere to put them. The title is part of the post.
     screened = f"{title}\n\n{text}"
     result, refusal = _screen_forum_body(screened, user_id, deps)
     if refusal:
         return refusal
     thread_id, post_id = deps.db.add_thread(storyboard_id, user_id, title, text)
-    # 存进审计行的要和模型真正读到的那段一字不差，否则日后回看对不上。
+    # What goes into the audit row has to match what the model actually read, word for word,
+    # or a later look back will not line up.
     _record_screening(deps, result, "forum_post", screened, "forum_post", post_id, user_id)
     return 200, {"thread_id": thread_id, "post_id": post_id, "published": True,
                  "prompt_version": result["prompt_version"]}
@@ -716,20 +751,21 @@ def read_thread(params: dict, token: str, deps: Deps):
     refusal = _forum_gate(storyboard_id, user_id, deps, writing=False)
     if refusal:
         return refusal
-    # 带上标题：没有它，帖子详情页顶着一个「Discussion」，看不出在读什么，
-    # 分享出去的链接更是一片空白——标题本来就和帖子一起可见，不是额外的泄漏。
+    # Carry the title: without it the thread screen sits under a bare "Discussion" and you
+    # cannot tell what you are reading, and a shared link is blank. The title is visible
+    # alongside the post already; this is not an extra leak.
     return 200, {"thread_id": thread_id, "title": deps.db.thread_title(thread_id),
                  "posts": deps.db.posts(thread_id)}
 
 
-# ---------- 复核队列 ----------
+# ---------- review queue ----------
 
 VOTES = {"looks_right", "worth_checking"}
 DISPOSITIONS = {"kept", "labelled", "removed"}
 
 
 def review_queue(params: dict, token: str, deps: Deps):
-    """待核实的条目，给同故事版的其他贡献者看。看不到自己的。"""
+    """Entries awaiting a second look, for the other contributors. Never your own."""
     user_id, refusal = _identify(token)
     if refusal:
         return refusal
@@ -742,7 +778,7 @@ def review_queue(params: dict, token: str, deps: Deps):
     if level is None:
         return 403, _error("no_access")
     if level not in WRITE_LEVELS:
-        # 只读的人不参与复核：这是贡献者之间的事
+        # Read-only people take no part in review: this is between contributors
         return 403, _error("read_only_access")
     _purge(deps)
     return 200, {"storyboard_id": storyboard_id,
@@ -760,7 +796,8 @@ def cast_review_vote(body: dict, token: str, deps: Deps):
     if record is None or record["deleted_at"]:
         return 404, _error("gone")
     if record["author_id"] == user_id:
-        # 自己的条目自己投票没有意义，何况作者本来就不该知道它被标记了
+        # Voting on your own entry is meaningless, and the author should not have learned it
+        # was marked in the first place
         return 403, _error("not_your_call")
     level = deps.db.grant_level(record["storyboard_id"], user_id)
     if level is None:
@@ -770,13 +807,13 @@ def cast_review_vote(body: dict, token: str, deps: Deps):
     deps.db.settle_review()
     _purge(deps)
     tally = deps.db.cast_vote(entry_id, user_id, vote)
-    # 只回票数，不回谁投的（operations §2.3）
+    # Only the counts come back, never who voted (operations §2.3)
     return 200, {"entry_id": entry_id, "worth_checking": tally["worth_checking"],
                  "looks_right": tally["looks_right"]}
 
 
 def dispose_entry(body: dict, token: str, deps: Deps):
-    """owner 的最终处置权：保留、打标签、移除。"""
+    """The owner's final say: keep, label, or remove."""
     user_id, refusal = _identify(token)
     if refusal:
         return refusal

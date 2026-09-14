@@ -1,9 +1,10 @@
 // node --test lib/fixtures.test.mjs
 //
-// 这组用例是有来历的：other_animal 那条正则曾经因为字符串里少转义一层，
-// 写出来是退格符而不是词边界，安安静静地永远不匹配——四条演示脚本里的
-// bandicoot 那条当场就废了，而界面上看起来只是「助手说它不知道」。
-// 所以每条路由都钉一个用例。
+// These cases have a history: the other_animal regex was once written in a string one
+// escape level short, so it came out as a backspace character rather than a word boundary
+// and silently matched nothing — the bandicoot script among the four demo scripts was dead
+// on arrival, and on screen it merely looked like the assistant saying it did not know.
+// So every route gets a case.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assistantReply, assistantFrames, writer, suggestedSpecies, PROMPT_VERSION,
@@ -28,34 +29,36 @@ const CASES = [
 for (const [question, expected] of CASES) {
   test(question, () => {
     const reply = assistantReply(question).reply;
-    assert.ok(reply.includes(expected), `想要包含「${expected}」，实际是「${reply}」`);
+    assert.ok(reply.includes(expected), `wanted it to contain "${expected}", got "${reply}"`);
   });
 }
 
-test("蝙蝠那条给号码，也给接种那句，并且明确拒绝评论安全性", () => {
+test("the bat route gives the number and the vaccination line, and refuses to comment on safety", () => {
   const { reply } = assistantReply("there's a bat stuck in my carport");
-  assert.ok(reply.includes("1300 264 625"), "号码要给数字形式，不能只给助记词");
+  assert.ok(reply.includes("1300 264 625"), "the number has to be in digits, not only the mnemonic");
   assert.ok(reply.includes("Only vaccinated handlers should touch a bat"));
   assert.ok(reply.includes("won't say anything about whether one is safe"));
   assert.ok(reply.includes("don't pick it up"));
-  // 这里不做「不许出现 safe 这个词」的反向断言：这条回复里的 safe 恰恰在拒绝语里
-  // （won't say anything about whether one is safe），关键词查会把正确的拒绝判成违规。
-  // 正则分不清「X 是安全的」和「我不会说 X 安不安全」，硬凑只会得到假信心。
-  // 「永不下无毒/安全结论」这条红线由 prompt 与 tests/redline_cases.yaml 守，不由这里守。
+  // No negative assertion here that the word safe must not appear: the safe in this reply
+  // is part of the refusal itself (won't say anything about whether one is safe), and a
+  // keyword search would read a correct refusal as a violation. A regex cannot tell "X is
+  // safe" from "I will not say whether X is safe", and forcing one only buys false
+  // confidence. The red line about never concluding non-venomous or safe is held by the
+  // prompt and by tests/redline_cases.yaml, not here.
 });
 
-test("每条回复都带版本号", () => {
+test("every reply carries the version", () => {
   assert.equal(assistantReply("anything").prompt_version, PROMPT_VERSION);
 });
 
-test("流式帧的形状和真代理一致", () => {
+test("the streaming frames are shaped like the real proxy", () => {
   const frames = assistantFrames("Do they eat fruit?");
   assert.equal(frames[0].prompt_version, PROMPT_VERSION);
   assert.equal(frames.at(-1).done, true);
   assert.ok(frames.slice(1, -1).every((f) => typeof f.delta === "string"));
 });
 
-test("Writer 只给候选，两种把握度各一条", () => {
+test("the Writer offers candidates only, one at each confidence", () => {
   const out = writer("ringtail", "saw one on the fence");
   assert.equal(out.fun_facts.length, 2);
   assert.deepEqual(out.fun_facts.map((f) => f.confidence), ["established", "unverified"]);
@@ -63,24 +66,26 @@ test("Writer 只给候选，两种把握度各一条", () => {
   assert.ok(!("verdict" in out) && !("note" in out));
 });
 
-test("不是负鼠就没有 fun fact，skipped 为真", () => {
+test("anything that is not a possum has no fun fact, and skipped is true", () => {
   assert.equal(writer("other", "something in the tree").skipped, true);
   assert.equal(writer("unknown", "not sure what it was").fun_facts.length, 0);
 });
 
-test("认帧的建议是句子，不是选中项", () => {
+test("frame identification suggests a sentence, not a selection", () => {
   assert.equal(suggestedSpecies("Looks most like a Brushtail — going by the bushy tail."), "brushtail");
-  // 同时提到两种，或者一种都没提，就不给「Use this」——宁可不给，也不替用户选
+  // Both species mentioned, or neither, means no "Use this" — better to offer nothing
+  // than to choose on their behalf
   assert.equal(suggestedSpecies("Could be a brushtail or a ringtail from this angle."), null);
   assert.equal(suggestedSpecies("Too dark to say."), null);
 });
 
-// ── 论坛（离线）──
-// 这几条是 CRUD，不是助手路由。放在这里是因为它们钉的是同一件事：
-// 离线演示必须演得出线上真会发生的事，否则 fixtures 模式就是一份粉饰。
+// ── Forum (offline) ──
+// These are CRUD rather than assistant routing. They sit here because they pin the same
+// thing: an offline demo has to be able to show what really happens live, or fixtures mode
+// is a whitewash.
 
-test("标题里写了地址，正文再干净也发不出去", () => {
-  // 这正是「标题跟正文一起过筛查」那次改动要挡的东西。
+test("an address in the title cannot be rescued by a clean body", () => {
+  // Exactly what screening the title together with the body was meant to stop.
   const out = createThread({
     storyboardId: "sb_jacaranda",
     title: `Anyone seen the one at ${BLOCKED_TRIGGER}`,
@@ -88,10 +93,10 @@ test("标题里写了地址，正文再干净也发不出去", () => {
   });
   assert.equal(out.published, false);
   assert.deepEqual(out.reason_codes, ["pii"]);
-  assert.ok(!("thread_id" in out), "被拒时不该给 thread_id —— 界面会拿它去跳转");
+  assert.ok(!("thread_id" in out), "a refusal must not carry a thread_id — the interface would navigate to it");
 });
 
-test("正文里写了地址也一样", () => {
+test("an address in the body is the same", () => {
   const out = createThread({
     storyboardId: "sb_jacaranda", title: "Who else hears it at 2am",
     body: `it lives under the deck at ${BLOCKED_TRIGGER}`,
@@ -99,7 +104,7 @@ test("正文里写了地址也一样", () => {
   assert.equal(out.published, false);
 });
 
-test("干净的主题能发出去，并且带着 thread_id", () => {
+test("a clean thread posts, and comes back with a thread_id", () => {
   const out = createThread({
     storyboardId: "sb_jacaranda", title: "Who else hears it at 2am",
     body: "something walks on my roof every night",
@@ -108,36 +113,36 @@ test("干净的主题能发出去，并且带着 thread_id", () => {
   assert.ok(out.thread_id);
 });
 
-test("回复里的地址也拦得住", () => {
+test("an address in a reply is stopped too", () => {
   assert.equal(createPost({ threadId: "t1", body: `round the back of ${BLOCKED_TRIGGER}` }).published, false);
 });
 
-test("能不能写，照故事版的档位和状态说了算", () => {
-  // sb_jacaranda 是 reshare 且 active；sb_roof 是 view 且 archived。
+test("whether you can write depends on the storyboard level and status", () => {
+  // sb_jacaranda is reshare and active; sb_roof is view and archived.
   assert.deepEqual(boardAccess("sb_jacaranda"), { level: "reshare", status: "active" });
   assert.deepEqual(boardAccess("sb_roof"), { level: "view", status: "archived" });
   assert.deepEqual(boardAccess("nope"), { level: null, status: null });
 });
 
-// ── 改与删自己的条目（离线）──
+// ── Editing and deleting your own entry (offline) ──
 
-test("改动被拒时，库里那一条一个字都不能动", () => {
+test("when an edit is refused, not a character of the stored entry changes", () => {
   const before = timeline("sb_jacaranda").entries.find((e) => e.id === "e5");
   const original = before.story;
   const out = editEntry({ entry_id: "e5", story: `it lives at ${BLOCKED_TRIGGER}` });
   assert.equal(out.published, false);
   assert.deepEqual(out.reason_codes, ["pii"]);
   const after = timeline("sb_jacaranda").entries.find((e) => e.id === "e5");
-  assert.equal(after.story, original, "被拒却把原文改掉了 —— 这是最坏的一种结果");
+  assert.equal(after.story, original, "refused, and yet the original changed — the worst outcome of all");
 });
 
-test("什么都没改，回 unchanged，不假装保存过", () => {
+test("nothing changed comes back unchanged, without pretending to have saved", () => {
   const row = timeline("sb_jacaranda").entries.find((e) => e.id === "e5");
   const out = editEntry({ entry_id: "e5", story: row.story, fun_fact: row.fun_fact });
   assert.equal(out.unchanged, true);
 });
 
-test("改得动的时候就真的改了", () => {
+test("when it can be changed, it really is changed", () => {
   const out = editEntry({ entry_id: "e4", story: "came back the next night too" });
   assert.equal(out.published, true);
   assert.ok(!out.unchanged);
@@ -145,7 +150,7 @@ test("改得动的时候就真的改了", () => {
   assert.equal(row.story, "came back the next night too");
 });
 
-test("删掉一条，计数和封面物种跟着一起变", () => {
+test("deleting one moves the count and the cover species with it", () => {
   const boardBefore = dashboard().active.find((b) => b.id === "sb_jacaranda");
   const countBefore = boardBefore.entry_count;
   const newest = timeline("sb_jacaranda").entries[0];
@@ -156,12 +161,12 @@ test("删掉一条，计数和封面物种跟着一起变", () => {
   const boardAfter = dashboard().active.find((b) => b.id === "sb_jacaranda");
   assert.equal(boardAfter.entry_count, countBefore - 1);
   assert.equal(boardAfter.latest_species, view.entries[0]?.species ?? null,
-               "封面按最近一条配图，删掉最新那条之后要跟着换");
+               "the cover follows the most recent entry, so deleting the newest has to change it");
 });
 
-// ── owner 完结（离线）──
+// ── The owner closing it (offline) ──
 
-test("完结之后进往期，并且结语读得回来", () => {
+test("after closing it moves to past, and the closing line reads back", () => {
   const out = closeStoryboard({ storyboard_id: "sb_jacaranda",
                                 closed_note: "Thanks for filming with me, everyone." });
   assert.equal(out.status, "archived");
@@ -169,81 +174,85 @@ test("完结之后进往期，并且结语读得回来", () => {
   assert.ok(!boards.active.some((b) => b.id === "sb_jacaranda"));
   const past = boards.past.find((b) => b.id === "sb_jacaranda");
   assert.equal(past.closed_note, "Thanks for filming with me, everyone.",
-               "结语只写不读的话，那句「留给所有参与过的人」就是空话");
+               "a closing line written and never read makes the promise to everyone who contributed empty");
 });
 
-test("不写结语就是没有结语，不是一个空字符串", () => {
+test("no closing line means no closing line, not an empty string", () => {
   closeStoryboard({ storyboard_id: "sb_roof", closed_note: undefined });
   const past = dashboard().past.find((b) => b.id === "sb_roof");
   assert.equal(past.closed_note, null);
 });
 
-// ── 待核实队列（离线）──
+// ── The second-look queue (offline) ──
 
-test("队列里一个作者身分都没有", () => {
-  // 这不是界面藏起来的：服务端返回的字段里就没有。三条红线里最要紧的一条。
+test("the queue carries no author identity at all", () => {
+  // Not hidden by the interface: the server does not return those fields at all. The most
+  // important of the three red lines here.
   const { items } = reviewQueue("sb_jacaranda");
   assert.ok(items.length > 0);
   for (const item of items) {
-    assert.ok(!("handle" in item), "队列里出现了 handle");
-    assert.ok(!("author_id" in item), "队列里出现了 author_id");
-    assert.ok(!("voter_id" in item), "队列里出现了投票人");
-    assert.ok(!JSON.stringify(item).includes("mel_k"), "有 handle 从别的字段漏出来了");
+    assert.ok(!("handle" in item), "a handle appeared in the queue");
+    assert.ok(!("author_id" in item), "an author_id appeared in the queue");
+    assert.ok(!("voter_id" in item), "a voter appeared in the queue");
+    assert.ok(!JSON.stringify(item).includes("mel_k"), "a handle leaked through another field");
   }
 });
 
-test("两票 worth_checking 之后，它从队列里消失", () => {
+test("after two worth_checking votes it leaves the queue", () => {
   const before = reviewQueue("sb_jacaranda").items.length;
   const target = reviewQueue("sb_jacaranda").items[0].entry_id;
   castVote(target, "worth_checking");
-  assert.equal(reviewQueue("sb_jacaranda").items.length, before, "一票还不该定音");
+  assert.equal(reviewQueue("sb_jacaranda").items.length, before, "one vote should not decide it");
   castVote(target, "worth_checking");
   assert.equal(reviewQueue("sb_jacaranda").items.length, before - 1,
-               "两票定音之后该落到 labelled，不再挂在队列上");
+               "two votes decide, so it should land on labelled and leave the queue");
 });
 
-test("owner 处置掉的条目不再排队", () => {
+test("an entry the owner has disposed of stops queueing", () => {
   const { items } = reviewQueue("sb_jacaranda");
-  if (!items.length) return;                       // 上一条可能已经清空了
+  if (!items.length) return;                       // the previous case may have emptied it
   const target = items[0].entry_id;
   disposeEntry(target, "kept");
   assert.ok(!reviewQueue("sb_jacaranda").items.some((i) => i.entry_id === target));
 });
 
-// ── 已发出去的码（离线）──
+// ── Codes already issued (offline) ──
 
-test("码的列表里永远没有 token", () => {
-  // 库里只存哈希。一个事后还能把码取回来的界面，等于把可兑换的权限挂在屏幕上。
+test("the code list never carries a token", () => {
+  // The database holds only a hash. An interface that could fetch a code back afterwards
+  // would be a redeemable grant left sitting on the screen.
   const { links } = shareLinks("sb_jacaranda");
   assert.ok(links.length > 0);
   for (const link of links) {
-    assert.ok(!("token" in link), "列表里出现了 token");
-    assert.ok(!("token_hash" in link), "列表里出现了 token_hash");
+    assert.ok(!("token" in link), "a token appeared in the list");
+    assert.ok(!("token_hash" in link), "a token_hash appeared in the list");
   }
 });
 
-test("列表里说不出「什么时候发的」——那一列根本不存在", () => {
+test("the list cannot say when a code was issued — that column does not exist", () => {
   for (const link of shareLinks("sb_jacaranda").links) {
     assert.ok(!("created_at" in link),
-      "share_links 表没有 created_at，凭空多出来就是界面在编");
+      "share_links has no created_at, so producing one would be the interface inventing it");
   }
 });
 
-test("关掉一张码，不动任何已经兑换出去的权限", () => {
-  // 这是整段文案要说清楚的那件事，也是最容易做错的一处。
+test("turning a code off touches no access already redeemed", () => {
+  // This is the thing that whole paragraph of copy exists to make clear, and the easiest
+  // thing to get wrong.
   const before = grants("sb_jacaranda").grants.map((g) => g.user_id + ":" + g.level);
   const target = shareLinks("sb_jacaranda").links.find((l) => !l.revoked_at);
   const out = revokeShareLink(target.id);
   assert.equal(out.revoked, true);
   const after = grants("sb_jacaranda").grants.map((g) => g.user_id + ":" + g.level);
-  assert.deepEqual(after, before, "关码顺手改了权限名单 —— 那是另一件事");
+  assert.deepEqual(after, before, "turning a code off also changed the access list — a different thing entirely");
 });
 
-test("关掉之后它还留在列表里，带着「已关掉」", () => {
-  // 和 grants 相反：撤销的人要从名单上消失，关掉的码得留着，否则看不出关成了没有。
+test("after being turned off it stays in the list, marked as turned off", () => {
+  // The opposite of grants: a revoked person disappears from the list, while a code that
+  // has been turned off has to stay, or you cannot tell whether it worked.
   const target = shareLinks("sb_jacaranda").links.find((l) => !l.revoked_at);
   revokeShareLink(target.id);
   const again = shareLinks("sb_jacaranda").links.find((l) => l.id === target.id);
-  assert.ok(again, "关掉之后它从列表里消失了");
+  assert.ok(again, "it disappeared from the list after being turned off");
   assert.ok(again.revoked_at);
 });

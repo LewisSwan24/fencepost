@@ -1,10 +1,11 @@
-// 14 · 链接不管用。
+// 14 · The link does not work.
 //
-// 这一屏什么都不能泄漏：不显示标题、不显示参与者、不说里面有什么，
-// 也不说是过期了还是被撤销了——两种情况看起来必须一模一样，否则一条死链就成了
-// 探测工具：换个 token 试，从措辞的差别里就能读出「这个故事版存在」。
+// This screen can leak nothing: no title, no participants, nothing about what is inside,
+// and no distinction between expired and revoked — the two have to look identical, or a
+// dead link becomes a probe: try another token, and the difference in wording tells you
+// that storyboard exists.
 //
-// 它不取任何数据，所以是个静态页，连 "use client" 都不需要。
+// It fetches nothing, so it is a static page and does not even need "use client".
 
 import { COPY } from "../../lib/copy";
 import styles from "./no-access.module.css";

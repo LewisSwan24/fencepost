@@ -1,9 +1,10 @@
 "use client";
 
-// 10 · Possum Help 对话。
+// 10 · The Possum Help conversation.
 //
-// 没有头像、没有名字气泡、没有拟人化的打字动画——它是一块朴素的对话区。
-// 第一句永远是 AI 披露。四条演示脚本做成可点的问题，省得现场手打。
+// No avatar, no name bubble, no anthropomorphic typing animation — it is a plain
+// conversation area. The first thing said is always the AI disclosure. The four demo
+// scripts are tappable questions, to save typing them in the room.
 
 import { useEffect, useRef, useState } from "react";
 import { askAssistant, assistantOffline, assistantIsLive } from "../lib/api";
@@ -34,7 +35,8 @@ export default function Chat({ storyboardId, onClose }) {
       const answer = await askAssistant(question, storyboardId);
       setMessages((prev) => [...prev, { from: "it", text: answer.reply }]);
     } catch {
-      // 挂了就转降级态，不伪造回复——半个回答也是伪造（prompts.md §5）
+      // If it fails, degrade rather than fabricate a reply; half an answer is a
+      // fabrication too (prompts.md §5)
       setOffline(true);
     }
     setThinking(false);
@@ -54,9 +56,10 @@ export default function Chat({ storyboardId, onClose }) {
             <p className={styles.disclosure}>
               <strong>{ASSISTANT_DISCLOSURE.lead}</strong>{ASSISTANT_DISCLOSURE.rest}
             </p>
-            {/* 答辩跑的是 hybrid，助手那一半走 fixture（CLAUDE.md 决策表：真模型有概率
-                当场说出违反红线的话）。这是刻意的，但不能只写在首页页脚—— 
-                直接点进来的人看不到那行字。 */}
+            {/* The demo runs hybrid, and the assistant half comes from fixtures (CLAUDE.md
+                decision table: a real model can say something that crosses a red line on
+                the spot). That is deliberate, but it cannot be stated only in the home
+                page footer — somebody who opens a storyboard directly never sees it. */}
             {assistantIsLive ? null : (
               <p className={styles.canned}>{COPY.assistantCanned}</p>
             )}

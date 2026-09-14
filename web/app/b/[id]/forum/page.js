@@ -1,10 +1,11 @@
 "use client";
 
-// 11 · Forum。故事版下面的讨论。
+// 11 · Forum. The discussion under a storyboard.
 //
-// 这里没有助手，一个入口都没有。不是忘了放——论坛帖子和 entry 是分开的两张表、
-// 两组端点，助手的上下文物理上够不到这里（data-model §2）。界面上也不该出现
-// 任何暗示它能读到这些的东西。
+// There is no assistant here, not one entry point. Not an oversight — forum posts and
+// entries are two separate tables with two sets of endpoints, and the assistant's context
+// physically cannot reach this (data-model §2). Nothing in the interface should suggest
+// otherwise.
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -28,8 +29,9 @@ export default function Forum({ params }) {
 
   useEffect(() => {
     forumThreads(id).then((view) => setThreads(view.threads), (e) => setError(e.message));
-    // 服务端对 view 档回 read_only_access、对归档的回 storyboard_closed。
-    // 界面照这个收，而不是给一个按下去必然被拒的按钮。
+    // The server answers read_only_access for a view grant and storyboard_closed for an
+    // archived board. The interface follows that rather than drawing a button certain to
+    // be refused.
     boardAccess(id).then(setAccess, () => {});
   }, [id]);
 
@@ -38,10 +40,11 @@ export default function Forum({ params }) {
     setBlocked(null);
     try {
       const made = await createThread({ storyboardId: id, title: title.trim(), body: body.trim() });
-      // 被 Screener 拒掉时服务端回的是 200，带 published:false，**没有 thread_id**。
-      // 原先这里直接往 thread_id 上跳，于是一次拒稿把人送去 /forum/undefined，
-      // 那一页再回一句「There is nothing at that address.」——写的东西看着像没了。
-      // 隔壁 [threadId] 的 reply() 一直是对的，这里照它来。
+      // A Screener refusal comes back 200 with published:false and **no thread_id**.
+      // This used to navigate straight to thread_id, so a refusal sent somebody to
+      // /forum/undefined, where the page answered "There is nothing at that address." —
+      // and what they wrote looked lost. The reply() next door in [threadId] was always
+      // right; this now matches it.
       if (made.published === false) {
         setBlocked(reasonSentence(made.reason_codes));
         setBusy(false);
@@ -54,7 +57,8 @@ export default function Forum({ params }) {
     }
   }
 
-  // access 还没回来时按「不能写」算：短暂少一个按钮，好过闪出一个用不了的。
+  // While access is still loading, assume you cannot write: a button missing briefly beats
+  // one that flashes up and does not work.
   const canPost = access?.level === "contribute" || access?.level === "reshare";
   const canPostNow = canPost && !isArchived(access?.status);
 

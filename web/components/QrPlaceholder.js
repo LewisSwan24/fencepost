@@ -1,6 +1,7 @@
-// 占位图形，不是真的 QR。设计提示词里就写着「画个占位图形即可，不要真生成」——
-// 真生成要引依赖，而且一个能扫的码在原型里反而危险：扫出来的链接是活的。
-// 图案用固定种子，每次渲染一模一样，截图也稳定。
+// A placeholder graphic, not a real QR code. The design prompt said to draw a placeholder
+// and not to generate one for real — generating needs a dependency, and a scannable code
+// is actually dangerous in a prototype, because the link it resolves to is live.
+// The pattern uses a fixed seed, so every render is identical and screenshots are stable.
 const SIZE = 17;
 
 function pattern() {

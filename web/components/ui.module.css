@@ -1,4 +1,4 @@
-/* 共用外壳与控件。颜色一律走 token，不写 hex。 */
+/* Shared shell and controls. Colours always come from tokens, never hex. */
 
 .screen { display: flex; flex-direction: column; min-height: 100dvh; }
 
@@ -45,8 +45,9 @@
 .btn:hover:not(:disabled) { background: var(--accent-hover); }
 .btn:active:not(:disabled) { background: var(--accent-active); }
 
-/* 次要按钮和主按钮的区别只在填充，不在尺寸——同意弹窗那两个必须视觉等重，
-   所以那里两个都用 .btnQuiet，谁也不比谁轻。 */
+/* A secondary button differs from a primary one only in fill, not in size — the two in
+   the consent sheet have to carry equal visual weight, so both use .btnQuiet and neither
+   is lighter than the other. */
 .btnQuiet {
   width: 100%; min-height: 52px; padding: 8px 18px;
   border: 1px solid var(--line-strong); border-radius: var(--radius-pill);

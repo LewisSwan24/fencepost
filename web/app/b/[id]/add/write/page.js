@@ -1,9 +1,10 @@
 "use client";
 
-// 7 · Write it up，外加写作面板。
+// 7 · Write it up, plus the writing panel.
 //
-// 三条不能破：候选 fun fact 永远不自动进正文（只有那个按钮会）；润色版和原文并排，
-// 不覆盖，替换要用户自己按；面板里不出现 verdict 也不出现 note。
+// Three things that must not break: a candidate fun fact never enters the text by itself
+// (only the button does that); the tidied version sits alongside the original rather than
+// over it, and replacing takes a press; and neither verdict nor note appears in the panel.
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -59,8 +60,9 @@ export default function WriteItUp({ params }) {
     }
   }
 
-  // 直接深链进来（或者刷新）草稿就是空的：没有物种，投稿会带着 null 打过去挨 400，
-  // 而被拦那一屏还会说「你写的东西还在」——那时候它就是假的。退回去重走。
+  // Deep-linking here (or refreshing) leaves the draft empty: with no species a submission
+  // goes out carrying null and takes a 400, and the blocked screen would then say "your
+  // writing is still there" when it is not. Go back and walk it again.
   useEffect(() => {
     if (!draft.species) router.replace(`/b/${id}/add/species`);
   }, [draft.species, id, router]);
@@ -145,7 +147,7 @@ export default function WriteItUp({ params }) {
                       </span>
                       <button type="button" className={styles.add}
                               onClick={() => {
-                                // 只有按了才进正文。面板打开本身什么都不改。
+                                // Only a press puts it into the text. Opening the panel changes nothing.
                                 const now = draft.funFact.trim();
                                 draft.setFunFact(now ? now + " " + c.text : c.text);
                                 setHelperOpen(false);

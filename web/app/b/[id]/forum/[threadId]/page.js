@@ -1,8 +1,9 @@
 "use client";
 
-// 11 · 帖子详情。同样没有助手入口。
+// 11 · Thread detail. No assistant entry point here either.
 //
-// 回帖也过 Screener——被拒时只给 reason_codes，和 entry 一样，作者看不到内部判定。
+// Replies go through the Screener too — a refusal returns only reason_codes, and as with
+// an entry the author never sees the internal judgement.
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -27,7 +28,7 @@ export default function Thread({ params }) {
   }
 
   useEffect(load, [threadId]);
-  // 同上：view 档和已归档的故事版，服务端都不收回复。
+  // As above: the server takes no reply for a view grant or an archived storyboard.
   useEffect(() => { boardAccess(id).then(setAccess, () => {}); }, [id]);
 
   const canReply = (access?.level === "contribute" || access?.level === "reshare")

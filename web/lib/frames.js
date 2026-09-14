@@ -1,15 +1,20 @@
-// 占位素材。**这些不是用户拍的**——是 Wikimedia Commons 上的 CC BY-SA 4.0 照片，
-// 按物种配给时间线上的 entry，好让界面不是一排空矩形。
+// Placeholder material. **These are not the user's photographs** — they are CC BY-SA 4.0
+// images from Wikimedia Commons, matched to timeline entries by species so the interface
+// is not a row of empty rectangles.
 //
-// 这一点必须在 /credits 页面上说清楚：真实的 Fencepost 里，这个位置放的是拍摄者自己的
-// 视频截帧。拿别人的照片配着用户的故事而不声明，等于暗示「这就是他拍到的那只」。
+// This has to be said plainly on the /credits page: in a real Fencepost, what sits here is
+// a still from the filmer's own video. Using somebody else's photograph alongside a user's
+// story without saying so implies "this is the one they filmed".
 //
-// 处理过程：原图 2 到 8 MB，缩到 1200px、剥掉 EXIF/GPS/机型，重新编码。
-// 剥元数据是 CLAUDE.md 的安全底线，不因为素材来自公开站点而免除——
-// 照片里带着拍摄地点，而这个产品讲的正是别暴露住址。
+// Processing: originals were 2 to 8 MB, resized to 1200px, stripped of EXIF, GPS and camera
+// model, and re-encoded. Stripping metadata is a CLAUDE.md safety line and is not waived
+// just because the material came from a public site — a photograph carries where it was
+// taken, and this product is about not giving away where you live.
 //
-// 调色：四张里只有一张是夜拍。`night: false` 的会被 CSS 压暗降饱和，因为整个产品
-// 发生在傍晚到深夜。调过色就是衍生作品，CC BY-SA 要求标注，鸣谢页里标了。
+// Grading: only one of the four was shot at night. Those with `night: false` are darkened
+// and desaturated in CSS, because the whole product happens between dusk and the small
+// hours. A graded image is a derivative work, CC BY-SA requires that to be stated, and the
+// credits page states it.
 
 export const FRAMES = [
   {
@@ -62,8 +67,8 @@ export const FRAMES = [
   },
 ];
 
-// 同一条 entry 每次都要拿到同一张图，否则刷新一次画面就换了，看着像坏的。
-// 所以用 id 算一个稳定的下标，不用随机。
+// The same entry has to get the same picture every time, or a refresh changes the image and
+// it looks broken. So the index is derived from the id rather than chosen at random.
 function pick(list, seed) {
   let hash = 0;
   for (const ch of String(seed)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
@@ -72,8 +77,9 @@ function pick(list, seed) {
 
 export function frameForSpecies(species, seed) {
   const matching = FRAMES.filter((f) => f.species === species);
-  // 物种是 other、unknown、或者一条 entry 都还没有时，不配图——硬塞一只负鼠进去，
-  // 就是替用户断言他拍到了什么，而「视觉识别不得自动设定物种」正是这个项目的红线之一。
+  // No picture when the species is other or unknown, or when there is no entry yet —
+  // forcing a possum in would assert on the user's behalf what they filmed, and visual
+  // identification never setting the species is one of this project red lines.
   if (!matching.length) return null;
   return pick(matching, seed);
 }

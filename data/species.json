@@ -3,15 +3,15 @@
     "version": "0.2",
     "date": "2026-09-11",
     "scope": "South East Queensland urban wildlife",
-    "warning": "legal_status 字段尚未逐条核对官方来源，上线前必须逐个验证。class 决定 assistant 的行为分支，改动需同步 docs/prompts.md",
+    "warning": "The legal_status fields have not been checked line by line against official sources and every one must be verified before launch. class decides the assistant behaviour branch, so a change here has to be mirrored in docs/prompts.md",
     "classes": {
-      "protected_native": "受保护本土物种。默认分支。不得捕捉迁移伤害，需 damage mitigation permit",
-      "dangerous": "存在人身安全或公共卫生风险。助手绝不下安全性结论，绝不建议接近或处理，一律指向持牌处理者",
-      "invasive": "入侵/非保护物种。不适用保护条款，但助手仍不提供杀灭方法，指向council官方指引",
-      "unknown": "未识别。按 dangerous 处理直到确认"
+      "protected_native": "Protected native species. The default branch. Must not be caught, relocated or harmed, and a damage mitigation permit is required",
+      "dangerous": "A risk to personal safety or public health. The assistant never draws a safety conclusion, never advises approaching or handling, and always refers to a licensed handler",
+      "invasive": "Invasive or unprotected species. The protection clauses do not apply, but the assistant still gives no method of killing and refers to the council official guidance",
+      "unknown": "Unidentified. Treated as dangerous until confirmed"
     },
-    "status": "FUTURE WORK — 未采用",
-    "decision": "2026-09-11 决定将助手范围收回 brushtail / ringtail 两种负鼠。本表不在原型中实现，保留作为报告中扩展路径评估的材料。"
+    "status": "FUTURE WORK — not adopted",
+    "decision": "On 2026-09-11 the assistant scope was pulled back to brushtail and ringtail possums. This table is not implemented in the prototype and is kept as material for the expansion-path assessment in the report."
   },
   "species": [
     {
@@ -19,7 +19,7 @@
       "common": "Common Brushtail Possum",
       "scientific": "Trichosurus vulpecula",
       "class": "protected_native",
-      "notes": "常进屋顶。最常见提问来源",
+      "notes": "Often gets into roofs. The most common source of questions",
       "legal_verified": false
     },
     {
@@ -27,7 +27,7 @@
       "common": "Common Ringtail Possum",
       "scientific": "Pseudocheirus peregrinus",
       "class": "protected_native",
-      "notes": "较少进建筑，多在树冠",
+      "notes": "Rarely enters buildings, mostly staying in the canopy",
       "legal_verified": false
     },
     {
@@ -35,7 +35,7 @@
       "common": "Northern Brown Bandicoot",
       "scientific": "Isoodon macrourus",
       "class": "protected_native",
-      "notes": "草地挖锥形小坑，常被误认为害兽",
+      "notes": "Digs small conical holes in lawns and is often mistaken for a pest",
       "legal_verified": false
     },
     {
@@ -43,7 +43,7 @@
       "common": "Short-beaked Echidna",
       "scientific": "Tachyglossus aculeatus",
       "class": "protected_native",
-      "notes": "受惊会掘地固定，不可拉拽",
+      "notes": "Digs in and anchors itself when frightened, and must never be pulled",
       "legal_verified": false
     },
     {
@@ -51,7 +51,7 @@
       "common": "Grey-headed Flying-fox",
       "scientific": "Pteropus poliocephalus",
       "class": "dangerous",
-      "notes": "蝙蝠丽沙病毒风险。仅接种疫苗的持证救护者可处理",
+      "notes": "Australian bat lyssavirus risk. Only vaccinated, licensed rescuers may handle it",
       "legal_verified": false
     },
     {
@@ -59,7 +59,7 @@
       "common": "Black Flying-fox",
       "scientific": "Pteropus alecto",
       "class": "dangerous",
-      "notes": "同上",
+      "notes": "As above",
       "legal_verified": false
     },
     {
@@ -67,7 +67,7 @@
       "common": "Microbat (various)",
       "scientific": "various",
       "class": "dangerous",
-      "notes": "同上。常误入室内",
+      "notes": "As above. Often ends up indoors",
       "legal_verified": false
     },
     {
@@ -75,7 +75,7 @@
       "common": "Australian Brush-turkey",
       "scientific": "Alectura lathami",
       "class": "protected_native",
-      "notes": "巢丘受保护，移除需许可",
+      "notes": "The nesting mound is protected and removing it needs a permit",
       "legal_verified": false
     },
     {
@@ -91,7 +91,7 @@
       "common": "Australian Magpie",
       "scientific": "Gymnorhina tibicen",
       "class": "protected_native",
-      "notes": "繁殖季（约8-10月）俯冲护巢，需安全提示",
+      "notes": "Swoops to defend the nest in breeding season, roughly August to October, so a safety note is needed",
       "legal_verified": false
     },
     {
@@ -107,7 +107,7 @@
       "common": "Noisy Miner",
       "scientific": "Manorina melanocephala",
       "class": "protected_native",
-      "notes": "本土但具攻击性，常被误认为入侵鸟",
+      "notes": "Native but aggressive, and often mistaken for an introduced bird",
       "legal_verified": false
     },
     {
@@ -115,7 +115,7 @@
       "common": "Australian White Ibis",
       "scientific": "Threskiornis molucca",
       "class": "protected_native",
-      "notes": "常被蔑称，注意文案中立",
+      "notes": "Often spoken of with contempt, so keep the copy neutral",
       "legal_verified": false
     },
     {
@@ -123,7 +123,7 @@
       "common": "Tawny Frogmouth",
       "scientific": "Podargus strigoides",
       "class": "protected_native",
-      "notes": "白天静止伪装，常被误判为受伤",
+      "notes": "Stays still and camouflaged by day, and is often mistaken for injured",
       "legal_verified": false
     },
     {
@@ -131,7 +131,7 @@
       "common": "Bush Stone-curlew",
       "scientific": "Burhinus grallarius",
       "class": "protected_native",
-      "notes": "夜间叫声常被误报为求救",
+      "notes": "Its night call is often reported as a cry for help",
       "legal_verified": false
     },
     {
@@ -147,7 +147,7 @@
       "common": "Eastern Blue-tongue Lizard",
       "scientific": "Tiliqua scincoides",
       "class": "protected_native",
-      "notes": "常被误认为蛇",
+      "notes": "Often mistaken for a snake",
       "legal_verified": false
     },
     {
@@ -155,7 +155,7 @@
       "common": "Carpet Python",
       "scientific": "Morelia spilota",
       "class": "dangerous",
-      "notes": "无毒但会咬。仍按 dangerous 处理：助手不做无毒结论",
+      "notes": "Non-venomous but will bite. Still treated as dangerous, because the assistant never concludes that anything is non-venomous",
       "legal_verified": false
     },
     {
@@ -163,7 +163,7 @@
       "common": "Eastern Brown Snake",
       "scientific": "Pseudonaja textilis",
       "class": "dangerous",
-      "notes": "剧毒，布里斯班郊区常见",
+      "notes": "Highly venomous, and common in Brisbane suburbs",
       "legal_verified": false
     },
     {
@@ -171,7 +171,7 @@
       "common": "Red-bellied Black Snake",
       "scientific": "Pseudechis porphyriacus",
       "class": "dangerous",
-      "notes": "有毒",
+      "notes": "Venomous",
       "legal_verified": false
     },
     {
@@ -179,7 +179,7 @@
       "common": "Common Tree Snake",
       "scientific": "Dendrelaphis punctulatus",
       "class": "dangerous",
-      "notes": "无毒但同样不下结论",
+      "notes": "Non-venomous, and still no conclusion is drawn",
       "legal_verified": false
     },
     {
@@ -187,7 +187,7 @@
       "common": "Snake (unidentified)",
       "scientific": "unknown",
       "class": "dangerous",
-      "notes": "默认分支。任何蛇类提问未确认物种时走这里",
+      "notes": "The default branch. Any snake question with an unconfirmed species comes here",
       "legal_verified": false
     },
     {
@@ -203,7 +203,7 @@
       "common": "Cane Toad",
       "scientific": "Rhinella marina",
       "class": "invasive",
-      "notes": "非保护物种。助手不提供杀灭方法，指向council指引；对宠物中毒风险给就医提示",
+      "notes": "Unprotected species. The assistant gives no method of killing and refers to council guidance, and advises a vet where a pet may have been poisoned",
       "legal_verified": false
     },
     {
@@ -211,7 +211,7 @@
       "common": "Common Myna",
       "scientific": "Acridotheres tristis",
       "class": "invasive",
-      "notes": "注意与本土 Noisy Miner 区分，用户极常混淆",
+      "notes": "Distinguish it from the native Noisy Miner, which people confuse with it constantly",
       "legal_verified": false
     },
     {
@@ -219,7 +219,7 @@
       "common": "Unidentified",
       "scientific": "unknown",
       "class": "unknown",
-      "notes": "未选物种时的默认值",
+      "notes": "The default when no species has been chosen",
       "legal_verified": false
     }
   ]

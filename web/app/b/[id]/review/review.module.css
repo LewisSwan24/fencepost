@@ -6,7 +6,8 @@
 .quiet, .error { color: var(--text-dim); font-size: 14px; }
 .empty { color: var(--text-dim); font-size: 14.5px; padding: 26px 0; text-align: center; }
 
-/* 一条待核实的条目。刻意不像「案件」——没有编号、没有严重度、没有判定标签。 */
+/* One item awaiting a second look. Deliberately not case-like: no number, no severity,
+   no verdict label. */
 .card {
   border: 1px solid var(--line); border-radius: var(--radius-lg);
   background: var(--surface); padding: 16px; margin-bottom: 14px;
@@ -21,7 +22,8 @@
   padding: 3px 10px; font-size: 12px; color: var(--text-muted);
 }
 
-/* 「该重读哪一段」。这句话代替了模型的判定，是这一屏的分寸所在。 */
+/* Which part to read again. This sentence stands in place of the model verdict, and it is
+   where this screen keeps its proportion. */
 .which {
   font-size: 13.5px; color: var(--text-muted); margin: 0 0 12px;
   padding-bottom: 12px; border-bottom: 1px solid var(--line);
@@ -48,7 +50,7 @@
 .vote:hover { border-color: var(--text-dim); }
 .thanks { margin: 14px 0 0; font-size: 13.5px; color: var(--text-dim); }
 
-/* owner 的最终处置。和投票分开，因为它不是投票——它是定论。 */
+/* The owner final disposal. Kept apart from voting, because it is not a vote: it settles it. */
 .owner { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .ownerCall { margin: 0 0 10px; font-size: 13px; color: var(--text-dim); }
 .ownerBtn {
@@ -68,7 +70,7 @@
   font-size: 13px; color: var(--text-dim);
 }
 
-/* 确认。壳子用 Sheet，这里只剩里面那几样。 */
+/* The confirm. The shell is a Sheet, so only its contents are left here. */
 .confirmText { margin: 0 0 16px; font-size: 15.5px; line-height: 1.55; color: var(--text); }
 .cancel {
   width: 100%; margin-top: 10px; padding: 12px; border: 0; background: transparent;
