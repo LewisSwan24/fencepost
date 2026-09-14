@@ -36,6 +36,16 @@ export const HANDLE = process.env.NEXT_PUBLIC_FENCEPOST_HANDLE || "";
 // that opening the page again does not redeem a second time.
 const HANDLE_KEY = "fencepost.handle";
 const JOINED_KEY = "fencepost.joined";
+// A signed-in session, kept so that a refresh does not sign you out. A guest identity
+// does not need this: its token is free to exchange again from the handle beside it,
+// which is why the token used to live only in memory.
+//
+// The cost, said plainly: a token in localStorage is readable by any script that gets
+// itself onto the page. The alternative is an httpOnly cookie, and the front end and the
+// API are two different origins, so that means SameSite=None with credentialed CORS, on
+// a deployment whose CORS allow-list is already the fiddliest thing about it. For a
+// prototype the trade is worth stating rather than pretending away.
+const SESSION_KEY = "fencepost.session";
 
 // The join code: a share link to the demo storyboard, in plaintext in the front end.
 // This exposes nothing new — open sign-up already lets anyone exchange any handle for a
@@ -58,6 +68,26 @@ function readStore(key) {
 
 function writeStore(key, value) {
   try { window.localStorage.setItem(key, value); } catch { /* private mode and the like, ignore */ }
+}
+
+function clearStore(key) {
+  try { window.localStorage.removeItem(key); } catch { /* as above */ }
+}
+
+function readSession() {
+  try {
+    const saved = JSON.parse(readStore(SESSION_KEY) || "null");
+    // A half-written or hand-edited value is not a session. Checking the shape here
+    // means the rest of the file can treat what it gets back as real.
+    return saved && saved.token && saved.user_id ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(value) {
+  if (value) writeStore(SESSION_KEY, JSON.stringify(value));
+  else clearStore(SESSION_KEY);
 }
 
 // Eight cryptographically random bytes as hex. Not Math.random: V8 implements it as
@@ -124,12 +154,21 @@ let pending = null;
 // can revoke access).
 async function ensureSession() {
   if (session) return session;
+  // Somebody who signed in stays signed in across a refresh. Nothing is verified here:
+  // a token that has stopped working answers 401 on the first call that uses it, and
+  // that is where it gets cleared. Checking up front would cost a round trip on every
+  // page load to learn something the next request tells us anyway.
+  const saved = readSession();
+  if (saved) {
+    session = saved;
+    return session;
+  }
   if (!pending) {
     pending = request("/api/session", { body: { handle: visitorHandle() } })
       .then(async (got) => {
-        session = got;
-        await joinDemo(got.token);
-        return got;
+        session = { ...got, account: false };
+        await joinDemo(got.token, got.user_id);
+        return session;
       })
       .finally(() => (pending = null));
   }
@@ -155,11 +194,16 @@ async function ensureSession() {
 // A failed redemption does not block anybody. The code may have expired or been turned off,
 // and then the interface carries on and simply shows no demo storyboard — better than the
 // whole site collapsing.
-async function joinDemo(token) {
-  if (!JOIN_TOKEN || readStore(JOINED_KEY) === JOIN_TOKEN) return;
+async function joinDemo(token, userId) {
+  // The mark is the code **and** who redeemed it. Keyed on the code alone it was one
+  // answer per browser, which was right while a browser was one person; registering an
+  // account makes a second person in the same browser, and that person holds a grant to
+  // nothing. They would sign up and land on an empty dashboard.
+  const mark = JOIN_TOKEN + "|" + userId;
+  if (!JOIN_TOKEN || !userId || readStore(JOINED_KEY) === mark) return;
   try {
     await request("/api/share-links/redeem", { body: { token: JOIN_TOKEN }, auth: token });
-    writeStore(JOINED_KEY, JOIN_TOKEN);
+    writeStore(JOINED_KEY, mark);
   } catch {
     /* no redemption this time; try again on the next page open */
   }
@@ -168,7 +212,12 @@ async function joinDemo(token) {
 export async function me() {
   // Matches owner_id in the fixtures GRANTS, or the share screen can never work out that
   // "I am the owner" and the revoke button would never appear once.
-  if (!usesNetwork) return { user_id: "u_mel", handle: FIXTURES_HANDLE };
+  // Offline this has to agree with whoAmI(), or the dashboard header and the account
+  // page show two different names for the same person.
+  if (!usesNetwork) {
+    const { user_id, handle } = offlineIdentity();
+    return { user_id, handle };
+  }
   const { user_id, handle } = await ensureSession();
   return { user_id, handle };
 }
@@ -215,7 +264,74 @@ export class ApiError extends Error {
 }
 
 async function call(path, options = {}) {
-  return request(path, { ...options, auth: (await ensureSession()).token });
+  const current = await ensureSession();
+  try {
+    return await request(path, { ...options, auth: current.token });
+  } catch (err) {
+    // A stored token stops working if the server secret is rotated or the row goes. Left
+    // in place it fails every call for ever, and the interface reads as broken rather
+    // than as signed out. Dropped here, the next page load starts again as a guest.
+    if (err && err.status === 401) {
+      session = null;
+      saveSession(null);
+    }
+    throw err;
+  }
+}
+
+// Accounts. Registering and signing in both answer with the same session shape
+// /api/session does, so everything downstream is unchanged. `account` is the one thing
+// added, and it is a client-side fact rather than something the server says: it records
+// how this token was obtained, which is what the interface needs in order to offer
+// "sign out" to a person who has an account and "sign in" to one who does not.
+async function becomeAccount(path, handle, password) {
+  const got = await request(path, { body: { handle, password } });
+  session = { ...got, account: true };
+  saveSession(session);
+  await joinDemo(got.token, got.user_id);
+  return session;
+}
+
+// Offline, the whole fixture dataset belongs to u_mel. Signing in therefore takes the name
+// and keeps the user_id: change it and "this is your own entry" and "you own this
+// storyboard" both stop being true, and the offline mode exists precisely so those can be
+// shown with the network down. There is no password to check, because there is nothing to
+// check it against; the screen is there to be walked, not to guard anything.
+function becomeOffline(handle) {
+  session = { user_id: "u_mel", handle, token: "offline", account: true };
+  saveSession(session);
+  return session;
+}
+
+export async function registerAccount(handle, password) {
+  if (!usesNetwork) return becomeOffline(handle);
+  return becomeAccount("/api/register", handle, password);
+}
+
+export async function signIn(handle, password) {
+  if (!usesNetwork) return becomeOffline(handle);
+  return becomeAccount("/api/login", handle, password);
+}
+
+export function signOut() {
+  // The guest handle beside this is deliberately left alone. Signing out returns you to
+  // being the guest you were before, rather than minting a new person on the server
+  // every time somebody signs out.
+  session = null;
+  saveSession(null);
+}
+
+export async function whoAmI() {
+  if (!usesNetwork) return offlineIdentity();
+  const current = await ensureSession();
+  return { user_id: current.user_id, handle: current.handle, account: !!current.account };
+}
+
+function offlineIdentity() {
+  const saved = readSession();
+  return saved
+    ? { user_id: saved.user_id, handle: saved.handle, account: !!saved.account }
+    : { user_id: "u_mel", handle: FIXTURES_HANDLE, account: false };
 }
 
 // ── Storyboards ────────────────────────

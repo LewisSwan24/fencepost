@@ -1,9 +1,10 @@
 -- GENERATED from docs/data-model.md §1 — do not edit by hand
 
 CREATE TABLE users (
-  id          TEXT PRIMARY KEY,
-  handle      TEXT NOT NULL UNIQUE,      -- display name; a real name never enters the database
-  created_at  TIMESTAMP NOT NULL
+  id             TEXT PRIMARY KEY,
+  handle         TEXT NOT NULL UNIQUE,   -- display name; a real name never enters the database
+  password_hash  TEXT,                   -- NULL means this identity has no password (see below)
+  created_at     TIMESTAMP NOT NULL
 );
 
 CREATE TABLE videos (
@@ -114,7 +115,7 @@ CREATE TABLE forum_posts (
 CREATE TABLE rate_limits (          -- the three ceilings from operations §3
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id),
-  scope       TEXT NOT NULL CHECK (scope IN ('chat','vision','submission')),
+  scope       TEXT NOT NULL CHECK (scope IN ('chat','vision','submission','login')),
   used_at     TIMESTAMP NOT NULL
   -- One row per call, so counting means counting rows inside the window. Expired rows
   -- are cleared in passing on the next count, with no scheduled job. This table is what

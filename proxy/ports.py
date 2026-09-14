@@ -14,6 +14,8 @@ DEFAULT_LIMITS = {
     "chat": (int(os.getenv("LIMIT_CHAT_PER_DAY", "200")), 86400),
     "vision": (int(os.getenv("LIMIT_VISION_PER_HOUR", "10")), 3600),
     "submission": (int(os.getenv("LIMIT_SUBMISSION_PER_HOUR", "20")), 3600),
+    # operations.md §3: the one ceiling here that is meant to block rather than degrade.
+    "login": (int(os.getenv("LIMIT_LOGIN_PER_15MIN", "10")), 900),
 }
 
 

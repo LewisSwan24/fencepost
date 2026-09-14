@@ -1205,5 +1205,160 @@ class Grants(Fixture):
         self.assertEqual(owner["user_id"], target["user_id"])
 
 
+class Accounts(Fixture):
+    """Registering and signing in with a password.
+
+    Until 2026-09-15 identity was a handle and nothing else, which is why /api/session sits
+    behind FENCEPOST_OPEN_SIGNUP: anybody could hand over anybody's handle and be given a
+    token for it. These two endpoints are what make that flag removable.
+
+    The two that matter most are further down: a handle held by a passwordless demo
+    identity cannot be registered, and cannot be signed into with any password at all,
+    the empty string included. mel_k owns the demo storyboard, and either of those going
+    the other way hands it to whoever asks first.
+    """
+
+    GOOD = "correct horse battery staple"
+
+    def signup(self, handle="ada_l", password=None):
+        return self.post("/api/register", {"handle": handle, "password": password or self.GOOD})
+
+    def signin(self, handle="ada_l", password=None):
+        return self.post("/api/login", {"handle": handle, "password": password or self.GOOD})
+
+    def stored_hash(self, handle):
+        row = self.db.conn.execute("SELECT password_hash FROM users WHERE handle = ?",
+                                   (handle,)).fetchone()
+        return row["password_hash"] if row else None
+
+    def test_registering_hands_back_a_token_that_works(self):
+        status, out = self.signup()
+        self.assertEqual(200, status)
+        self.assertEqual("ada_l", out["handle"])
+        # The token is the same kind the rest of the API takes, not a second scheme
+        made = self.post("/api/storyboards", {"title": "Mine"}, token=out["token"])
+        self.assertEqual(200, made[0])
+
+    def test_the_password_is_not_in_the_database(self):
+        self.signup()
+        stored = self.stored_hash("ada_l")
+        self.assertNotIn(self.GOOD, stored)
+        self.assertTrue(stored.startswith("scrypt$"), stored[:20])
+
+    def test_two_accounts_with_one_password_do_not_share_a_hash(self):
+        """A missing salt is invisible until the day the table leaks, and then it decides
+        how much of it is readable at once.
+        """
+        self.signup("ada_l")
+        self.signup("grace_h")
+        self.assertNotEqual(self.stored_hash("ada_l"), self.stored_hash("grace_h"))
+
+    def test_a_taken_handle_is_refused(self):
+        self.signup()
+        status, out = self.signup()
+        self.assertEqual(409, status)
+        self.assertEqual("handle_taken", out["error"]["code"])
+
+    def test_a_demo_identity_cannot_be_registered_over(self):
+        """mel_k exists with no password because /api/session made them. Registering that
+        name would hand the demo storyboard's owner to whoever asked for it first.
+        """
+        self.session("mel_k")
+        status, out = self.signup("mel_k")
+        self.assertEqual(409, status)
+        self.assertEqual("handle_taken", out["error"]["code"])
+        self.assertIsNone(self.stored_hash("mel_k"), "a password was set on somebody else")
+
+    def test_a_demo_identity_cannot_be_signed_into(self):
+        """The other half of the same door. password_hash IS NULL means this identity has
+        no password, which is not the same as its password being empty. Reading it as the
+        latter opens every demo account to anybody who sends an empty string.
+        """
+        self.session("mel_k")
+        for guess in ["", " ", self.GOOD, "password", "null", "None"]:
+            status, out = self.post("/api/login", {"handle": "mel_k", "password": guess})
+            self.assertEqual(401, status, f"{guess!r} signed in as a passwordless identity")
+            self.assertEqual("bad_credentials", out["error"]["code"])
+
+    def test_a_short_password_is_refused(self):
+        status, out = self.signup(password="short12")
+        self.assertEqual(400, status)
+        self.assertEqual("weak_password", out["error"]["code"])
+        self.assertIsNone(self.stored_hash("ada_l"), "the account was created anyway")
+
+    def test_a_password_longer_than_the_cap_is_refused(self):
+        """Not a rule about passwords. scrypt is expensive on purpose, and anybody at all
+        may call this endpoint, so the work it can be asked to do has to have an end.
+        """
+        status, _ = self.signup(password="p" * 201)
+        self.assertEqual(400, status)
+
+    def test_a_handle_has_to_be_one_word_of_a_sensible_length(self):
+        for bad in ["ab", "a" * 25, "two words", "tab" + chr(9) + "bed", "   ", "", None, 42, ["a"]]:
+            status, _ = self.post("/api/register", {"handle": bad, "password": self.GOOD})
+            self.assertEqual(400, status, f"{bad!r} was accepted as a handle")
+
+    def test_a_handle_does_not_have_to_be_english(self):
+        """Refusing a non-Latin name would be the same mistake as rejecting a non-English
+        sighting, which operations.md 4.3 already forbids. Somebody's name is a worse place
+        to make it than their sighting.
+        """
+        name = "".join(chr(c) for c in (38463, 32599, 21704))
+        status, out = self.post("/api/register", {"handle": name, "password": self.GOOD})
+        self.assertEqual(200, status)
+        self.assertEqual(name, out["handle"])
+
+    def test_signing_in_returns_the_same_person(self):
+        _, made = self.signup()
+        status, back = self.signin()
+        self.assertEqual(200, status)
+        self.assertEqual(made["user_id"], back["user_id"])
+        self.assertEqual("ada_l", back["handle"])
+
+    def test_a_wrong_password_and_a_wrong_name_read_the_same(self):
+        """Saying which half was wrong tells somebody whether that name exists. That is the
+        first thing worth knowing to an attacker and no use at all to a person who mistyped
+        their own password.
+        """
+        self.signup()
+        wrong_password = self.post("/api/login",
+                                   {"handle": "ada_l", "password": "nope-nope-nope"})
+        no_such_person = self.post("/api/login",
+                                   {"handle": "nobody_here", "password": self.GOOD})
+        self.assertEqual(401, wrong_password[0])
+        self.assertEqual(401, no_such_person[0])
+        self.assertEqual(wrong_password[1], no_such_person[1])
+
+    def test_registering_works_with_open_signup_closed(self):
+        """The point of the whole change: this is what lets that flag go."""
+        os.environ.pop("FENCEPOST_OPEN_SIGNUP", None)
+        self.assertEqual(403, self.post("/api/session", {"handle": "ada_l"})[0])
+        self.assertEqual(200, self.signup()[0])
+        self.assertEqual(200, self.signin()[0])
+
+    def test_guessing_stops_after_ten_tries(self):
+        self.signup()
+        codes = [self.post("/api/login", {"handle": "ada_l", "password": "wrong-one-x"})[0]
+                 for _ in range(11)]
+        self.assertEqual([401] * 10, codes[:10], "the ceiling closed early")
+        self.assertEqual(429, codes[10], "guessing was never stopped")
+
+    def test_the_right_password_is_refused_too_once_the_ceiling_is_hit(self):
+        """A ceiling that still let the correct password through would stop nothing."""
+        self.signup()
+        for _ in range(10):
+            self.post("/api/login", {"handle": "ada_l", "password": "wrong-one-x"})
+        status, out = self.signin()
+        self.assertEqual(429, status)
+        self.assertEqual("rate_limited_login", out["error"]["code"])
+
+    def test_one_account_being_hammered_does_not_lock_out_another(self):
+        self.signup("ada_l")
+        self.signup("grace_h")
+        for _ in range(11):
+            self.post("/api/login", {"handle": "ada_l", "password": "wrong-one-x"})
+        self.assertEqual(200, self.signin("grace_h")[0], "the ceiling was counted globally")
+
+
 if __name__ == "__main__":
     unittest.main()

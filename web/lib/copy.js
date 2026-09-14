@@ -39,6 +39,31 @@ export const COPY = {
   // do, /credits does. The assistant is the last one that should be vague about it.
   assistantCanned: "Pre-written answers for this demo. Nothing is generated live.",
 
+  // Accounts, added 2026-09-15. Until now identity was a handle this browser made up, and
+  // there was nowhere to see it or change it.
+  signInTitle: "Sign in",
+  registerTitle: "Make an account",
+  signInLede: "Your storyboards and sightings follow the account, on whatever you sign in on.",
+  registerLede: "Pick a name people will see beside what you write.",
+  // Said on the form rather than discovered later. There is no email service behind this
+  // prototype, so there is no way to send a reset link, and a person who assumes otherwise
+  // finds out at the worst possible moment.
+  noReset: "There's no password reset: this prototype can't email you. Keep it somewhere safe.",
+  handleLabel: "Name",
+  passwordLabel: "Password",
+  toRegister: "No account yet? Make one.",
+  toSignIn: "Already have one? Sign in.",
+  youTitle: "You",
+  guestTitle: "Looking around as a guest",
+  // Accurate rather than reassuring. An account is a different identity, so entries written
+  // as a guest do not move across. They are not lost either, and saying which it is matters:
+  // signing out returns you to the same guest, and they are still there.
+  guestBody:
+    "This browser made you a name so you could try things out. An account is a separate identity: what you posted as a guest stays with the guest, and signing out brings you back to it.",
+  signOut: "Sign out",
+  accessTitle: "What you can reach",
+  accessEmpty: "Nothing yet. A storyboard you make, or a code somebody shares with you, turns up here.",
+
   // Added with the prototype, mirrored into ux-copy.md
   captureLede: "Start with a clip you already have.",
   noCameras: "Fencepost doesn't run any cameras. Everything here comes off your own phone.",
