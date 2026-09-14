@@ -50,11 +50,26 @@ handle 换令牌。原型阶段这就是它的登录模型。
 代价不藏着说：任何人访问这个站，都能拿任意 handle 换到令牌，也就能建故事版、发 entry、
 发帖。所以线上那个库里**只放 demo 数据**，别往里写任何真实的人和地址。
 
-**`NEXT_PUBLIC_FENCEPOST_HANDLE` 必须配。** 不配的话，`lib/api.js` 会退回 `mel_k`——
-而 `mel_k` 是 demo 故事版的 owner，等于把归档、撤销权限、删别人条目的能力发给每一位访客。
-线上配的是 `visitor`，对 demo 故事版只有 contribute，六道 owner 闸门实测都拦得住
-（见 `operations.md` §1.1）。要留意的是所有访客共用这一个身分，所以他们彼此之间
-仍然能改能删——挡住的是 owner 那一层。
+**访客是一人一个身分（2026-09-14 改的）。** 不配 `NEXT_PUBLIC_FENCEPOST_HANDLE` 时，
+`lib/api.js` 给每个浏览器生成一个 `guest_xxxxxx` 存进 localStorage，所以回访的人还是自己。
+配了就听它的——本机开发和测试用。
+
+这一条改过两次，两次都是同一类毛病，值得记着：
+
+1. 默认值原先是 `mel_k`，而那是 demo 故事版的 **owner**。谁忘了配这个变量，
+   每位访客就都拿到了归档、撤权限、删别人条目的能力。默认值现在是空的——
+   退路是「一人一个陌生身分」，不是「所有人都是 owner」。
+2. 后来固定成 `visitor`，owner 那一层挡住了，但**所有访客共用一个身分**，
+   于是 `author_id` 在他们之间相等：访客 A 能改能删访客 B 写的东西。
+
+新身分在任何故事版上都没有权限，所以要有一张**入场码**：
+`NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN` 放一张 contribute 档的分享链接，换到令牌之后自动兑一次，
+兑过的浏览器记一笔不再重兑。明文放前端不新增暴露——开放注册本来就让任何人拿任意 handle
+换令牌，而这张码只给 demo 故事版的 contribute。
+
+**它有有效期。** 服务端强制 1..90 天，签不出永久的。当前这张到 **2026-12-13** 为止，
+过期之后新访客兑不上，打开就是空 dashboard（老访客不受影响，他们的 grant 已经在库里了）。
+到期要重签一张并更新这个变量。
 令牌本身并不多给什么：可见范围照旧按 `access_grants` 走，没分享给他的故事版他打不开——
 时间线回 403 `no_access`，助手也拿不到那份上下文。这两条分别由
 `test_the_timeline_needs_a_grant` 和 `test_someone_elses_storyboard_stays_out_of_reach`
@@ -93,7 +108,7 @@ exiftool out.jpg          # 只该剩文件系统与 JPEG 结构字段
 ## 测试
 
 ```
-node --test lib/copy.test.mjs lib/format.test.mjs lib/fixtures.test.mjs
+node --test lib/api.test.mjs lib/copy.test.mjs lib/format.test.mjs lib/fixtures.test.mjs
 ```
 
 （`node --test lib/` 会把目录里非测试的 `.js` 也当测试跑，所以列文件名。）

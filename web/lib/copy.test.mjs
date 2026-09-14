@@ -41,6 +41,35 @@ test("界面引用到的每个 COPY 键都真的存在", () => {
   assert.deepEqual(missing, [], "引用了不存在的文案键，界面上那处会是一片空白");
 });
 
+test("界面引用到的每个样式类都真的存在", () => {
+  // 和上面那条同一个毛病，只是更安静：CSS Module 取不到的键回 undefined，
+  // React 把 className={undefined} 当成「没有 class」，那一块就默默地没有样式——
+  // 不报错、不留痕。2026-09-14 写挑帧那一屏时顺手写了一个 ui.note，而 `ui` 是
+  // components/ui.module.css 的再导出，里面根本没有 note 这个类。
+  const missing = [];
+  for (const file of [...sourceFiles(join(WEB, "app")), ...sourceFiles(join(WEB, "components"))]) {
+    const text = readFileSync(file, "utf8");
+    // 这个文件把哪个 .module.css 绑到了哪个名字上
+    const bound = {};
+    for (const [, name, rel] of text.matchAll(/import\s+(\w+)\s+from\s+"([^"]+\.module\.css)"/g)) {
+      bound[name] = join(dirname(file), rel);
+    }
+    if (/\bui\b[^\n]*from\s+"[^"]*\/ui"/.test(text)) {
+      bound.ui = join(WEB, "components", "ui.module.css");
+    }
+    for (const [holder, cssPath] of Object.entries(bound)) {
+      let css;
+      try { css = readFileSync(cssPath, "utf8"); } catch { continue; }
+      const classes = new Set([...css.matchAll(/\.([A-Za-z_][\w-]*)/g)].map((m) => m[1]));
+      const refs = new RegExp(`\\b${holder}\\.([A-Za-z_$][\\w$]*)`, "g");
+      for (const [, key] of text.matchAll(refs)) {
+        if (!classes.has(key)) missing.push(`${file.slice(WEB.length + 1)} → ${holder}.${key}`);
+      }
+    }
+  }
+  assert.deepEqual(missing, [], "引用了不存在的样式类，那一块会悄悄没有样式");
+});
+
 test("COPY 里没有空值", () => {
   for (const [key, value] of Object.entries(COPY)) {
     assert.ok(value !== undefined && value !== null && value !== "", `COPY.${key} 是空的`);

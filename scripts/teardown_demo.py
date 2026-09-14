@@ -42,6 +42,47 @@ def counts(db: Database) -> dict:
             for name in TABLES}
 
 
+def screening_flags(db: Database) -> dict:
+    """两个只写不读的标记，清库之前数一次。
+
+    `fail_open`：模型超时两次，Screener 兜底放行，条目照常发布。这是定好的行为
+    （CLAUDE.md 决策表：模型挂了不该让用户发不出内容），但它**一直没有人读回来**——
+    一次上游故障在库里留了痕，而没有任何地方看得见。伦理那一节要回答的
+    「筛查到底漏过几条」，答案只能从这里来。
+
+    `downgraded_non_english`：非英语内容被地板从 reject 压成 review 的次数
+    （operations §4.3）。同样只写不读。它是「有没有系统性地误拒少数语言」的证据。
+
+    **只数，不取原文。** `original_text` 里是被拒的原话，含触发拒绝的那些个人信息；
+    数出来是安全的，打印出来不是。有测试钉着这一条。
+
+    空表上 SUM 回的是 NULL 不是 0，MIN/MAX 也一样——所以全部 COALESCE。
+    否则一个刚清过的库会打印出 `fail_open = None`，看着像报表坏了，
+    而不是像「筛查从来没有兜底放行过」。
+    """
+    row = db.conn.execute(
+        "SELECT COUNT(*) AS total, "
+        "COALESCE(SUM(fail_open), 0) AS fail_open, "
+        "COALESCE(SUM(downgraded_non_english), 0) AS downgraded, "
+        "MIN(CASE WHEN fail_open = 1 THEN created_at END) AS first_fail_open, "
+        "MAX(CASE WHEN fail_open = 1 THEN created_at END) AS last_fail_open "
+        "FROM screening_results").fetchone()
+    return dict(row)
+
+
+def report_flags(db: Database) -> None:
+    flags = screening_flags(db)
+    print(f"\n筛查记录共 {flags['total']} 条，其中：")
+    print(f"  fail_open = 1               {flags['fail_open']}   "
+          "模型超时兜底放行，条目照常发布了")
+    if flags["fail_open"]:
+        print(f"    最早 {flags['first_fail_open']}")
+        print(f"    最晚 {flags['last_fail_open']}")
+    print(f"  downgraded_non_english = 1  {flags['downgraded']}   "
+          "非英语提交被地板从 reject 压成 review")
+    print("  （只数不取原文：original_text 里是被拒的原话，含触发拒绝的个人信息。）")
+
+
 def clear(db: Database) -> dict:
     """按外键顺序从叶子往根删。返回每张表删掉多少行。"""
     before = counts(db)
@@ -93,10 +134,16 @@ def main() -> None:
         else:
             print("\n引用完整性：没有指向不存在父行的记录。")
 
+        report_flags(db)
+
         print("\n加 --yes 才会真删。")
         # 托管库的客户端自己起了一条事件循环线程，不关这个进程就不退出。
         db.close()
         return
+
+    # 这一行必须在 clear 之前。清完库这两个数就永远拿不回来，而报告要引它们——
+    # 直接跑 --yes 的人不会先跑一遍只数模式。
+    report_flags(db)
 
     removed = clear(db)
     print(f"已清空 {shown}：")

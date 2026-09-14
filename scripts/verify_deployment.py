@@ -5,7 +5,9 @@
     python scripts/verify_deployment.py <url> --bypass <protection-bypass-token>
 
 走一遍：404、坏令牌 401、换令牌、建故事版、提交 entry、读时间线、Screener 是不是真跑了、
-Neighbour 非流式与流式、Writer、submission 限流。三次真模型调用，限流那一圈零调用。
+复核队列、分享链（签发、第二个人兑换、关掉、关掉之后兑不动、关码不动已有权限）、
+论坛（发主题、回帖、回帖被拒带 reason）、Neighbour 非流式与流式、Writer、submission 限流。
+七次真模型调用（四次 Screener、三次助手），限流那一圈零调用。
 
 **URL 要用生产别名**（`fencepost-omega.vercel.app` 这种），不是 `vercel deploy` 打印的那个
 `fencepost-<hash>-<team>.vercel.app`。后者被 Deployment Protection 挡着，生产别名默认不挡。
@@ -109,14 +111,22 @@ def main():
     print(f"对着 {client.base} 跑：\n")
 
     status, payload = client.send("/api/nothing-here", body={})
+    # 回的不是我们的 JSON，有两种完全不同的原因，别混成一句话说。
+    # 2026-09-14 我自己把这份脚本指到了前端那个专案，它照着念「Deployment Protection
+    # 挡着（未知）」，于是人会跑去翻保护设置 —— 而那边根本没开过。拿 HTML 当保护层的
+    # 信号，漏掉了「地址指错了」这个更常见的原因，两者回的都不是 JSON。
     if "protection" in payload or "_not_json" in payload:
-        # 两种形状都见过：JSON 里带 protection 对象（2026-09-13 实际收到的），
-        # 或者干脆回一页 HTML 登录页。
         on = payload.get("protection") or {}
         which = "、".join(name for name, flag in
                           (("Vercel Authentication", on.get("vercel_auth_enabled")),
-                           ("Password", on.get("password_enabled"))) if flag) or "未知"
-        stop(f"Deployment Protection 挡着（{which}），拿到的不是我们的响应。\n"
+                           ("Password", on.get("password_enabled"))) if flag)
+        if not which and status == 404:
+            stop(f"{client.base} 回的是一页 HTML 404，不是我们的 API。\n"
+                 "这个仓库部署成两个专案：API 那个（/api/* 挂在它上面）和前端那个。\n"
+                 "要跑的是 API 那个的生产别名 —— 前端页面上任意一次请求的 origin 就是它，\n"
+                 "也可以看 web 专案的 NEXT_PUBLIC_FENCEPOST_API。")
+        stop(f"Deployment Protection 挡着（{which or '未知'}），拿到的不是我们的响应。\n"
+             f"  HTTP {status}，开头是 {str(payload.get('_not_json', ''))[:60]!r}\n"
              "三条路：Settings → Deployment Protection 关掉；带 --bypass <token>；\n"
              "或者 --share <带 _vercel_share 的临时链接>（23 小时有效，不动任何设置）。")
     record("未知路径回 404", status == 404, f"HTTP {status}")
@@ -172,6 +182,71 @@ def main():
     record("复核队列（惰性结算那条路）", status == 200 and "items" in queue,
            f"HTTP {status}，{len(queue.get('items', []))} 条" if status == 200
            else str(queue)[:60])
+
+    # 分享这条链：签发 -> 兑换 -> 关掉 -> 再兑换。它横跨 share_links 与 access_grants
+    # 两张表，而这份脚本原先一步都没走过。扫码进不去的时候，看不出是哪一步断的。
+    status, link = client.send("/api/share-links", token=token, body={
+        "storyboard_id": storyboard, "level": "view", "expires_in_days": 7})
+    plain, link_id = link.get("token"), link.get("share_link_id")
+    record("签发分享链接", status == 200 and bool(plain),
+           f"HTTP {status} {link.get('level') or str(link)[:40]}")
+
+    status, listed = client.send(f"/api/share-links?storyboard_id={storyboard}", token=token)
+    rows = listed.get("links") or []
+    # 明文不在回包里是刻意的：库里只有 SHA-256。这一项哪天「修」成回明文，
+    # 等于把一份可兑换的权限长期挂在界面上（app.list_share_links 的注释说的就是这个）。
+    leaked = [r for r in rows if "token" in r]
+    record("码列表不回明文", status == 200 and len(rows) == 1 and not leaked,
+           f"{len(rows)} 行" + ("，回了明文 —— 这一项防的就是这个" if leaked else ""))
+
+    status, guest_session = client.send("/api/session", body={"handle": args.handle + "-guest"})
+    guest = guest_session.get("token")
+    status, got = client.send("/api/share-links/redeem", token=guest, body={"token": plain})
+    record("第二个人兑换", status == 200 and got.get("storyboard_id") == storyboard,
+           f"HTTP {status} 拿到 {got.get('level') or str(got)[:40]}")
+
+    status, seen = client.send(f"/api/timeline?storyboard_id={storyboard}", token=guest)
+    record("兑换之后读得到", status == 200, f"HTTP {status}，{len(seen.get('entries', []))} 条")
+
+    status, off = client.send("/api/share-links/revoke", token=token,
+                              body={"share_link_id": link_id})
+    record("关掉这张码", status == 200 and off.get("revoked") is True, f"HTTP {status}")
+
+    status, again = client.send("/api/share-links/redeem", token=guest, body={"token": plain})
+    record("关掉之后兑不动", status == 403,
+           f"HTTP {status} {(again.get('error') or {}).get('code', '')}")
+
+    # ux-copy §6.5 那句话的实证：关码只挡还没用它的人。已经换到权限的人一个字都不动——
+    # revoke_share_link() 只写 share_links.revoked_at，access_grants 碰都不碰。
+    # 这两件事混在一起而不说清楚，就是让人以为自己关上了门。
+    status, still = client.send(f"/api/timeline?storyboard_id={storyboard}", token=guest)
+    record("关码不动已有权限", status == 200, f"HTTP {status}")
+
+    # 论坛。发主题那一步的标题是跟正文合成一段送去筛查的，不是只查正文——
+    # 否则「有人见过 Smiths 家 42 号那只吗」配一段干净的正文就能挂在所有人眼前。
+    status, thread = client.send("/api/forum/threads", token=token, body={
+        "storyboard_id": storyboard, "title": "Pruning on the corner block",
+        "body": "Council dropped a letter saying the jacaranda gets a heavy prune next month."})
+    thread_id = thread.get("thread_id")
+    record("发主题", status == 200 and thread.get("published") is True,
+           f"HTTP {status} prompt {thread.get('prompt_version', '')}")
+
+    status, post = client.send("/api/forum/posts", token=token, body={
+        "thread_id": thread_id,
+        "body": "They left the big limbs last time and the ringtails came back after a few weeks."})
+    record("回帖", status == 200 and post.get("published") is True, f"HTTP {status}")
+
+    # 被拒的回帖必须带 reason_codes 回来：界面靠它挑那一句话。前端原先把这张表配错了，
+    # 本该读到「说一句你看到了什么就能过」的人读到的是兜底那句泛泛之词。
+    # 这一项同时是条红线检查——放行这段文字就是 harm_advocacy 没拦住。
+    status, blocked = client.send("/api/forum/posts", token=token, body={
+        "thread_id": thread_id,
+        "body": "Easiest fix is rat baits in the roof cavity, they stop coming back."})
+    codes = blocked.get("reason_codes") or []
+    record("回帖被拒带 reason",
+           status == 200 and blocked.get("published") is False and bool(codes),
+           ("、".join(codes) if codes else "放行了 —— 这段是 harm_advocacy")
+           if status == 200 else f"HTTP {status}")
 
     status, answer = client.send("/api/assistant", token=token, body={
         "role": "neighbour", "storyboard_id": storyboard,
