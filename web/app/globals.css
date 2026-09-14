@@ -1,10 +1,12 @@
-/* 设计系统的 token，来自 Claude Design 的 Organic 系统（_ds/.../styles.css）。
-   那套是浅色的，Fencepost 用的是同一组色阶的夜间反转——原型里那些十六进制不是随手挑的：
-   #d67f48 是 accent-500，#f6a06b 是 400，#b2622d 是 600，灰是 neutral-300/400/500/700。
-   所以这里带过来的是色阶本身，语义 token 建在色阶上，不抄散落的 hex。 */
+/* Design-system tokens, from the Claude Design Organic system (_ds/.../styles.css).
+   That system is light, and Fencepost uses a night-time inversion of the same ramps — the
+   hex values in the prototype were not picked by hand: #d67f48 is accent-500, #f6a06b is
+   400, #b2622d is 600, and the greys are neutral-300/400/500/700.
+   So what comes across is the ramps themselves, with semantic tokens built on them rather
+   than scattered hex values copied out. */
 
 :root {
-  /* ── 色阶（原样搬自设计系统） ── */
+  /* ── Ramps (carried across from the design system as they are) ── */
   --color-neutral-100: #f9f4ed;
   --color-neutral-200: #eee7db;
   --color-neutral-300: #dcd3c4;
@@ -30,13 +32,14 @@
   --radius-lg: 28px;
   --radius-pill: 999px;
 
-  /* ── 夜间语义层 ──
-     负鼠是夜行动物，整个产品发生在傍晚到深夜。暖调深色，不要蓝黑也不要纯黑。 */
-  --bg-outer: #100e0c;       /* 内容区外面那圈 */
-  --bg: #1a1713;             /* 页面 */
-  --surface: #241e18;        /* 卡片 */
-  --surface-raised: #2f2820; /* 卡片上的东西 */
-  --surface-sunken: #14110e; /* 图片位 */
+  /* ── The night-time semantic layer ──
+     Possums are nocturnal and the whole product happens between dusk and the small hours.
+     Warm darks, neither blue-black nor pure black. */
+  --bg-outer: #100e0c;       /* outside the content area */
+  --bg: #1a1713;             /* the page */
+  --surface: #241e18;        /* cards */
+  --surface-raised: #2f2820; /* things on cards */
+  --surface-sunken: #14110e; /* image slots */
 
   --text: #f4ebdc;
   --text-body: var(--color-neutral-300);
@@ -77,9 +80,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 展示字体只留给字标。设计系统的 --font-heading 是 Caprasimo，很重的展示体，
-   拿来做正文标题就踩了「不要卡通」那条线——原型里每一个 h1 都显式改回了正文字体，
-   那是判断不是巧合，所以这里把它固化成规则。 */
+/* The display face is reserved for the wordmark. The design system --font-heading is
+   Caprasimo, a heavy display face, and using it for body headings crosses the no-cartoon
+   line — every h1 in the prototype explicitly set the body face back, which was a
+   judgement rather than a coincidence, so it is written down as a rule here. */
 h1,
 h2,
 h3 {

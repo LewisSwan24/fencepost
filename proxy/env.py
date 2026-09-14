@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""把仓库根目录的 .env 与 .env.local 读进 os.environ。只用标准库，不引 python-dotenv。
+"""Load the repository's .env and .env.local into os.environ. Standard library only.
 
-两个文件分工不同：`.env` 是手填的（API key、令牌密钥），`.env.local` 由
-`vercel integration add` 与 `vercel env pull` 生成，托管库的地址和令牌在那里。
-两个都读，本机跑起来看到的才和部署上是同一组变量。两个都在 .gitignore 里。
+The two files have different jobs: `.env` is hand-written (API key, token secret), while
+`.env.local` comes out of `vercel integration add` and `vercel env pull` and carries the
+hosted database address and token. Both are read, so what you see running locally is the
+same set of variables the deployment has. Both are in .gitignore.
 """
 
 import os
@@ -15,10 +16,11 @@ LOCAL_ENV_FILE = ROOT / ".env.local"
 
 
 def load_env(path: Path = ENV_FILE, also: Path = LOCAL_ENV_FILE) -> None:
-    """已存在的环境变量优先，文件里的值不覆盖它。
+    """Variables already in the environment win; the files never override them.
 
-    先读 .env.local 再读 .env：setdefault 是先到先得，所以手填的 .env 在冲突时说了算。
-    实际上两边的变量名不重叠，这只是把顺序写死，免得以后重叠了要靠猜。
+    .env.local is read first, then .env: setdefault is first-come-first-served, so the
+    hand-written .env has the last word on a conflict. The two files do not actually share
+    any variable names — this only pins the order so nobody has to guess later.
     """
     if also is not None and also != path:
         _read_into_environ(also)

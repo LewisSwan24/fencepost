@@ -1,4 +1,4 @@
-"""Vercel function 入口。逻辑都在 proxy/，这里只做 HTTP 收发。"""
+"""Vercel function entrypoint. The logic lives in proxy/; this only does HTTP."""
 
 import json
 import os
@@ -32,12 +32,15 @@ GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
               "/api/review": review_queue, "/api/grants": list_grants,
               "/api/share-links": list_share_links}
 _DEPS = None
-# 两个 Vercel 专案的代价就是这一条：前端跨域来调，得放行。
-# 生产环境把 FENCEPOST_ALLOWED_ORIGIN 设成前端的域名，别留星号。
+# This is the price of running two Vercel projects: the front end calls across origins, so
+# it has to be allowed. In production set FENCEPOST_ALLOWED_ORIGIN to the front end's
+# domain and leave no wildcard.
 #
-# 可以给多个，逗号分隔。理由不是灵活：同一个前端在 Vercel 上同时挂着好几个生产别名
-# （`-ten`、`-git-main-`、`-<team>`），只认其中一个，从另一个别名打开站点就是一片空白，
-# 而浏览器只说 CORS 失败，不说是哪个来源被拒——现场最难查的那一类故障。
+# Several may be given, comma separated. Not for flexibility: one front end on Vercel
+# carries several production aliases at once (the named one, `-git-main-`, `-<team>`), and
+# honouring only one of them means opening the site from another alias gives a blank page,
+# while the browser says only that CORS failed and never which origin was refused — the
+# hardest kind of fault to trace with an audience watching.
 ALLOWED_ORIGINS = tuple(
     origin.strip() for origin in os.getenv("FENCEPOST_ALLOWED_ORIGIN", "*").split(",")
     if origin.strip()
@@ -45,10 +48,12 @@ ALLOWED_ORIGINS = tuple(
 
 
 def _allow_origin(requested: str | None) -> str:
-    """回给这次请求的 access-control-allow-origin。
+    """The access-control-allow-origin to return for this request.
 
-    命中就原样回显（`vary: origin` 已经在发，缓存不会串）。没命中不回星号——那等于白设——
-    而是回清单里的第一个，浏览器照样拦，但响应里留下了「这里认的是谁」这条线索。
+    A match is echoed back as it came (`vary: origin` is already sent, so caches will not
+    cross). A miss does not get a wildcard — that would make the setting pointless — but the
+    first entry in the list: the browser still blocks it, and the response leaves a clue
+    about who this deployment does accept.
     """
     if "*" in ALLOWED_ORIGINS:
         return "*"
@@ -58,22 +63,25 @@ def _allow_origin(requested: str | None) -> str:
 
 
 def _deps() -> Deps:
-    # 历史、上下文、筛查记录与限流都走 SQLite；库文件路径用 FENCEPOST_DB 指定。
+    # History, context, screening records and rate limits all go through SQLite; the
+    # database file path comes from FENCEPOST_DB.
     global _DEPS
     if _DEPS is None:
-        # 先把 .env 与 .env.local 读进来。DashScope() 自己也会调，但那是在下面几行之后，
-        # 而托管库的地址就在 .env.local 里——不先读，本机跑的时候这里取到的是 None，
-        # 于是静悄悄地退回本地文件，看起来一切正常。
+        # Load .env and .env.local first. DashScope() does it too, but a few lines later, and
+        # the hosted database address lives in .env.local — without reading it first this
+        # picks up None locally and quietly falls back to a local file, looking perfectly
+        # fine while doing so.
         load_env()
-        # 地址按这个顺序挑：
-        #   FENCEPOST_DB        显式指定，测试和本机文件库用它
-        #   TURSO_DATABASE_URL  托管库。vercel integration add 自动注入，没人需要手抄
-        #   /tmp                Vercel 上的退路，每实例一份、冷启动清空
-        #   本地文件            开发机
+        # The address is chosen in this order:
+        #   FENCEPOST_DB        explicit; used by tests and by a local file database
+        #   TURSO_DATABASE_URL  the hosted database, injected by vercel integration add
+        #   /tmp                the fallback on Vercel: one per instance, wiped on cold start
+        #   local file          a development machine
         #
-        # /tmp 只能当退路：2026-09-13 实测，同一个 handle 在不同实例上拿到过两个不同的
-        # user_id，一次页面加载里 dashboard 列得出的故事版，timeline 回 403。
-        # serverless 上的 SQLite 是能跑，不是能用。
+        # /tmp can only ever be the fallback: measured on 2026-09-13, one handle picked up
+        # two different user_ids on two instances, and inside a single page load a
+        # storyboard the dashboard had just listed came back 403 from timeline. SQLite on
+        # serverless runs; it is not usable.
         default_db = ("/tmp/fencepost.db" if os.getenv("VERCEL")
                       else str(Path(__file__).resolve().parent.parent / "fencepost.db"))
         db = Database(os.getenv("FENCEPOST_DB")
@@ -87,8 +95,8 @@ def _deps() -> Deps:
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        # 新版 Vercel Python builder 只认 pyproject.toml 里那一个入口，所有路径都进这里，
-        # 所以路由得自己分。
+        # The newer Vercel Python builder recognises only the single entrypoint named in
+        # pyproject.toml, so every path arrives here and the routing is done by hand.
         path = self.path.split("?")[0].rstrip("/") or "/"
         length = int(self.headers.get("content-length") or 0)
         raw = self.rfile.read(length) if length else b"{}"
@@ -97,14 +105,16 @@ class handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
         if path not in POST_ROUTES:
-            # 先判路径再建依赖：不认识的地址不该因为缺配置而回 503
+            # Route before building dependencies: an unknown address should not come back
+            # 503 because some configuration is missing
             return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
         token = (self.headers.get("authorization") or "").removeprefix("Bearer ").strip()
         try:
             deps = _deps()
         except Exception as exc:
-            # 配置缺失（例如没配 DASHSCOPE_API_KEY）不该让整个函数崩掉。这条是真部署打出来的：
-            # 崩了之后 Vercel 只会回一句 FUNCTION_INVOCATION_FAILED，客户端什么也看不出来。
+            # Missing configuration (no DASHSCOPE_API_KEY, say) should not take the whole
+            # function down. This came out of a real deployment: after a crash Vercel says
+            # only FUNCTION_INVOCATION_FAILED and the client learns nothing at all.
             print(f"[proxy] deps: {redact(str(exc))[:200]}", file=sys.stderr)
             return self._json(503, {"error": {"code": "upstream_unavailable",
                                               "message": COPY["upstream_unavailable"]}})
@@ -165,14 +175,15 @@ class handler(BaseHTTPRequestHandler):
         self._cors()
         self.send_header("content-type", "text/event-stream")
         self.send_header("cache-control", "no-cache")
-        self.send_header("x-accel-buffering", "no")     # 别让中间层把流缓冲成一坨
+        self.send_header("x-accel-buffering", "no")     # stop a middlebox buffering the stream
         self.end_headers()
         self._event({"prompt_version": result.prompt_version})
         try:
             for piece in result:
                 self._event({"delta": piece})
         except UpstreamError:
-            # 半路断了就发一个错误事件，且不落库——半截回复也是伪造回复。
+            # If it breaks mid-stream, send an error event and store nothing: half a reply
+            # is a fabricated reply too.
             self._event({"error": {"code": "upstream_unavailable",
                                    "message": COPY["upstream_unavailable"]}})
             return
@@ -180,7 +191,7 @@ class handler(BaseHTTPRequestHandler):
         self._event({"done": True})
 
     def _event(self, payload: dict) -> None:
-        """SSE 的一帧：data: 开头，空行结尾。"""
+        """One SSE frame: starts with data:, ends with a blank line."""
         self.wfile.write(("data: " + json.dumps(payload) + "\n\n").encode())
         self.wfile.flush()
 
@@ -189,7 +200,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("vary", "origin")
 
     def do_OPTIONS(self):
-        """预检。浏览器带 authorization 头就一定会先问一次。"""
+        """Preflight. A browser sending an authorization header always asks first."""
         self.send_response(204)
         self._cors()
         self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
@@ -207,4 +218,4 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def log_message(self, *args):
-        """默认日志会把请求行写进 stdout，这里静默，免得日志成为另一个泄漏面。"""
+        """The default logger writes request lines to stdout. Silenced, so the log is not another leak."""

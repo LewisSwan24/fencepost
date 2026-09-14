@@ -1,7 +1,7 @@
 "use client";
 
-// 1 · My storyboards —— 我有权限的故事版，Active 与 Past 分开。
-// Past 里是 readonly 和 archived 两种状态，不是一个叫 past 的状态。
+// 1 · My storyboards — the ones I have access to, with Active and Past kept apart.
+// Past holds the readonly and archived states; there is no status called past.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -23,7 +23,8 @@ export default function Home() {
 
   useEffect(() => {
     dashboard().then(setBoards, (e) => setError(e.message));
-    // 页头得说出真正登录的是谁。写死成 mel_k 的话，换个 handle 它就在撒谎。
+    // The header has to say who is actually signed in. Hard-coded to mel_k, it lies the
+    // moment the handle changes.
     me().then(setWho, () => {});
   }, []);
 
@@ -92,7 +93,7 @@ export default function Home() {
             ? "live — the assistant is answering for real"
             : "live storyboards · Possum Help is running from fixtures"}
         {" · "}
-        {/* 署名是 CC BY-SA 的许可条件，所以这条链接不能只躺在 README 里 */}
+        {/* Attribution is a condition of CC BY-SA, so this link cannot live only in the README */}
         <a href="/credits" className={styles.credits}>Image credits</a>
       </p>
 
@@ -118,10 +119,11 @@ export default function Home() {
 }
 
 function Card({ board, past }) {
-  // entry_count 和 latest_species 是 dashboard 真给的；participants 和 suburb 它不给，
-  // 所以不画。封面按最近一次目击的物种配——真产品里这里是那条视频的截帧。
-  // 还没有 entry，或者最近那条是 other / unknown 的，就没有封面，留一块夜色：
-  // 随便配一只负鼠上去，等于替用户断言他拍到了什么。
+  // entry_count and latest_species really do come from dashboard; participants and suburb
+  // do not, so they are not drawn. The cover follows the species of the most recent
+  // sighting — in the real product this is a still from that video. With no entries yet,
+  // or a most recent one that is other or unknown, there is no cover and a patch of night
+  // stays: dropping any possum in would assert on the user's behalf what they filmed.
   const cover = frameForSpecies(board.latest_species, board.id);
   return (
     <a href={"/b/" + board.id} className={[styles.card, past ? styles.cardPast : ""].join(" ")}>

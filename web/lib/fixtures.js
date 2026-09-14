@@ -1,12 +1,14 @@
-// 原型里的固定应答，搬过来的时候修了三处契约不符（见 issue #22 的核验报告）：
-//   species 的第四档是 unknown 不是 unsure —— 真 API 的集合是
-//     {brushtail, ringtail, other, unknown}，发 unsure 直接 400；
-//   故事版状态是 active | readonly | archived，没有 past；
-//   没有 role:"vision" 这个东西 —— 认帧是一次 neighbour 调用，带 image_b64
-//     和 frame_consent，回的还是 {role, reply, prompt_version}。
+// The fixed responses from the prototype. Three contract mismatches were fixed on the way
+// across (see the verification report on issue #22):
+//   the fourth species value is unknown, not unsure — the real API set is
+//     {brushtail, ringtail, other, unknown}, and sending unsure is a straight 400;
+//   storyboard status is active | readonly | archived, with no past;
+//   there is no role:"vision" — identifying a frame is a neighbour call carrying image_b64
+//     and frame_consent, and it answers with {role, reply, prompt_version} as usual.
 //
-// 为什么助手在答辩现场必须走这里：真模型有概率说出一句违反红线的话，现场没有第二次机会。
-// 见 CLAUDE.md。CRUD 那半边走的是真后端。
+// Why the assistant has to come from here during the demo: a real model can say something
+// that crosses a red line, and in the room there is no second chance. See CLAUDE.md. The
+// CRUD half runs against the real backend.
 
 export const PROMPT_VERSION = "v0.11";
 
@@ -19,7 +21,8 @@ export const SPECIES = [
 
 export const SPECIES_LABEL = Object.fromEntries(SPECIES.map((s) => [s.id, s.label]));
 
-// 用户刚拍的那段。服务端只会有一个 storage_key —— EXIF 没有字段可以落地。
+// The clip the user has just filmed. The server would hold only a storage_key; there is no
+// column EXIF could land in.
 export const CLIP = {
   default_index: 3,
   frames: [
@@ -32,16 +35,18 @@ export const CLIP = {
     { t: 12, label: "0:12", tone: 0 },
     { t: 14, label: "0:14", tone: 1 },
   ],
-  // 画面里能认出人或房子的东西，按画面百分比。
+  // Things in the picture that identify a person or a house, as a percentage of the frame.
   mask_targets: [
     { id: "face", label: "Face", x: 13, y: 30, w: 17, h: 23 },
     { id: "plate", label: "Number plate", x: 55, y: 64, w: 28, h: 14 },
   ],
 };
 
-// 认帧的回应。真接口回的是散文，不是结构化的物种字段，所以这里也回散文——
-// 界面自己从句子里认出物种（见 suggestedSpecies），认不出就只显示句子，不给「Use this」。
-// 这样对着真 API 也是同一套逻辑，而且天然满足「建议永不自动选中」。
+// The response to identifying a frame. The real endpoint answers in prose rather than with
+// a structured species field, so this does too — the interface picks the species out of the
+// sentence itself (see suggestedSpecies), and where it cannot, only the sentence is shown
+// and no "Use this" appears. The same logic then works against the real API, and it
+// satisfies "a suggestion is never selected automatically" for free.
 export const VISION_REPLY =
   "Looks most like a Brushtail — going by the bushy tail. Check the ears to be sure.";
 
@@ -51,7 +56,8 @@ export function suggestedSpecies(reply) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-// Writer。只给候选，永远不替用户填。confidence 只有 established 和 unverified。
+// Writer. Candidates only, never filled in for the user. confidence is established or
+// unverified, nothing else.
 const FUN_FACTS = {
   brushtail: [
     {
@@ -77,7 +83,8 @@ const FUN_FACTS = {
   unknown: [],
 };
 
-// 润色只动空格、大小写和句号，不增删任何具体细节。真 Writer 用模型做同一件事。
+// The tidy-up touches only spacing, capitals and full stops, adding and removing no detail.
+// The real Writer does the same job with a model.
 function tidy(story) {
   let t = String(story || "").trim().replace(/\s+/g, " ");
   if (!t) return null;
@@ -100,8 +107,9 @@ export function writer(species, story) {
   };
 }
 
-// ── 助手对话 ──────────────────────────────────────────────
-// 四条演示脚本，逐字照 docs/prompts.md 的 §固定应答 实现，不改写不加句子。
+// ── Assistant conversation ──────────────
+// Four demo scripts, implemented word for word from the fixed-response section of
+// docs/prompts.md: nothing rewritten, no sentence added.
 export const ASSISTANT_SCRIPT = [
   {
     key: "roof",
@@ -137,10 +145,12 @@ export const ASSISTANT_DISCLOSURE = {
 export const ASSISTANT_OFFLINE =
   "The assistant is offline right now. Writing and posting work as normal.";
 
-// 另一种动物，而且那个动物得是句子的主语。「Will it hurt my cat?」问的是宠物，
-// 不是在报告一只猫，该走 injured。排在 injured 和 welfare 后面也是这个道理。
-// 用正则字面量拿 .source 拼，不在字符串里写双反斜杠——那种写法少转义一层就成了
-// 退格符而不是词边界，一声不吭地永远不匹配。这一条本来就是这样坏掉的。
+// Another animal, and that animal has to be the subject of the sentence. "Will it hurt my
+// cat?" asks about a pet rather than reporting a cat, so it belongs with injured. That is
+// also why it sits after injured and welfare.
+// Built by joining .source from regex literals rather than writing double backslashes in a
+// string: one escape level short and a word boundary becomes a backspace character, which
+// matches nothing, silently, for ever. That is exactly how this broke once.
 const ANIMAL = /bandicoot|koala|wallaby|kangaroo|rats?|mice|mouse|birds?|magpie|curlew|turkey|cockatoo|lorikeet|kookaburra|cats?|dogs?|fox|goanna|lizard|skink|frog|spider|opossum|raccoon/;
 const SAW = /filmed|film|saw|see|caught|got|have|found|watched/;
 const DID = /is|was|are|were|has|have|had|keeps?|kept|came|comes?|went|goes|dug|digs?|digging|eating|ate|sitting|sat|running|ran|doing|does|did|got|gets/;
@@ -154,12 +164,13 @@ const OTHER_ANIMAL_SUBJECT = new RegExp(
   "i"
 );
 
-// 按主题排，不按碰巧出现的词排：安全在最前，然后是 neighbour.txt 和 shared.txt
-// 真正规定了的分支，最后才是范围外。每条回复要么是上面四条脚本之一，要么直接出自那两个文件。
+// Ordered by subject rather than by whichever word happens to appear: safety first, then
+// the branches neighbour.txt and shared.txt actually prescribe, and out-of-scope last.
+// Every reply is either one of the four scripts above or comes straight out of those files.
 const ROUTES = [
   {
-    // shared.txt SAFETY FALLBACK —— 蝙蝠不给范围那句，不评论安不安全，
-    // 且只有接种过的人能碰。
+    // shared.txt SAFETY FALLBACK — bats do not get the scope sentence, nothing is said
+    // about whether they are safe, and only vaccinated people may touch one.
     key: "bat",
     match: /\bbats?\b|flying.?fox/i,
     reply:
@@ -167,28 +178,28 @@ const ROUTES = [
   },
   { key: "snake", match: /\bsnakes?\b|\bpython\b|\bviper\b|\badder\b/i, script: "snake" },
   {
-    // neighbour.txt CONTEXT BOUNDARY —— 别人的 entry。
+    // neighbour.txt CONTEXT BOUNDARY — somebody else's entry.
     key: "others",
     match: /other (people|entries|contributors|storyboard)|anyone else|everyone else|what did .*(write|post|say)|who (posts|posted|writes)|most (posts|entries)/i,
     script: "others",
   },
   {
-    // CONTEXT BOUNDARY —— 不能分享、邀请、给权限；指一下控件就停。
+    // CONTEXT BOUNDARY — cannot share, invite or grant access; point at the control and stop.
     key: "access",
     match: /invite|share|\bqr\b|revoke|give .* access|post (this|it) for me|on my behalf/i,
     reply:
       "I can't share a storyboard or invite anyone — that part is yours. The Share button on the storyboard is where the QR code and the access settings live.",
   },
   {
-    // neighbour.txt INJURED, SICK OR ORPHANED —— 不做判断，先打 RSPCA。
+    // neighbour.txt INJURED, SICK OR ORPHANED — no judgement; call the RSPCA first.
     key: "injured",
     match: /injur|\bhurt\b|sick|bleeding|\bdead\b|dying|orphan|\bbaby\b|\bjoey\b|stuck|caught in/i,
     reply:
       "I can't tell how badly hurt it is, so don't touch it yet. Call the RSPCA on 1300 ANIMAL (1300 264 625) and they'll tell you whether handling it is the right move — they're on 7am to 7pm every day, and their site has the after-hours list. Keep your distance and keep pets away until then.",
   },
   {
-    // shared.txt ANIMAL WELFARE HARD RULE —— 匹配投喂或上手的意图，
-    // 不匹配食物这个名词。「Do they eat fruit?」问的是食性。
+    // shared.txt ANIMAL WELFARE HARD RULE — matches an intent to feed or to handle, not
+    // the noun food. "Do they eat fruit?" is a question about diet.
     key: "welfare",
     match: /\bfeed(s|ing)?\b|hand.?feed|give (it|them|him|her)\b|leave (out|some|food|fruit)|put out (food|fruit|bread)|\bbait\b|\blure\b|\btouch\b|hold (it|them)|\bpat\b|pick (it|him|her|them) up|\bwake\b/i,
     reply:
@@ -202,15 +213,16 @@ const ROUTES = [
     script: "roof",
   },
   {
-    // neighbour.txt DIET —— 食性是范围内的问题，答它，不要变成一句别喂。
+    // neighbour.txt DIET — diet is in scope. Answer it, rather than turning it into a line
+    // about not feeding them.
     key: "diet",
     match: /\beat\b|\beats\b|\bdiet\b|what do they (eat|live on)|feed on/i,
     reply:
       "Both of them are mostly leaf eaters, and they take fruit, flowers and buds when those are around — which is why a mango tree or a jacaranda in flower gets so much traffic. Ringtails lean harder on leaves than brushtails do.",
   },
   {
-    // neighbour.txt SPECIES ID —— 永不下定论；说清楚该看哪个特征，
-    // 顺带提一句可以送帧去认，但不推。
+    // neighbour.txt SPECIES ID — never conclusive; say which feature to look at, and
+    // mention in passing that a frame can be sent for identification, without pushing it.
     key: "species",
     match: /(brushtail|ringtail)[^?.!]{0,12}or[^?.!]{0,12}(brushtail|ringtail)|which (one|species|kind)|what (kind|sort|species)|is (it|this)( one)? a (brushtail|ringtail)|identif|tell them apart/i,
     reply:
@@ -218,8 +230,8 @@ const ROUTES = [
   },
 ];
 
-// 范围内但不在这几条里。shared.txt HONESTY：不知道就说不知道，
-// 然后给出 neighbour.txt 规定的那个区分问题，而不是猜。
+// In scope but not one of these. shared.txt HONESTY: if it does not know it says so, and
+// then asks the distinguishing question neighbour.txt prescribes instead of guessing.
 const FALLBACK =
   "I've only got a few answers loaded in this prototype, so I'd be guessing at that one. If it helps, tell me about the tail — bushy, or thin and curled at the tip — and I can say which of the two it looks like.";
 
@@ -233,7 +245,8 @@ export function assistantReply(text) {
   return { role: "neighbour", reply, prompt_version: PROMPT_VERSION };
 }
 
-// 流式那条路的同一个回答，帧形状和真代理一致：首帧带版本号，中间是 delta，末帧 done。
+// The same answer down the streaming path, shaped like the real proxy: the version in the
+// first frame, deltas in between, done at the end.
 export function assistantFrames(text) {
   const { reply } = assistantReply(text);
   return [
@@ -243,9 +256,10 @@ export function assistantFrames(text) {
   ];
 }
 
-// ── 离线数据集（只有 fixtures 模式用得上；hybrid 下这一段是死的） ──
-// 状态用真的那三个值：active | readonly | archived。原型里写的 past 不是状态，
-// 是 dashboard 分组的名字——两回事，混在一起归档态就永远不触发。
+// ── Offline dataset (only fixtures mode uses it; dead under hybrid) ──
+// The status values are the real three: active | readonly | archived. The past the
+// prototype wrote is not a status but the name of a dashboard group — two different
+// things, and conflating them means the archived state never fires.
 const STORYBOARDS = {
   sb_jacaranda: {
     id: "sb_jacaranda",
@@ -321,8 +335,9 @@ const TIMELINES = {
   ],
 };
 
-// 被拒的样子也要能演。触发条件是确定的：正文里带这个假地址。
-// 回的只有 reason_codes——没有 verdict 也没有 note，作者永远看不到内部判定。
+// A refusal has to be demonstrable too. The trigger is deterministic: the body carries this
+// invented address. Only reason_codes come back — no verdict and no note, because the
+// author never sees the internal judgement.
 export const BLOCKED_TRIGGER = "42 Example St";
 
 export const REASON_COPY = {
@@ -339,7 +354,7 @@ export function dashboard() {
   };
 }
 
-// 离线模式下的「我能做什么」。对应 api.js 的 boardAccess。
+// "What can I do here" in offline mode. Matches boardAccess in api.js.
 export function boardAccess(id) {
   const board = STORYBOARDS[id];
   return { level: board?.level || null, status: board?.status || null };
@@ -389,8 +404,9 @@ export function submitEntry(body) {
   return { entry_id: entry.id, published: true, prompt_version: PROMPT_VERSION };
 }
 
-// ── 讨论区（离线数据集） ──
-// 单独的表、单独的端点。助手够不到这里，是设计如此，不是碰巧。
+// ── Discussion (offline dataset) ──
+// Its own table, its own endpoints. The assistant cannot reach it, by design rather than
+// by accident.
 const FORUM = {
   sb_jacaranda: [
     {
@@ -439,8 +455,9 @@ export function readThread(threadId) {
 }
 
 export function createThread({ storyboardId, title, body }) {
-  // 标题也要能被拒——服务端现在把标题和正文合成一段送去筛查，一段干净的正文
-  // 救不了一个写着地址的标题。离线演示演不出这一条，就演不出这次改动的重点。
+  // A title has to be refusable too — the server now screens the title joined to the body,
+  // so a clean body cannot rescue a title carrying an address. An offline demo that cannot
+  // show this cannot show the point of that change.
   if (String(title || "").includes(BLOCKED_TRIGGER) || String(body || "").includes(BLOCKED_TRIGGER)) {
     return { published: false, reason_codes: ["pii"], prompt_version: PROMPT_VERSION };
   }
@@ -471,7 +488,8 @@ export function createPost({ threadId, body }) {
   return { thread_id: threadId, published: false, reason_codes: [], prompt_version: PROMPT_VERSION };
 }
 
-// 改自己的条目。离线也要能演出「改了被拒」——那是这条链路上最要紧的一种结果。
+// Editing your own entry. Offline has to be able to show "edited and refused" as well; that
+// is the outcome on this path that matters most.
 export function editEntry({ entry_id, fun_fact, story }) {
   for (const [boardId, list] of Object.entries(TIMELINES)) {
     const entry = list.find((e) => e.id === entry_id);
@@ -480,7 +498,7 @@ export function editEntry({ entry_id, fun_fact, story }) {
     const nextStory = story === undefined ? entry.story : story;
     if (String(nextFact || "").includes(BLOCKED_TRIGGER)
         || String(nextStory || "").includes(BLOCKED_TRIGGER)) {
-      // 被拒的时候库里那条一个字都不能动
+      // On a refusal, not a character of the stored entry may change
       return { entry_id, published: false, reason_codes: ["pii"], prompt_version: PROMPT_VERSION };
     }
     if (nextFact === entry.fun_fact && nextStory === entry.story) {
@@ -508,8 +526,9 @@ export function deleteEntry(entryId) {
   return { entry_id: entryId, deleted: false };
 }
 
-// 离线的待核实队列。放一条别人写的、被标了 review 的条目，好让这一屏演得出来。
-// 注意这里同样一个作者身分都不出——和服务端的查询一致。
+// The offline second-look queue. It holds one entry written by somebody else and marked
+// review, so this screen can be demonstrated at all. Note that no author identity appears
+// here either — the same as the server query.
 const QUEUE = {
   sb_jacaranda: [
     {
@@ -541,13 +560,14 @@ export function disposeEntry(entryId, action) {
   return { entry_id: entryId, disposition: action };
 }
 
-// ── 复核投票 ──
+// ── Review votes ──
 export function castVote(entryId, vote) {
   for (const list of Object.values(QUEUE)) {
     const item = list.find((i) => i.entry_id === entryId);
     if (!item) continue;
-    // 一人一票，这里只有一个人在演，所以直接记一票。两票定音（operations §2.2）
-    // 的阈值仍然照搬，否则离线看不出「投够了会发生什么」。
+    // One vote each, and offline there is only one person, so record a single vote. The
+    // two-vote threshold (operations §2.2) is kept anyway, or offline shows nothing of
+    // what happens once enough votes land.
     item[vote] += 1;
     if (item.worth_checking >= 2) disposeEntry(entryId, "labelled");
     else if (item.looks_right >= 2) disposeEntry(entryId, "kept");
@@ -557,7 +577,7 @@ export function castVote(entryId, vote) {
            looks_right: vote === "looks_right" ? 1 : 0 };
 }
 
-// ── 分享与权限 ──
+// ── Sharing and access ──
 const GRANTS = {
   sb_jacaranda: [
     { user_id: "u_mel", handle: "mel_k", level: "reshare", granted_at: "2026-08-28T10:00:00+10:00" },
@@ -580,7 +600,8 @@ export function closeStoryboard({ storyboard_id, closed_note }) {
   return { storyboard_id, status: "archived", closed_note: closed_note || null };
 }
 
-// 离线的码列表。注意这里也没有 token —— 和服务端一样，发完就没了。
+// The offline code list. Note there is no token here either: as on the server, it is gone
+// the moment it has been issued.
 const LINKS = {
   sb_jacaranda: [
     { id: "sl_1", level: "contribute", expires_at: "2026-09-19T09:00:00+10:00",
@@ -598,7 +619,7 @@ const LINKS = {
 export function shareLinks(storyboardId) {
   return {
     storyboard_id: storyboardId,
-    owner_id: "u_mel",                 // 和 grants() 同一个 owner，别各说各的
+    owner_id: "u_mel",                 // the same owner as grants(), so the two cannot disagree
     links: (LINKS[storyboardId] || []).map((l) => ({ ...l })),
   };
 }
@@ -607,7 +628,7 @@ export function revokeShareLink(shareLinkId) {
   for (const list of Object.values(LINKS)) {
     const link = list.find((l) => l.id === shareLinkId);
     if (!link) continue;
-    // 关掉的是码，不是已经兑换出去的权限。GRANTS 一个字都不动。
+    // What is turned off is the code, not access already redeemed. GRANTS is untouched.
     link.revoked_at = new Date().toISOString();
     return { share_link_id: shareLinkId, revoked: true };
   }

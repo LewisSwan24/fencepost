@@ -1,6 +1,7 @@
-"""资源端点：签发令牌、建故事版。走真 HTTP，因为路径分发本身就是要验的东西。
+"""Resource endpoints: issuing a token, creating a storyboard. Real HTTP, because the
+path dispatch is itself part of what is being checked.
 
-Vercel 那边只有一个入口，所有路径都进同一个 handler，路由是我们自己分的。
+Vercel has one entrypoint, every path lands in the same handler, and the routing is ours.
 
     python tests/test_resources.py
 """
@@ -174,7 +175,7 @@ class Resources(Fixture):
 
 
 class Entries(Fixture):
-    """提交 entry 与读时间线。沿用 Resources 的 fixture。"""
+    """Posting an entry and reading the timeline. Reuses the Resources fixture."""
 
     def test_a_video_is_registered_against_its_owner(self):
         who = self.session()
@@ -280,7 +281,7 @@ class Entries(Fixture):
 
 
 class Edits(Fixture):
-    """改与删。要紧的是即时性：下一次助手调用就该看到变化。"""
+    """Editing and deleting. What matters is immediacy: the next assistant call sees it."""
 
     def test_the_author_can_delete_and_the_timeline_drops_it(self):
         who, board, entry_id = self.with_entry()
@@ -354,7 +355,7 @@ class Edits(Fixture):
 
 
 class Sharing(Fixture):
-    """带权限的 QR 链接：签发、兑换、撤销。"""
+    """A QR link carrying an access level: issue, redeem, revoke."""
 
     def link(self, token, storyboard_id, **over):
         body = {"storyboard_id": storyboard_id}
@@ -365,10 +366,10 @@ class Sharing(Fixture):
         return self.get(f"/api/share-links?storyboard_id={storyboard_id}", token=token)
 
     def test_the_listing_never_carries_the_token(self):
-        """库里只有哈希，明文在签发那一刻出现过一次就没了。
+        """The database holds only a hash; the plaintext existed once, at issue time.
 
-        这不是少给了什么：一个事后还能把码取回来的接口，等于把一份可兑换的权限
-        长期挂在界面上。
+        This is not something withheld: an endpoint that could fetch a code back afterwards
+        would leave a redeemable grant hanging on a screen.
         """
         owner, board = self.board()
         _, issued = self.link(owner["token"], board)
@@ -380,7 +381,9 @@ class Sharing(Fixture):
         self.assertNotIn("token_hash", listing["links"][0])
 
     def test_a_revoked_link_stays_on_the_list(self):
-        """和 grants 相反，是故意的：关掉一张码之后 owner 得看得出关成了没有。"""
+        """The opposite of grants, deliberately: once a code is turned off the owner
+        has to be able to see that it worked.
+        """
         owner, board = self.board()
         _, issued = self.link(owner["token"], board)
         self.post("/api/share-links/revoke", {"share_link_id": issued["share_link_id"]},
@@ -390,7 +393,7 @@ class Sharing(Fixture):
         self.assertIsNotNone(listing["links"][0]["revoked_at"])
 
     def test_listing_needs_reshare_like_issuing_does(self):
-        """能签发的人才该看得见签发过什么。"""
+        """Only somebody who can issue should see what has been issued."""
         owner, board = self.board()
         guest = self.session("guest")
         self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
@@ -399,7 +402,9 @@ class Sharing(Fixture):
         self.assertEqual("cannot_share", payload["error"]["code"])
 
     def test_the_listing_says_who_owns_the_storyboard(self):
-        """撤销要么是 owner、要么是签发者本人，界面靠这个字段决定给谁看按钮。"""
+        """Revoking takes either the owner or the issuer, and the interface uses this
+        field to decide who gets the button.
+        """
         owner, board = self.board()
         self.link(owner["token"], board)
         _, listing = self.links(owner["token"], board)
@@ -407,10 +412,12 @@ class Sharing(Fixture):
         self.assertEqual(owner["handle"], listing["links"][0]["created_by_handle"])
 
     def test_turning_off_a_code_leaves_the_access_it_already_handed_out(self):
-        """界面上那句话就是照着这条写的：关码挡的是还没用它的人。
+        """The sentence in the interface is written from this: turning a code off
+        stops the people who have not used it yet.
 
-        分享那一屏把「关码」和「撤权限」放在同一页，说不清楚就是让人以为自己
-        关上了门。这条钉住服务端真的是这个行为。
+        The share screen puts turning a code off and revoking access on one page, and
+        saying it unclearly is how somebody comes to believe they closed a door. This pins
+        down that the server really behaves that way.
         """
         owner, board = self.board()
         guest = self.session("guest")
@@ -421,7 +428,7 @@ class Sharing(Fixture):
         self.post("/api/share-links/revoke", {"share_link_id": issued["share_link_id"]},
                   token=owner["token"])
         self.assertEqual("contribute", self.db.grant_level(board, guest["user_id"]),
-                         "关掉一张码顺手把已经兑换出去的权限也撤了")
+                         "turning a code off also revoked access that had already been redeemed")
 
     def test_a_turned_off_code_cannot_be_redeemed_again(self):
         owner, board = self.board()
@@ -435,7 +442,7 @@ class Sharing(Fixture):
         self.assertEqual("link_revoked", payload["error"]["code"])
 
     def test_the_person_who_made_a_code_can_turn_it_off_without_being_owner(self):
-        """服务端的门是 created_by 或 owner，不是 reshare —— 界面照这个显示按钮。"""
+        """The server gate is created_by or owner, not reshare — the interface matches."""
         owner, board = self.board()
         resharer = self.session("resharer")
         self.db.grant(board, resharer["user_id"], "reshare", owner["user_id"])
@@ -534,11 +541,12 @@ class Sharing(Fixture):
         self.assertEqual("invalid_link", payload["error"]["code"])
 
     def test_redeeming_grants_and_counts_in_one_write(self):
-        """授权和加次数得一起落地。
+        """Granting and counting the use have to land together.
 
-        以前是两次调用各自提交：先 grant，再 consume_share_link。中间失败会让人进来
-        而次数没加上，于是一张 max_uses=3 的链接能放进第四个人——在一个靠权限分享的
-        产品里，多放一个人比少放一个人严重。这里钉住两个效果都在。
+        It used to be two calls each committing separately: grant, then consume_share_link.
+        A failure in between let somebody in without the use being counted, so a link with
+        max_uses=3 could admit a fourth person — and in a product built on permissioned
+        sharing, one person too many is worse than one too few. This pins down both effects.
         """
         owner, board = self.board("owner")
         _, link = self.post("/api/share-links",
@@ -552,7 +560,7 @@ class Sharing(Fixture):
         self.assertEqual("contribute", self.db.grant_level(board, guest["user_id"]))
         self.assertEqual(1, self.db.share_link(link["share_link_id"])["used_count"])
 
-        # max_uses 用满之后，第二个人进不来，次数也不再动
+        # Once max_uses is spent, a second person cannot get in and the count stops moving
         other = self.session("other")
         status, _ = self.post("/api/share-links/redeem", {"token": link["token"]},
                               token=other["token"])
@@ -592,7 +600,7 @@ class Sharing(Fixture):
 
 
 class Dashboard(Fixture):
-    """我能访问的故事版，活跃与往期分开。"""
+    """The storyboards I can reach, active and past kept apart."""
 
     def view(self, token):
         return self.get("/api/dashboard", token=token)[1]
@@ -639,19 +647,23 @@ class Dashboard(Fixture):
         self.assertEqual(1, self.view(owner["token"])["active"][0]["entry_count"])
 
     def test_the_latest_species_is_the_most_recent_entry(self):
-        """列表页的封面照着它配图，所以它必须是最近那一条，不是最早那一条。"""
+        """The list cover is chosen from this, so it has to be the most recent entry."""
         owner, board = self.board()
         self.submit(owner["token"], board, OK_JSON, species="brushtail", story="one")
         self.submit(owner["token"], board, OK_JSON, species="ringtail", story="two")
         self.assertEqual("ringtail", self.view(owner["token"])["active"][0]["latest_species"])
 
     def test_an_empty_storyboard_has_no_latest_species(self):
-        """没有 entry 就不该配封面。给个默认物种等于替用户断言他拍到了什么。"""
+        """No entries means no cover. A default species would assert on the user's
+        behalf what they filmed.
+        """
         owner, board = self.board()
         self.assertIsNone(self.view(owner["token"])["active"][0]["latest_species"])
 
     def test_the_latest_species_skips_deleted_entries(self):
-        """软删立即生效（CLAUDE.md 安全底线），封面也不能还留着那一条的物种。"""
+        """A soft delete takes effect at once (CLAUDE.md safety line), so the cover
+        cannot keep that entry's species.
+        """
         owner, board = self.board()
         self.submit(owner["token"], board, OK_JSON, species="brushtail", story="one")
         _, newest = self.submit(owner["token"], board, OK_JSON, species="ringtail", story="two")
@@ -667,7 +679,7 @@ class Dashboard(Fixture):
 
 
 class Closing(Fixture):
-    """owner 主动完结。"""
+    """The owner closing it deliberately."""
 
     def test_the_owner_can_close_with_a_note(self):
         owner, board = self.board()
@@ -681,7 +693,9 @@ class Closing(Fixture):
                                                              token=owner["token"])[1]["past"]])
 
     def test_the_closing_note_comes_back_to_everyone_who_can_reach_it(self):
-        """结语原先只存不读：写进库、在关闭那次响应里回显一次，然后谁也看不到。"""
+        """The closing line used to be written and never read: stored, echoed once in
+        the close response, and invisible after that.
+        """
         owner, board = self.board()
         guest = self.session("guest")
         self.db.grant(board, guest["user_id"], "view", owner["user_id"])
@@ -726,7 +740,7 @@ class Closing(Fixture):
 
 
 class Forum(Fixture):
-    """讨论串挂在故事版下，权限跟着故事版走，助手一律看不见。"""
+    """Threads hang off a storyboard, access follows it, and the assistant never sees them."""
 
     def thread(self, token, storyboard_id, reply=OK_JSON, **over):
         self.client.replies = [reply]
@@ -745,7 +759,7 @@ class Forum(Fixture):
         self.assertEqual(1, listing["threads"][0]["post_count"])
 
     def test_the_title_goes_through_the_screener_with_the_post(self):
-        """标题原先一个字都没查过。合成一段送，所以只花一次模型调用。"""
+        """The title used to go unchecked. Joined into one piece, it costs one model call."""
         owner, board = self.board()
         self.thread(owner["token"], board, title="Who else hears it at 2am")
         screener_calls = [c for c in self.client.calls if c["role"] == "screener"]
@@ -755,7 +769,7 @@ class Forum(Fixture):
         self.assertIn("there is something walking on my roof", sent)
 
     def test_a_clean_body_does_not_rescue_an_address_in_the_title(self):
-        """这条就是这次改动存在的理由。"""
+        """This is the reason that change exists."""
         owner, board = self.board()
         status, payload = self.thread(owner["token"], board, REJECT_JSON,
                                       title="Anyone seen the one at 42 Example St")
@@ -766,7 +780,7 @@ class Forum(Fixture):
         self.assertEqual([], listing["threads"])
 
     def test_the_audit_row_holds_exactly_what_the_model_read(self):
-        """回看的时候，存下来的原文要和模型判的那段一字不差。"""
+        """Looking back later, the stored text has to match what the model judged."""
         owner, board = self.board()
         self.thread(owner["token"], board, REJECT_JSON, title="Anyone seen the one at 42 Example St")
         row = self.rows()[-1]
@@ -780,10 +794,12 @@ class Forum(Fixture):
         self.assertEqual("bad_request", payload["error"]["code"])
 
     def test_a_title_carrying_control_characters_is_refused(self):
-        """入库之后在界面上是一块看不出所以然的东西，不如当场拒掉。
+        """Once stored it shows up in the interface as something nobody can make sense
+        of, so it is better refused on the spot.
 
-        字符用 chr() 拼，不写转义：源文件里真带一个 NUL 的话 Python 根本编译不了，
-        而那正是 2026-09-14 写这条时踩到的。
+        The character is assembled with chr() rather than written as an escape: a real NUL
+        in the source file makes Python refuse to compile at all, which is exactly what
+        happened while writing this on 2026-09-14.
         """
         owner, board = self.board()
         for bad in (chr(7), chr(0), chr(27), chr(0x7f)):
@@ -879,10 +895,12 @@ class Forum(Fixture):
 
 
 class Review(Fixture):
-    """operations §2：谁看得见、怎么投、两票定音、七天自动清、owner 有最终处置权。"""
+    """operations §2: who can see it, how to vote, two votes deciding, seven days
+    clearing it, and the owner having the last word.
+    """
 
     def flagged(self):
-        """一条被标记 review 的 entry，外加一个有投票权的邻居。"""
+        """One entry marked review, plus a neighbour entitled to vote."""
         owner, board = self.board("owner")
         guest = self.session("guest")
         self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
@@ -962,7 +980,7 @@ class Review(Fixture):
         self.assertEqual("removed", payload["disposition"])
         _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
         self.assertEqual([], view["entries"])
-        self.assertIsNotNone(self.db.entry(entry_id)["deleted_at"])   # 还在，只是软删
+        self.assertIsNotNone(self.db.entry(entry_id)["deleted_at"])   # still there, only soft-deleted
 
     def test_only_the_owner_disposes(self):
         _, guest, _, entry_id = self.flagged()
@@ -983,9 +1001,10 @@ class Review(Fixture):
         self.assertEqual(0, view["entries"][0]["being_checked"])
 
     def test_the_queue_carries_no_author_identity_at_all(self):
-        """作者无感（operations §2.3）靠的是查询里没有，不是界面藏起来。
+        """The author is never told (operations §2.3) because the query does not carry
+        it, not because the interface hides it.
 
-        界面能泄漏的前提是数据到了界面上。这条钉的是数据根本没来。
+        An interface can only leak what reached it. This pins down that the data never came.
         """
         owner, guest, board, entry_id = self.flagged()
         status, queue = self.queue(guest["token"], board)
@@ -995,7 +1014,7 @@ class Review(Fixture):
         self.assertNotIn(owner["handle"], raw)
         self.assertNotIn(owner["user_id"], raw)
         for field in ("handle", "author_id", "author", "voter_id"):
-            self.assertNotIn(field, queue["items"][0], f"队列里出现了 {field}")
+            self.assertNotIn(field, queue["items"][0], f"{field} appeared in the queue")
 
     def test_the_tally_is_counts_only_never_who_voted(self):
         owner, guest, board, entry_id = self.flagged()
@@ -1006,10 +1025,11 @@ class Review(Fixture):
         self.assertNotIn(guest["user_id"], json.dumps(payload))
 
     def test_reading_the_queue_clears_out_records_past_their_thirty_days(self):
-        """留存表上那一行「处理完 + 30 天后删除」原先从来没有发生过。
+        """The retention-table line about deleting 30 days after disposal had never
+        once happened.
 
-        purge_screening() 写了也测了，却没有任何调用方。现在它跟 settle_stale、
-        settle_review 一样惰性执行：谁碰这张表谁顺手清，不设 cron。
+        purge_screening() was written and tested, but nothing called it. It is lazy now,
+        like settle_stale and settle_review: whoever touches the table clears it, no cron.
         """
         owner, guest, board, entry_id = self.flagged()
         self.post("/api/review/dispose", {"entry_id": entry_id, "action": "kept"},
@@ -1023,7 +1043,7 @@ class Review(Fixture):
         self.assertEqual([], self.rows())
 
     def test_the_ones_still_waiting_are_left_alone(self):
-        """清得太狠的话，队列会在人还没处理完的时候自己空掉。"""
+        """Clearing too eagerly empties the queue while people are still working on it."""
         owner, guest, board, entry_id = self.flagged()
         self.queue(guest["token"], board)
         self.assertEqual(1, len(self.rows()))
@@ -1031,9 +1051,10 @@ class Review(Fixture):
                                       self.queue(guest["token"], board)[1]["items"]])
 
     def test_a_stranger_cannot_drive_the_purge(self):
-        """清理是 DELETE，而线上开着注册——「带着合法令牌」等于「互联网上的任何人」。
+        """The clean-up is a DELETE, and sign-up is open in production — holding a
+        valid token is the same thing as being anybody on the internet.
 
-        所以它排在权限门之后，不像另外两个结算那样排在前面。
+        So it sits after the permission gate, unlike the other two settlers, which sit first.
         """
         owner, guest, board, entry_id = self.flagged()
         self.post("/api/review/dispose", {"entry_id": entry_id, "action": "kept"},
@@ -1046,11 +1067,11 @@ class Review(Fixture):
         status, payload = self.queue(stranger["token"], board)
         self.assertEqual(403, status)
         self.assertEqual("no_access", payload["error"]["code"])
-        self.assertEqual(1, len(self.rows()), "被拒的调用者不该驱动一次全表删除")
+        self.assertEqual(1, len(self.rows()), "a refused caller drove a table-wide delete")
 
 
 class Grants(Fixture):
-    """GET /api/grants —— 分享那一屏要知道谁有权限、各是哪一档。"""
+    """GET /api/grants — the share screen needs who has access and at what level."""
 
     def test_the_owner_sees_themselves_and_everyone_they_let_in(self):
         owner, board = self.board("owner")
@@ -1089,7 +1110,7 @@ class Grants(Fixture):
         owner, board = self.board("owner")
         _, payload = self.get(f"/api/grants?storyboard_id={board}", token=owner["token"])
         target = payload["grants"][0]
-        # 拿名单里的 user_id 直接去撤销，不需要再查一次
+        # Revoke straight from the user_id in the list, with no second lookup
         self.assertEqual(owner["user_id"], target["user_id"])
 
 

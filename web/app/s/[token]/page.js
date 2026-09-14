@@ -1,9 +1,10 @@
 "use client";
 
-// 13 · 扫码落地。码里带的就是这个地址。
+// 13 · Scanning a code lands here. This address is what the code carries.
 //
-// 兑换成功就进故事版，界面按拿到的那一档权限收缩（view 档没有投稿按钮）。
-// 失败一律去 /no-access，不区分过期还是被撤销——两者看起来必须一样。
+// A successful redemption goes into the storyboard, with the interface narrowed to the
+// level that was granted (a view grant gets no posting button). A failure always goes to
+// /no-access, with no distinction between expired and revoked — the two must look alike.
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";

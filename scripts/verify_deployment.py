@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
-"""对着真实部署跑一遍完整链路 —— issue #6 要的就是这个。
+"""Walk a real deployment end to end — this is what issue #6 asked for.
 
     python scripts/verify_deployment.py https://fencepost-xxxx.vercel.app
     python scripts/verify_deployment.py <url> --bypass <protection-bypass-token>
 
-走一遍：404、坏令牌 401、换令牌、建故事版、提交 entry、读时间线、Screener 是不是真跑了、
-复核队列、分享链（签发、第二个人兑换、关掉、关掉之后兑不动、关码不动已有权限）、
-论坛（发主题、回帖、回帖被拒带 reason）、Neighbour 非流式与流式、Writer、submission 限流。
-七次真模型调用（四次 Screener、三次助手），限流那一圈零调用。
+The walk: 404, bad token 401, exchange a token, create a storyboard, post an entry, read
+the timeline, did the Screener really run, the review queue, the share chain (issue, a
+second person redeems, turn it off, cannot redeem once off, turning off leaves existing
+access alone), the forum (start a thread, reply, a refused reply carrying a reason), the
+Neighbour non-streaming and streaming, the Writer, and the submission rate limit. Seven
+real model calls (four Screener, three assistant); the rate-limit loop makes none.
 
-**URL 要用生产别名**（`fencepost-omega.vercel.app` 这种），不是 `vercel deploy` 打印的那个
-`fencepost-<hash>-<team>.vercel.app`。后者被 Deployment Protection 挡着，生产别名默认不挡。
-`vercel inspect <deployment>` 能看到别名。
+**Use the production alias** (`fencepost-api.vercel.app`), not the
+`fencepost-<hash>-<team>.vercel.app` that `vercel deploy` prints. That one sits behind
+Deployment Protection; a production alias does not, by default. `vercel inspect
+<deployment>` shows the aliases.
 
-纯标准库，不 import 仓库里的任何东西，也不读 .env —— 令牌是从部署自己的 /api/session
-换来的，不在本机签。这不是洁癖：storyboards.owner_id 有外键指向 users.id，本机签出来的
-令牌对应的用户在那边的库里根本不存在，插入会撞外键。
+Standard library only. It imports nothing from this repository and does not read .env —
+the token is exchanged from the deployment's own /api/session rather than signed here.
+That is not fastidiousness: storyboards.owner_id has a foreign key to users.id, and a
+locally signed token names a user who does not exist in that database, so the insert
+hits the key.
 
-所以部署上要开 FENCEPOST_OPEN_SIGNUP。它默认关着是对的（谁都能拿别人的 handle 换令牌），
-但**交付维持 hybrid，所以线上这个 flag 留着不删**（2026-09-13 定，理由见 CLAUDE.md 决策表
-与 web/README.md）：删了它 /api/session 就关上，前端换不到令牌，整个站打开是空白。
-代价写在明处——线上那个库里只放 demo 数据。
+Which means FENCEPOST_OPEN_SIGNUP has to be on in the deployment. It is right to be off
+by default (anyone can exchange somebody else's handle for a token), but **delivery stays
+on hybrid, so the flag stays on in production** (settled 2026-09-13; the reasons are in
+the CLAUDE.md decision table and web/README.md): remove it and /api/session closes, the
+front end cannot get a token, and the whole site opens blank. The cost is stated plainly
+— the live database holds demo data only.
 
-新专案默认开着 Deployment Protection，请求拿到的是 Vercel 的登录页而不是我们的 JSON。
-要么在专案设置里关掉，要么传 --bypass。
+A new project has Deployment Protection on by default, and a request then gets Vercel's
+login page instead of our JSON. Either turn it off in the project settings or pass
+--bypass.
 """
 
 import argparse
@@ -39,13 +47,13 @@ class Client:
     def __init__(self, base, bypass=None):
         self.base = base.rstrip("/")
         self.bypass = bypass
-        self.frame_times = []      # 每一帧到达的时刻，用来判平台有没有缓冲
-        # 带 _vercel_share 的链接是靠 cookie 放行的，所以整个会话得共用一个 jar
+        self.frame_times = []      # when each frame arrived, to tell whether it was buffered
+        # A _vercel_share link is admitted by cookie, so the whole session shares one jar
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
     def prime(self, share_url):
-        """先访问一次分享链接，把放行 cookie 收进来。"""
+        """Visit the share link once to collect the admitting cookie."""
         self.opener.open(share_url, timeout=60).read()
 
     def send(self, path, body=None, token=None, stream=False):
@@ -78,7 +86,7 @@ class Client:
         try:
             return response.status, json.loads(raw)
         except json.JSONDecodeError:
-            # 保护层拦下来的时候回的是 HTML，不是我们的东西
+            # When the protection layer blocks it, what comes back is HTML, not ours
             return response.status, {"_not_json": raw[:160].decode(errors="replace")}
 
 
@@ -86,9 +94,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
     parser.add_argument("--bypass", help="Vercel protection bypass token")
-    parser.add_argument("--share", help="带 _vercel_share 的临时链接，用它换放行 cookie")
-    # 默认 handle 每次不同：submission 是每小时 20 次，同一个用户一小时内跑第二遍必撞额度，
-    # 而那看起来像是服务坏了。2026-09-13 就这样误判过一次。
+    parser.add_argument("--share", help="a temporary _vercel_share link, exchanged for an admitting cookie")
+    # A different handle each run: submission allows 20 an hour, so the same user running
+    # this twice inside an hour is certain to hit the quota — and that looks like a broken
+    # service. It caused exactly one wrong diagnosis, on 2026-09-13.
     parser.add_argument("--handle", default=f"verify-{int(time.time()) % 1000000}")
     args = parser.parse_args()
 
@@ -102,185 +111,206 @@ def main():
         nonlocal failures
         failures += not ok
         checks.append(ok)
-        print(f"  {'通过 ' if ok else '不通过'}  {label:26} {detail}")
+        print(f"  {'pass' if ok else 'FAIL'}  {label:34} {detail}")
 
     def stop(why):
         print("\n" + why)
         sys.exit(1)
 
-    print(f"对着 {client.base} 跑：\n")
+    print(f"Running against {client.base}:\n")
 
     status, payload = client.send("/api/nothing-here", body={})
-    # 回的不是我们的 JSON，有两种完全不同的原因，别混成一句话说。
-    # 2026-09-14 我自己把这份脚本指到了前端那个专案，它照着念「Deployment Protection
-    # 挡着（未知）」，于是人会跑去翻保护设置 —— 而那边根本没开过。拿 HTML 当保护层的
-    # 信号，漏掉了「地址指错了」这个更常见的原因，两者回的都不是 JSON。
+    # There are two completely different reasons for a response that is not our JSON, and
+    # they should not be said in one breath. On 2026-09-14 I pointed this script at the
+    # front-end project and it dutifully announced that Deployment Protection was in the
+    # way, sending me to a settings page that had never been turned on. Treating HTML as
+    # the signal for the protection layer misses the more common reason — the address is
+    # wrong — because both come back as something other than JSON.
     if "protection" in payload or "_not_json" in payload:
         on = payload.get("protection") or {}
         which = "、".join(name for name, flag in
                           (("Vercel Authentication", on.get("vercel_auth_enabled")),
                            ("Password", on.get("password_enabled"))) if flag)
         if not which and status == 404:
-            stop(f"{client.base} 回的是一页 HTML 404，不是我们的 API。\n"
-                 "这个仓库部署成两个专案：API 那个（/api/* 挂在它上面）和前端那个。\n"
-                 "要跑的是 API 那个的生产别名 —— 前端页面上任意一次请求的 origin 就是它，\n"
-                 "也可以看 web 专案的 NEXT_PUBLIC_FENCEPOST_API。")
-        stop(f"Deployment Protection 挡着（{which or '未知'}），拿到的不是我们的响应。\n"
-             f"  HTTP {status}，开头是 {str(payload.get('_not_json', ''))[:60]!r}\n"
-             "三条路：Settings → Deployment Protection 关掉；带 --bypass <token>；\n"
-             "或者 --share <带 _vercel_share 的临时链接>（23 小时有效，不动任何设置）。")
-    record("未知路径回 404", status == 404, f"HTTP {status}")
+            stop(f"{client.base} returns an HTML 404 page, not our API.\n"
+                 "This repository deploys as two projects: the API one, which /api/* hangs\n"
+                 "off, and the front end. What you want is the API project's production\n"
+                 "alias — the origin of any request the front-end page makes is it, and it\n"
+                 "is also in the web project's NEXT_PUBLIC_FENCEPOST_API.")
+        stop(f"Deployment Protection is in the way ({which or 'unknown'}); this is not our response.\n"
+             f"  HTTP {status}, starting {str(payload.get('_not_json', ''))[:60]!r}\n"
+             "Three ways out: turn it off under Settings → Deployment Protection; pass\n"
+             "--bypass <token>; or pass --share <a _vercel_share link>, which is good for\n"
+             "23 hours and changes no settings.")
+    record("unknown path returns 404", status == 404, f"HTTP {status}")
 
     status, payload = client.send("/api/storyboards", body={"title": "x"}, token="bogus.token")
-    record("坏令牌回 401", status == 401, f"HTTP {status}")
+    record("bad token returns 401", status == 401, f"HTTP {status}")
 
     status, session = client.send("/api/session", body={"handle": args.handle})
     if status == 403:
-        stop("/api/session 关着。这一步换不到令牌，后面全走不了。\n"
-             "  vercel env add FENCEPOST_OPEN_SIGNUP production   # 值填 1\n"
-             "重新部署再跑。这个 flag 是留着的（hybrid 靠它换令牌），"
-             "代价是谁都能冒充任何 handle —— 所以线上那个库里只放 demo 数据。")
+        stop("/api/session is closed. Without a token here, nothing below can run.\n"
+             "  vercel env add FENCEPOST_OPEN_SIGNUP production   # value 1\n"
+             "Redeploy and run again. The flag is deliberately kept, because hybrid needs\n"
+             "it to get a token; the cost is that anyone can impersonate any handle, which\n"
+             "is why the live database holds demo data only.")
     if status == 503:
-        stop("503：部署缺环境变量。要有 DASHSCOPE_API_KEY 和 FENCEPOST_TOKEN_SECRET 两个。\n"
-             f"  服务端说： {session.get('error', session)}")
+        stop("503: the deployment is missing environment variables. It needs both\n"
+             "DASHSCOPE_API_KEY and FENCEPOST_TOKEN_SECRET.\n"
+             f"  The server said: {session.get('error', session)}")
     if status != 200:
-        stop(f"换令牌失败 HTTP {status}：{session}")
-    record("换到令牌", True, session["handle"])
+        stop(f"Could not get a token, HTTP {status}: {session}")
+    record("got a token", True, session["handle"])
     token = session["token"]
 
     status, board = client.send("/api/storyboards", body={"title": "deployment check"}, token=token)
     if status != 200:
-        record("建故事版", False, f"HTTP {status} {board}")
-        stop("后面的检查都挂在这个故事版上，停在这里。")
-    record("建故事版", True, board["storyboard_id"][:12] + "…")
+        record("created a storyboard", False, f"HTTP {status} {board}")
+        stop("Every check below hangs off this storyboard, so this is as far as it goes.")
+    record("created a storyboard", True, board["storyboard_id"][:12] + "…")
     storyboard = board["storyboard_id"]
 
     status, entry = client.send("/api/entries", token=token, body={
         "storyboard_id": storyboard, "species": "ringtail",
         "story": "One on the fence at eleven, stared at me for a while."})
-    record("提交 entry（过筛查）", status == 200 and entry.get("published"),
+    record("posted an entry (screened)", status == 200 and entry.get("published"),
            f"HTTP {status} prompt {entry.get('prompt_version')}")
 
     status, view = client.send(f"/api/timeline?storyboard_id={storyboard}", token=token)
     shown = view.get("entries", [])
-    record("读时间线", status == 200 and len(shown) == 1, f"{len(shown)} 条")
+    record("read the timeline", status == 200 and len(shown) == 1, f"{len(shown)} entries")
 
-    # 上一条「提交 entry」本身证明不了 Screener 跑通了：上游挂掉时 fail-open 照样放行，
-    # 响应长得一模一样（这是 operations §2.3 要的，作者无感）。差别只在这条 entry 会被标
-    # review，从 being_checked 看得出来。2026-09-13 真部署上就是靠这个抓到 key 是错的。
+    # The previous check cannot prove the Screener ran: when the upstream is down,
+    # fail-open publishes anyway and the response looks identical, which is what
+    # operations §2.3 wants — the author is never told. The only difference is that the
+    # entry gets marked review, and being_checked shows it. That is how a wrong key was
+    # caught on the real deployment on 2026-09-13.
     flagged = [e for e in shown if e.get("being_checked")]
-    record("Screener 真跑了", bool(shown) and not flagged,
-           "被标 review —— 是 fail-open 放行的，上游没通" if flagged else
-           "干净放行" if shown else "没有 entry 可看，这一项判不了")
+    record("Screener really ran", bool(shown) and not flagged,
+           "marked review — fail-open let it through, the upstream is down" if flagged else
+           "clean pass" if shown else "no entry to look at, this one cannot be judged")
 
-    # 复核队列。它看着像一项凑数的检查，其实是这份脚本里最贵的一课：
-    # `settle_review()` 走 `execute(...).rowcount`，而托管库那层包装原先没有这个属性，
-    # 于是这条路在 Turso 上一直回 500——从来没人知道，因为复核那两屏还没做，
-    # 没有界面调过它，而这份脚本当时也没走到这里。空队列一样算通过：
-    # 要验的是「这条路通不通」，不是「有没有东西待复核」。
+    # The review queue. It looks like a check added for the sake of it, and it is the most
+    # expensive lesson in this script: `settle_review()` reads `execute(...).rowcount`, and
+    # the wrapper for the hosted database had no such attribute, so this path returned 500
+    # on Turso the whole time — unnoticed, because the two review screens did not exist yet,
+    # no interface ever called it, and this script did not reach here either. An empty queue
+    # still passes: what is checked is whether the path works, not whether anything waits.
     status, queue = client.send(f"/api/review?storyboard_id={storyboard}", token=token)
-    record("复核队列（惰性结算那条路）", status == 200 and "items" in queue,
-           f"HTTP {status}，{len(queue.get('items', []))} 条" if status == 200
+    record("review queue (lazy settle path)", status == 200 and "items" in queue,
+           f"HTTP {status}, {len(queue.get('items', []))} items" if status == 200
            else str(queue)[:60])
 
-    # 分享这条链：签发 -> 兑换 -> 关掉 -> 再兑换。它横跨 share_links 与 access_grants
-    # 两张表，而这份脚本原先一步都没走过。扫码进不去的时候，看不出是哪一步断的。
+    # The share chain: issue -> redeem -> turn off -> redeem again. It spans share_links and
+    # access_grants, and this script used to walk none of it. When a scanned code will not
+    # open, there is no way to see which step broke.
     status, link = client.send("/api/share-links", token=token, body={
         "storyboard_id": storyboard, "level": "view", "expires_in_days": 7})
     plain, link_id = link.get("token"), link.get("share_link_id")
-    record("签发分享链接", status == 200 and bool(plain),
+    record("issued a share link", status == 200 and bool(plain),
            f"HTTP {status} {link.get('level') or str(link)[:40]}")
 
     status, listed = client.send(f"/api/share-links?storyboard_id={storyboard}", token=token)
     rows = listed.get("links") or []
-    # 明文不在回包里是刻意的：库里只有 SHA-256。这一项哪天「修」成回明文，
-    # 等于把一份可兑换的权限长期挂在界面上（app.list_share_links 的注释说的就是这个）。
+    # The plaintext is absent from the response on purpose: the database holds only a
+    # SHA-256. The day this gets "fixed" into returning plaintext, a redeemable grant would
+    # be left hanging on a screen — which is what the comment on app.list_share_links says.
     leaked = [r for r in rows if "token" in r]
-    record("码列表不回明文", status == 200 and len(rows) == 1 and not leaked,
-           f"{len(rows)} 行" + ("，回了明文 —— 这一项防的就是这个" if leaked else ""))
+    record("code list returns no plaintext", status == 200 and len(rows) == 1 and not leaked,
+           f"{len(rows)} row" + (", plaintext came back — this check exists for that" if leaked else ""))
 
     status, guest_session = client.send("/api/session", body={"handle": args.handle + "-guest"})
     guest = guest_session.get("token")
     status, got = client.send("/api/share-links/redeem", token=guest, body={"token": plain})
-    record("第二个人兑换", status == 200 and got.get("storyboard_id") == storyboard,
-           f"HTTP {status} 拿到 {got.get('level') or str(got)[:40]}")
+    record("second person redeems", status == 200 and got.get("storyboard_id") == storyboard,
+           f"HTTP {status} got {got.get('level') or str(got)[:40]}")
 
     status, seen = client.send(f"/api/timeline?storyboard_id={storyboard}", token=guest)
-    record("兑换之后读得到", status == 200, f"HTTP {status}，{len(seen.get('entries', []))} 条")
+    record("can read after redeeming", status == 200, f"HTTP {status}, {len(seen.get('entries', []))} entries")
 
     status, off = client.send("/api/share-links/revoke", token=token,
                               body={"share_link_id": link_id})
-    record("关掉这张码", status == 200 and off.get("revoked") is True, f"HTTP {status}")
+    record("turned the code off", status == 200 and off.get("revoked") is True, f"HTTP {status}")
 
     status, again = client.send("/api/share-links/redeem", token=guest, body={"token": plain})
-    record("关掉之后兑不动", status == 403,
+    record("cannot redeem once off", status == 403,
            f"HTTP {status} {(again.get('error') or {}).get('code', '')}")
 
-    # ux-copy §6.5 那句话的实证：关码只挡还没用它的人。已经换到权限的人一个字都不动——
-    # revoke_share_link() 只写 share_links.revoked_at，access_grants 碰都不碰。
-    # 这两件事混在一起而不说清楚，就是让人以为自己关上了门。
+    # Evidence for the sentence in ux-copy §6.5: turning a code off only stops people who
+    # have not used it yet. Whoever already holds the access keeps it, untouched —
+    # revoke_share_link() writes share_links.revoked_at and never goes near access_grants.
+    # Running those two together without saying so is how somebody comes to believe they
+    # closed a door.
     status, still = client.send(f"/api/timeline?storyboard_id={storyboard}", token=guest)
-    record("关码不动已有权限", status == 200, f"HTTP {status}")
+    record("turning off keeps access", status == 200, f"HTTP {status}")
 
-    # 论坛。发主题那一步的标题是跟正文合成一段送去筛查的，不是只查正文——
-    # 否则「有人见过 Smiths 家 42 号那只吗」配一段干净的正文就能挂在所有人眼前。
+    # The forum. Starting a thread screens the title joined to the body, not the body
+    # alone — otherwise a question naming somebody's street address, with a clean body
+    # under it, would sit in front of everyone.
     status, thread = client.send("/api/forum/threads", token=token, body={
         "storyboard_id": storyboard, "title": "Pruning on the corner block",
         "body": "Council dropped a letter saying the jacaranda gets a heavy prune next month."})
     thread_id = thread.get("thread_id")
-    record("发主题", status == 200 and thread.get("published") is True,
+    record("started a thread", status == 200 and thread.get("published") is True,
            f"HTTP {status} prompt {thread.get('prompt_version', '')}")
 
     status, post = client.send("/api/forum/posts", token=token, body={
         "thread_id": thread_id,
         "body": "They left the big limbs last time and the ringtails came back after a few weeks."})
-    record("回帖", status == 200 and post.get("published") is True, f"HTTP {status}")
+    record("replied", status == 200 and post.get("published") is True, f"HTTP {status}")
 
-    # 被拒的回帖必须带 reason_codes 回来：界面靠它挑那一句话。前端原先把这张表配错了，
-    # 本该读到「说一句你看到了什么就能过」的人读到的是兜底那句泛泛之词。
-    # 这一项同时是条红线检查——放行这段文字就是 harm_advocacy 没拦住。
+    # A refused reply has to come back carrying reason_codes: the interface picks its
+    # sentence from them. The front end had that table wrong, so somebody who should have
+    # read "add a line about what you saw and it will go straight through" read the generic
+    # fallback instead. This is a red-line check as well — letting that text through means
+    # harm_advocacy did not hold.
     status, blocked = client.send("/api/forum/posts", token=token, body={
         "thread_id": thread_id,
         "body": "Easiest fix is rat baits in the roof cavity, they stop coming back."})
     codes = blocked.get("reason_codes") or []
-    record("回帖被拒带 reason",
+    record("refused reply carries reason",
            status == 200 and blocked.get("published") is False and bool(codes),
-           ("、".join(codes) if codes else "放行了 —— 这段是 harm_advocacy")
+           (", ".join(codes) if codes else "let through — that text is harm_advocacy")
            if status == 200 else f"HTTP {status}")
 
     status, answer = client.send("/api/assistant", token=token, body={
         "role": "neighbour", "storyboard_id": storyboard,
         "message": "Is the ringtail the one with the curly tail?"})
     reply = answer.get("reply") or ""
-    record("助手（非流式）", status == 200 and bool(reply), reply[:52] or str(answer)[:52])
+    record("assistant (non-streaming)", status == 200 and bool(reply), reply[:52] or str(answer)[:52])
 
-    # 问得长一点，好让生成本身占掉几秒——不然「跨度小」既可能是被缓冲，也可能只是答得快。
+    # Ask something long enough that generating it takes a few seconds — otherwise a small
+    # spread could mean buffering, or could just mean a short answer.
     status, frames = client.send("/api/assistant", token=token, stream=True, body={
         "role": "neighbour", "storyboard_id": storyboard, "stream": True,
         "message": "What do ringtails eat, and what should I do if one gets into the roof?"})
     deltas = [f for f in frames if "delta" in f]
-    record("助手（流式）", status == 200 and len(deltas) > 1 and frames[-1].get("done"),
-           f"{len(frames)} 帧 / {len(deltas)} 个增量")
+    record("assistant (streaming)", status == 200 and len(deltas) > 1 and frames[-1].get("done"),
+           f"{len(frames)} frames / {len(deltas)} deltas")
 
-    # 平台如果把整条响应攒完再一次性吐出来，所有帧会挤在同一瞬间到达。帧数看不出这件事，
-    # 到达时刻能。这是 issue #6 第三条验收标准，本来以为只能靠人眼在浏览器里看。
+    # If the platform collects the whole response and emits it at once, every frame arrives
+    # in the same instant. The frame count cannot show that; the arrival times can. This is
+    # the third acceptance criterion on issue #6, which I had assumed could only be judged
+    # by eye in a browser.
     times = client.frame_times
     spread = times[-1] - times[0] if len(times) > 1 else 0.0
-    record("流式没被平台缓冲", spread >= 1.0,
-           f"首帧 {times[0]:.2f}s，末帧 {times[-1]:.2f}s，跨度 {spread:.2f}s" if times else "没有帧")
+    record("stream not buffered", spread >= 1.0,
+           f"first {times[0]:.2f}s, last {times[-1]:.2f}s, spread {spread:.2f}s" if times else "no frames")
 
     status, draft = client.send("/api/assistant", token=token, body={
         "role": "writer", "species_selected": "ringtail",
         "story_draft": "saw one on the fence last night it just sat there"})
     facts = draft.get("fun_facts") or []
-    # skipped 不算通过。roles.writer 两次调用都失败就静默返回 skipped（§3.4，Writer 不是
-    # 必经步骤），响应是 200，看起来跟正常一样。当成通过就等于替上游打掩护。
-    record("助手（Writer）", status == 200 and not draft.get("skipped") and bool(facts),
-           f"{len(facts)} 条 fun fact" +
-           ("，skipped —— 两次都没成，八成是上游挂了" if draft.get("skipped") else ""))
+    # skipped does not count as a pass. roles.writer returns skipped silently when both
+    # calls fail (§3.4 — the Writer is never a required step), the response is 200, and it
+    # looks like any other success. Treating that as a pass is covering for the upstream.
+    record("assistant (Writer)", status == 200 and not draft.get("skipped") and bool(facts),
+           f"{len(facts)} fun facts" +
+           (", skipped — neither attempt worked, most likely the upstream is down" if draft.get("skipped") else ""))
 
-    # 限流放最后：它会把 submission 这一档的额度用光，跑在提交 entry 前面就把上面弄挂了。
-    # 不带 field 的 screener 请求在扣完额度之后才被判 400，所以这一圈一次模型都不调。
+    # The rate limit goes last: it uses up the submission quota, and running it before the
+    # entry is posted would break everything above. A screener request with no field is
+    # judged 400 only after the quota has been charged, so this loop makes no model call.
     hit, spent = None, 0
     for _ in range(30):
         spent += 1
@@ -290,23 +320,29 @@ def main():
             break
         if status != 400:
             break
-    record("限流（submission）", hit is not None and hit.get("scope") == "submission",
-           f"第 {spent} 次 → HTTP {status}" + (f" {hit.get('message', '')[:40]}" if hit else ""))
+    record("rate limit (submission)", hit is not None and hit.get("scope") == "submission",
+           f"attempt {spent} → HTTP {status}" + (f" {hit.get('message', '')[:40]}" if hit else ""))
 
-    print(f"\n{len(checks) - failures}/{len(checks)} 通过")
+    print(f"\n{len(checks) - failures}/{len(checks)} passed")
     if deltas and spread < 1.0:
-        print("注意：帧跨度不到 1 秒。可能是平台把响应缓冲了，也可能只是这次答得短。"
-              "两者的区别在浏览器里看得最清楚——字是一个个出来，还是憋一下整段蹦出来。")
-    print("注意：限流准不准取决于部署连的是哪种库。连托管库（TURSO_DATABASE_URL 或 "
-          "FENCEPOST_DB 指向 libsql://）时计数是全局的；退回 /tmp 的 SQLite 时每实例一份，"
-          "冷启动清零，这一圈落在同一个实例上才数得准。")
-    print("这次跑通只说明链路对。要证明数据不再蒸发，隔几分钟再跑一次，"
-          "看上一次建的东西还在不在——第二次才是验收。")
+        print("Note: the frame spread is under a second. That could be the platform "
+              "buffering, or just a short answer this time. The difference is clearest in a "
+              "browser — letters appearing one by one, or the whole paragraph at once.")
+    print("Note: whether the rate limit is accurate depends on which database the deployment "
+          "uses. Against the hosted one (TURSO_DATABASE_URL, or FENCEPOST_DB pointing at "
+          "libsql://) the count is global; falling back to SQLite in /tmp gives one count "
+          "per instance, cleared on a cold start, so this loop only counts properly when it "
+          "lands on a single instance.")
+    print("A pass here only says the chain works. To show the data no longer evaporates, run "
+          "it again a few minutes later and see whether what the last run created is still "
+          "there — the second run is the acceptance test.")
     if failures == 0:
-        print("链路通了。FENCEPOST_OPEN_SIGNUP 留着——2026-09-13 定的：答辩要演真后端，"
-              "而 hybrid 靠 /api/session 换令牌，删了它整个站就空了。")
-        print("代价写在明处：谁都能拿任意 handle 换令牌，所以线上那个库里只放 demo 数据。"
-              "收尾用 scripts/teardown_demo.py，它清完会提醒你这个 flag 还开着。")
+        print("The chain works. FENCEPOST_OPEN_SIGNUP stays — settled 2026-09-13: the demo "
+              "has to show the real backend, hybrid needs /api/session to get a token, and "
+              "removing it empties the whole site.")
+        print("The cost is stated plainly: anyone can exchange any handle for a token, so "
+              "the live database holds demo data only. Finish with "
+              "scripts/teardown_demo.py, which reminds you the flag is still on.")
     sys.exit(1 if failures else 0)
 
 

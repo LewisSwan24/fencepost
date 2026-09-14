@@ -12,16 +12,20 @@ import Shot from "../../../../../components/Shot";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
 
-// 这一屏原先画的是四块棕色色块。加进真实素材之后，全站只剩这里还是空的——
-// 而这偏偏是「画面」本身就是主角的那一屏。
+// This screen used to be four brown blocks. Once real material went in, it was the last
+// empty one in the whole app — and it is precisely the screen where the picture is the
+// subject.
 //
-// 用 lib/frames.js 那四张顶上，八个刻度两两对应一张，所以拖动是看得见变化的。
-// 它们是**占位**，底下那行字直说了——和分享页那个二维码占位一个路数。
+// The four images from lib/frames.js fill it, two scrub positions to each, so dragging
+// visibly changes something. They are **placeholders**, and the line underneath says so
+// outright — the same approach as the QR placeholder on the share screen.
 //
-// **挑出来的帧不会被带走，这是实情，不是遗漏。** frameIndex 只在这一屏被读：
-// 提交时不发，服务端也没有存帧的地方（`videos` 只记 storage_key，而
-// 「视觉帧是否落盘」在 CLAUDE.md 里仍是未决项，落盘要加 frames 表和 TTL 任务）。
-// 所以文案也改了，不再说「这就是别人会看到的那一帧」——那句话是假的。
+// **The chosen frame is not carried anywhere, and that is the truth rather than an
+// omission.** frameIndex is read only on this screen: it is not sent on submit, and the
+// server has nowhere to put a frame (`videos` records only a storage_key, and whether
+// frames are persisted is still open in CLAUDE.md; persisting them would need a frames
+// table and a TTL job). So the copy changed too, and no longer says "this is the still
+// people see" — that was false.
 function stillFor(index) {
   return FRAMES[Math.floor(index / 2) % FRAMES.length];
 }

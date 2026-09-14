@@ -52,7 +52,8 @@
 .error { color: var(--accent-hover); font-size: 13.5px; }
 .quiet { color: var(--text-dim); }
 
-/* 发出去过的码。和「谁有权限」长得不一样是故意的——它们是两件事。 */
+/* Codes already issued. Shaped differently from who-has-access on purpose: two different
+   things. */
 .code {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 0; border-bottom: 1px solid var(--line);

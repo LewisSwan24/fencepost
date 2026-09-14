@@ -1,4 +1,5 @@
-/* 内容壳。手机上占满，大屏上收在一列里——不画假手机框。 */
+/* The content shell. Full width on a phone, held to one column on a large screen — and no
+   fake phone frame. */
 .shell {
   min-height: 100dvh;
   width: 100%;

@@ -1,11 +1,12 @@
-// 用户可见的英文文案，一处定义。
+// User-facing English copy, defined in one place.
 //
-// 标了「逐字」的那些出自 docs/ux-copy.md 与 docs/prompts.md 的 §必须逐字使用的文案，
-// 不要就地改——改文档，再改这里。剩下的是原型带来的新文案，已经同步进 ux-copy.md。
+// Anything marked "verbatim" comes from the must-be-used-word-for-word sections of
+// docs/ux-copy.md and docs/prompts.md — do not edit it here; edit the document, then edit
+// this. The rest arrived with the prototype and has been mirrored back into ux-copy.md.
 
 export const COPY = {
   levelLabel: { view: "Can view", contribute: "Can add sightings", reshare: "Can reshare" },
-  // 逐字
+  // verbatim
   maskBlocked: "There's still a face or plate showing. Mask it to continue.",
   maskLede: "Anything that identifies a person or a house needs covering.",
   consentTitle: "Send this frame for identification?",
@@ -26,26 +27,29 @@ export const COPY = {
   checkedYes: "Looks right",
   checkedNo: "Worth checking",
   assistantOffline: "The assistant is offline right now. Writing and posting work as normal.",
-  // 这一句在抽屉里，不在页脚。首页页脚确实写了「Possum Help is running from fixtures」，
-  // 但直接点进某个故事版的人看不到那行字——而「我在跟一个 AI 说话」这个念头，
-  // 正是在这个抽屉里形成的。产品里每一处替身都在原地说明自己：二维码占位说了、
-  // 挑帧那几张说了、/credits 也说了。助手是最不该含糊的那一个。
+  // This line lives in the drawer, not in the footer. The home page footer does say "Possum
+  // Help is running from fixtures", but somebody who opens a storyboard directly never sees
+  // it — and the thought "I am talking to an AI" forms inside this drawer. Every stand-in in
+  // this product explains itself where it stands: the QR placeholder does, the frame stills
+  // do, /credits does. The assistant is the last one that should be vague about it.
   assistantCanned: "Pre-written answers for this demo. Nothing is generated live.",
 
-  // 原型新增，已同步进 ux-copy.md
+  // Added with the prototype, mirrored into ux-copy.md
   captureLede: "Start with a clip you already have.",
   noCameras: "Fencepost doesn't run any cameras. Everything here comes off your own phone.",
-  // 原先这句是「This is the still people see in the storyboard.」——那是假的。
-  // 挑出来的帧从来没有被带走过：frameIndex 只在挑帧那一屏里被读，提交时不发，
-  // 服务端也没有存帧的地方（`videos` 只记 storage_key，而「视觉帧是否落盘」
-  // 在 CLAUDE.md 里还是未决项）。界面不该替产品许一个它做不到的承诺。
+  // This used to read "This is the still people see in the storyboard.", which was false.
+  // The chosen frame has never been carried anywhere: frameIndex is read only on the frame
+  // screen, it is not sent on submit, and the server has nowhere to put a frame (`videos`
+  // records only a storage_key, and whether frames are persisted is still open in
+  // CLAUDE.md). The interface should not make a promise the product cannot keep.
   frameLede: "Scrub to the moment that shows it best.",
   frameNote: "Placeholder stills. In the real thing these are frames from your own video.",
   maskHint: "Drag across anything that shouldn't be shared",
-  // 这一屏刻意**不**铺真实照片。挑帧那边铺了，这边不铺，是因为那四张是负鼠的照片：
-  // 在一张树上的负鼠上画一个「FACE」和一个「NUMBER PLATE」的框，等于当着人的面
-  // 指着不存在的东西——它会把这道安全闸门演成一个笑话。这一屏演的是机制，不是画面。
-  // 所以画布保持抽象，但要说出来它是替身，否则看着只像没做完。
+  // This screen deliberately does **not** show real photographs. The frame screen does and
+  // this one does not, because those four pictures are of possums: drawing a "FACE" box and
+  // a "NUMBER PLATE" box over a possum in a tree points at things that are not there, and
+  // turns a safety gate into a joke. This screen demonstrates the mechanism, not a picture.
+  // So the canvas stays abstract — and says it is a stand-in, or it just looks unfinished.
   maskNote:
     "A stand-in frame. The markers show what has to be covered before anything is sent.",
   helperDisclosure: "AI suggestions. Nothing goes into your post unless you put it there.",
@@ -70,7 +74,7 @@ export const COPY = {
   linkExpires: "Link expires",
   whoHasAccess: "Who has access",
   revoke: "Revoke",
-  // 改与删自己的条目（ux-copy.md §5.5）
+  // Editing and deleting your own entry (ux-copy.md §5.5)
   editEntry: "Edit",
   editTitle: "Edit your sighting",
   editHint: "The species stays as you set it. Change the words, not what you saw.",
@@ -87,10 +91,10 @@ export const COPY = {
   deleteConfirm: "Delete it",
   deleted: "Deleted",
 
-  // owner 主动完结（ux-copy.md §5）
+  // The owner closing it deliberately (ux-copy.md §5)
   closeStoryboard: "Close this storyboard",
   closeTitle: "Close this storyboard",
-  // 逐字，ux-copy.md §5
+  // verbatim, ux-copy.md §5
   closeLede: "Wrapping this one up? You can leave a closing note for everyone who contributed.",
   closePoints: [
     "No one can add new sightings after this",
@@ -108,15 +112,16 @@ export const COPY = {
     "This storyboard has been wrapped up. The QR code still works, and everyone who had access still has it.",
   closedNoteFrom: "From the person who started this storyboard",
 
-  // 待核实队列与 owner 处置（ux-copy.md §2.5）
+  // The second-look queue and the owner's disposal (ux-copy.md §2.5)
   secondLookNav: "Second look",
   secondLookTitle: "Worth a second look",
   secondLookLede:
     "A few details here were picked out as worth reading again. They're all still up on the storyboard, and the people who wrote them haven't been told.",
   secondLookEmpty: "Nothing needs a second look right now.",
   secondLookWindow: "Anything still sitting here after a week clears on its own.",
-  // 告诉复核的人「该重读哪一段」，不告诉他们模型判了什么。
-  // 把 reason code 摆出来等于请邻居当审查员，而 Screener 本来就不判文采与价值。
+  // Tell the reviewer which part to read again, not what the model decided. Putting the
+  // reason code in front of them makes a censor of a neighbour, and the Screener does not
+  // even judge writing quality or worth.
   secondLookFact: "The fun fact is the part to read again.",
   secondLookStory: "What happened is the part to read again.",
   secondLookBoth: "Both parts are worth reading again.",
@@ -131,7 +136,7 @@ export const COPY = {
   disposeRemoveConfirm: "Take it off? This can't be undone.",
   disposeDone: "Thanks — that's it for this one.",
 
-  // 已发出去的码与撤销（ux-copy.md §6.5）
+  // Codes already issued, and revoking (ux-copy.md §6.5)
   codesForThisBoard: "Codes for this storyboard",
   codesNote:
     "Turning a code off stops anyone new from using it. Whoever already used it keeps the access they have — take that away under Who has access.",
@@ -148,7 +153,8 @@ export const COPY = {
   noAccessBody: "Ask whoever shared it with you for a new one.",
 };
 
-// 三档权限，从小到大，后面一档包含前面一档。id 与 schema 的 CHECK 一致。
+// The three access levels, smallest first, each containing the one before it. The ids match
+// the CHECK in the schema.
 export const LEVELS = [
   { id: "view", label: "Can view", sub: "Read the storyboard and the discussion" },
   { id: "contribute", label: "Can add sightings", sub: "Write their own entries on this storyboard" },
@@ -162,13 +168,16 @@ export const EXPIRY = [
   { id: 90, label: "90 days" },
 ];
 
-// Screener 只回 reason_codes。作者看到的是这些句子，看不到 verdict，也看不到 note。
+// The Screener returns only reason_codes. What an author sees is these sentences; they
+// never see the verdict or the note.
 //
-// 逐字抄自 ux-copy.md §1，键名取 prompts.md §4.2 里模型真会吐出来的那些。
-// 这里曾经写着 `safety` 和 `scope`——Screener 从来不发这两个码；而真会发的
-// nonsense / abuse / spam / harm_advocacy / dangerous_reassurance 一个都没配。
-// 后果不是少几行字：被判 nonsense 的人本该读到「说一句你看到了什么就能过」，
-// 实际读到的是兜底那句泛泛之词。这些句子是照着人写的，配错了等于没写。
+// Copied word for word from ux-copy.md §1, keyed on the codes the model actually emits per
+// prompts.md §4.2. This table once held `safety` and `scope` — codes the Screener never
+// sends — while nonsense / abuse / spam / harm_advocacy / dangerous_reassurance, the ones
+// it really does send, had no entry at all. The consequence was not a few missing lines:
+// somebody judged nonsense should have read "add a line about what you saw and it will go
+// straight through" and instead read the generic fallback. These sentences were written
+// for a person, and keyed wrongly they may as well not exist.
 export const REASON_COPY = {
   nonsense:
     "We couldn't find a sighting in this one. Add a line about what you saw and it'll go straight through.",
@@ -181,13 +190,15 @@ export const REASON_COPY = {
     "Posts about snakes and bats can't include advice on handling them. That's a safety call, not a judgement on your post. Describe the sighting and it'll go through.",
 };
 
-// 逐字。ux-copy.md §1 的兜底那句，原先这里是自己另写的一句。
+// verbatim. The fallback sentence from ux-copy.md §1 — this used to be a different line,
+// written here rather than taken from the document.
 export const REASON_FALLBACK =
   "Something in this post can't go up as written. Edit it and try again — nothing has been lost.";
 
-// §1 写的是「按 codes 取第一条匹配文案」，不是把所有匹配的拼起来。
-// 拼起来的话，["harm_advocacy","fact_conflict"] 这种会甩给用户两句叠在一起的话；
-// 而 fact_conflict 这类码本来就没有面向作者的文案——它们落到兜底是故意的。
+// §1 says to take the first matching sentence for the codes, not to join every match.
+// Joined, ["harm_advocacy","fact_conflict"] would hand somebody two sentences stacked
+// together; and codes like fact_conflict have no author-facing sentence at all — their
+// falling through to the fallback is deliberate.
 export function reasonSentence(codes) {
   for (const code of codes || []) {
     if (REASON_COPY[code]) return REASON_COPY[code];

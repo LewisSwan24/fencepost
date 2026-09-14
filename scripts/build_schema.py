@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""从 docs/data-model.md §1 抽出建表 SQL。
+"""Extract the table SQL from docs/data-model.md §1.
 
-docs/data-model.md 是唯一来源，schema.sql 是生成物 —— 不要手改生成物。
-docs/ 不进仓库，所以 schema.sql 必须进：没有它，别人 clone 下来建不出库。
+docs/data-model.md is the single source and schema.sql is generated — never hand-edit the
+generated file. docs/ is not in the repository, so schema.sql has to be: without it nobody
+who clones this can build the database.
 
     python scripts/build_schema.py
 """
@@ -19,12 +20,13 @@ HEADER = "-- GENERATED from docs/data-model.md §1 — do not edit by hand\n\n"
 
 
 def render() -> str:
-    """返回 schema.sql 应有的完整内容。测试拿它比对有没有漂移。"""
+    """Return the full contents schema.sql should have. Tests compare against it for drift."""
     if not SRC.exists():
-        sys.exit(f"找不到 {SRC}。docs/ 不进仓库，这个脚本只能在有文档的机器上跑。")
+        sys.exit(f"Cannot find {SRC}. docs/ is not in the repository, so this script only "
+                 "runs on a machine that has the documents.")
     match = SQL_BLOCK.search(SRC.read_text(encoding="utf-8"))
     if not match:
-        sys.exit("data-model.md 里找不到 SQL 块")
+        sys.exit("No SQL block found in data-model.md")
     return HEADER + match.group(1).strip() + "\n"
 
 
@@ -32,7 +34,7 @@ def main() -> None:
     text = render()
     OUT.write_text(text, encoding="utf-8", newline="\n")
     tables = re.findall(r"CREATE TABLE (\w+)", text)
-    print(f"  {OUT.relative_to(ROOT)}  （{len(tables)} 张表：{', '.join(tables)}）")
+    print(f"  {OUT.relative_to(ROOT)}  ({len(tables)} tables: {', '.join(tables)})")
 
 
 if __name__ == "__main__":

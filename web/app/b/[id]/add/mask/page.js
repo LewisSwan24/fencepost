@@ -1,11 +1,11 @@
 "use client";
 
-// 4 · Mask，外加 5 · Send frame? 那个同意弹窗。
+// 4 · Mask, plus the 5 · Send frame? consent sheet.
 //
-// 两件事是硬要求：
-//   打码这道门要真算覆盖率，不是点一下就放行；
-//   弹窗那两个按钮视觉等重——它们共用同一个 class，不是各写一份样式，
-//   这样以后改其中一个也没法把另一个改轻。
+// Two things are hard requirements:
+//   the masking gate really measures coverage rather than letting a single tap through;
+//   the two buttons in the sheet carry equal visual weight — they share one class rather
+//   than having a style each, so nobody can later make one lighter without the other.
 
 import { use, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,7 +34,7 @@ export default function Mask({ params }) {
   const draft = useDraft();
   const canvas = useRef(null);
   const drag = useRef(null);
-  const [live, setLive] = useState(null);   // 正在拖的那个框
+  const [live, setLive] = useState(null);   // the box currently being dragged
   const [consent, setConsent] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -51,13 +51,16 @@ export default function Mask({ params }) {
     };
   };
 
-  // 拖动中的框放在 ref 里，抬手才提交进 state。
-  // 之前的写法在 pointerup 里读渲染闭包的 boxes——真人操作时事件跨任务、中间有重渲染，
-  // 读到的是新值所以看不出问题；一旦三个事件落在同一个任务里，读到的是旧数组，
-  // 刚画的框会被当成没画出来而删掉。不依赖渲染时机的写法就没有这个「看运气」。
+  // The box being dragged lives in a ref and is committed to state on release.
+  // The earlier version read boxes from the render closure inside pointerup — with a real
+  // hand the events land in separate tasks with a re-render between them, so it read the
+  // new value and looked fine; the moment all three events fall in one task it reads the
+  // old array and the box just drawn is treated as never drawn, and dropped. Not depending
+  // on render timing removes that coin-flip.
   function down(e) {
-    // 合成的指针事件没有活动的 pointerId，捕获会抛 NotFoundError。抓不到就算了：
-    // 拖动照常工作，只是手指滑出元素外会断——比整个处理函数当场炸掉好。
+    // A synthetic pointer event has no active pointerId and capture throws NotFoundError.
+    // If it cannot be captured, let it go: dragging still works, it only breaks when a
+    // finger leaves the element — better than the whole handler exploding.
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     const p = pos(e);
     drag.current = { from: p };
@@ -78,7 +81,7 @@ export default function Mask({ params }) {
     if (!drag.current) return;
     drag.current = null;
     setLive((box) => {
-      // 手抖点一下不算一个框
+      // A twitchy tap is not a box
       if (box && box.w >= 5 && box.h >= 5) draft.setBoxes((prev) => [...prev, box]);
       return null;
     });
@@ -87,11 +90,12 @@ export default function Mask({ params }) {
   async function sendFrame() {
     setSending(true);
     try {
-      // 真接口是一次 neighbour 调用，带帧和这一下确认。少了 frame_consent 会被挡回来。
+      // The real endpoint is a neighbour call carrying the frame and this confirmation.
+      // Without frame_consent it comes back refused.
       const answer = await identifyFrame({ storyboardId: id, imageBase64: null });
       draft.setSuggestion(answer.reply);
     } catch {
-      draft.setSuggestion(null);   // 认不出来不拦人，照样往下走
+      draft.setSuggestion(null);   // not recognising it does not block anybody; carry on
     }
     router.push(`/b/${id}/add/species`);
   }
@@ -182,7 +186,7 @@ export default function Mask({ params }) {
             <Spinner label="Sending one frame" />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* 同一个 class，同一个尺寸。谁也不比谁轻。 */}
+              {/* One class, one size. Neither is lighter than the other. */}
               <button type="button" className={ui.btnQuiet} onClick={sendFrame}>
                 {COPY.consentSend}
               </button>

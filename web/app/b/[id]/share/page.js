@@ -1,12 +1,13 @@
 "use client";
 
-// 12 · Share。带权限的码，不是公开链接。
+// 12 · Share. A code carrying an access level, not a public link.
 //
-// 明文 token 只在签发那一次回来，库里只有哈希——所以这一页拿到就显示，不存，
-// 刷新就没了。要新的就再签一张。
+// The plaintext token comes back only at issue time and the database holds only a hash —
+// so this page shows it on arrival, stores nothing, and loses it on refresh. If you need
+// another, issue another.
 //
-// 撤销只有 owner 能做（服务端 revoke_grant 回 not_the_owner），所以 owner_id
-// 对不上就不显示那个按钮，而不是让人点了才发现不行。
+// Only an owner can revoke (the server's revoke_grant answers not_the_owner), so where
+// owner_id does not match, the button is not drawn rather than drawn and then refused.
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -30,9 +31,10 @@ export default function Share({ params }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // 服务端对非 reshare 回 cannot_share，所以这一屏整个就不该给他们。
-  // 故事版页上的 Share 按钮已经按 reshare 收过了，但直接敲地址进来的还得挡一道——
-  // 否则「发一张码」这个按钮会画出来，按下去必然被拒。
+  // The server answers cannot_share to anybody below reshare, so this whole screen should
+  // not be offered to them. The Share button on the storyboard page is already gated on
+  // reshare, but somebody typing the address needs stopping too — otherwise the "make a
+  // code" button is drawn and is certain to be refused.
   function loadAccess() {
     grants(id).then(setAccess, (e) => {
       if (e.code === "cannot_share" || e.status === 403) {
@@ -67,13 +69,14 @@ export default function Share({ params }) {
     setBusy(false);
   }
 
-  // 关掉一张码。服务端的门是「你发的，或者你是 owner」——**不是 reshare**。
-  // 所以一个 reshare 档的人看得到所有码，却只关得掉自己发的那些。
+  // Turn a code off. The server gate is "you issued it, or you are the owner" — **not
+  // reshare**. So somebody holding reshare sees every code but can turn off only their own.
   function canTurnOff(link) {
     return !!who && (link.created_by === who.user_id || iAmOwner);
   }
 
-  // 码现在还灵不灵。三种不灵法，各说各的，别都写成「无效」。
+  // Whether a code still works. Three ways of not working, each said separately rather
+  // than all collapsed into "invalid".
   function stateOf(link) {
     if (link.revoked_at) return COPY.codeState.revoked;
     if (link.expires_at && new Date(link.expires_at) <= new Date()) return COPY.codeState.expired;
@@ -146,10 +149,12 @@ export default function Share({ params }) {
           ))}
         </div>
 
-        {/* 发出去过的码。这一段和下面的「谁有权限」是**两件事**，所以分开两块：
-            关掉一张码，挡的是还没用它的人；已经用它换到权限的人不受影响，
-            那要去下面撤销。反过来也一样——撤销一个人的权限，不会关掉他发出去的码。
-            两件事混在一屏里是个陷阱，文案里说清楚了。 */}
+        {/* Codes already issued. This block and "who has access" below are **two different
+            things**, which is why they are two blocks: turning a code off stops the people
+            who have not used it, while anybody who already redeemed it is unaffected and
+            has to be revoked below. The reverse holds too — revoking somebody does not
+            turn off a code they issued. Running the two together is a trap, and the copy
+            says so. */}
         <div className={ui.kicker}>{COPY.codesForThisBoard}</div>
         <p className={styles.quiet}>{COPY.codesNote}</p>
         {links?.length === 0 ? <p className={styles.quiet}>{COPY.noCodesYet}</p> : null}
@@ -167,8 +172,8 @@ export default function Share({ params }) {
                     ? COPY.codeMadeByYou
                     : COPY.codeMadeBy + " @" + link.created_by_handle}
                   {" · "}
-                  {/* share_links 没有 created_at 这一列，所以说不出「三天前发的」。
-                      能说的只有到期和用了几次。 */}
+                  {/* share_links has no created_at column, so it cannot say "issued three
+                      days ago". All it can say is the expiry and the number of uses. */}
                   {link.expires_at
                     ? COPY.codeExpires + " " + until(link.expires_at)
                     : COPY.codeNoExpiry}

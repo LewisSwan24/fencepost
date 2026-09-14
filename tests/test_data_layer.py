@@ -1,4 +1,4 @@
-"""数据层测试。重点是 data-model.md §2 那三条不变量——它们是权限模型的全部内容。
+"""Data-layer tests. The three invariants in data-model.md §2 are the whole permission model.
 
     python tests/test_data_layer.py
 """
@@ -66,7 +66,7 @@ class Schema(Fixture):
         self.assertEqual(TABLES, self.db.tables())
 
     @unittest.skipUnless((ROOT / "docs" / "data-model.md").exists(),
-                         "docs/ 不进仓库，clone 下来通常没有")
+                         "docs/ is not in the repository, so a clone usually lacks it")
     def test_schema_sql_has_not_drifted_from_the_doc(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import build_schema
@@ -87,7 +87,7 @@ class Schema(Fixture):
 
 
 class InvariantOne(Fixture):
-    """author_id != requester_id 的内容永远不进 context。"""
+    """Content whose author_id != requester_id never enters the context."""
 
     def test_other_peoples_entries_are_not_returned(self):
         self.db.add_entry(self.storyboard, self.owner, "brushtail", story="mine, on the fence")
@@ -119,7 +119,7 @@ class InvariantOne(Fixture):
 
 
 class InvariantTwo(Fixture):
-    """软删的 entry 立即消失，不吃缓存。"""
+    """A soft-deleted entry disappears at once, with no cache in the way."""
 
     def test_soft_deleted_entry_disappears_on_the_next_call(self):
         entry = self.db.add_entry(self.storyboard, self.owner, "brushtail", story="about to go")
@@ -135,10 +135,10 @@ class InvariantTwo(Fixture):
 
 
 class InvariantThree(Fixture):
-    """撤销的 grant 立即失效，该分区的聊天记录同时停读。"""
+    """A revoked grant stops working at once, and that partition's chat stops being read."""
 
     def test_revoked_grant_denies_context_immediately(self):
-        self.context.build(self.guest, self.storyboard)          # 撤销前拿得到
+        self.context.build(self.guest, self.storyboard)          # reachable before the revoke
         self.db.revoke(self.storyboard, self.guest)
         with self.assertRaises(PermissionDenied):
             self.context.build(self.guest, self.storyboard)
@@ -195,7 +195,7 @@ class History(Fixture):
 
 
 class Screening(Fixture):
-    """筛查结果落库。三种 subject 都要装得下，见 data-model.md §6。"""
+    """Screening results are stored. All three subject kinds have to fit; data-model.md §6."""
 
     def screen(self, submission, reply, **over):
         deps = Deps(client=FakeClient(reply), history=self.history, context=self.context,
@@ -268,7 +268,9 @@ class Screening(Fixture):
 
 
 class Archiving(Fixture):
-    """user-flow §9：30 天没动静转只读，owner 可以主动完结。归档不等于删除。"""
+    """user-flow §9: 30 days quiet turns it read-only, and an owner can close it
+    deliberately. Archived is not deleted.
+    """
 
     def age(self, storyboard_id, days=40):
         old = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
@@ -313,7 +315,7 @@ class Archiving(Fixture):
 
 
 class Retention(Fixture):
-    """data-model.md §4 那张触发表，逐行。"""
+    """The trigger table in data-model.md §4, row by row."""
 
     def screening_row(self, author, verdict, age_days):
         stamp = (datetime.now(timezone.utc) - timedelta(days=age_days)).isoformat(timespec="seconds")
@@ -357,7 +359,7 @@ class Retention(Fixture):
                                       (self.guest,)).fetchone()["handle"]
         self.assertTrue(handle.startswith("deleted-"))
         self.assertNotEqual("guest", handle)
-        # owner 的故事版不受影响
+        # The owner's own storyboard is untouched
         self.assertEqual("active", self.db.storyboard_status(self.storyboard))
 
     def test_deleting_an_account_takes_their_forum_posts(self):
@@ -383,7 +385,9 @@ class Retention(Fixture):
         self.db.conn.commit()
 
     def test_the_teardown_report_counts_fail_open_and_the_language_floor(self):
-        """两个标记一直只写不读。伦理那一节问「筛查漏过几条」，只能从这里回答。"""
+        """Both markers have only ever been written, never read. The ethics section
+        asks how much screening was skipped, and this is the only place that can answer.
+        """
         sys.path.insert(0, str(ROOT / "scripts"))
         import teardown_demo
         self.flagged_row(fail_open=1)
@@ -395,10 +399,12 @@ class Retention(Fixture):
         self.assertEqual(3, flags["total"])
 
     def test_the_teardown_report_never_carries_the_refused_text(self):
-        """数出来是安全的，打印出来不是。
+        """Counting is safe; printing is not.
 
-        `original_text` 是被拒的原话，含触发拒绝的那些个人信息。这条钉的是报告里
-        一个字都不带它——否则一份「给伦理审查看的数字」会把它本该保护的东西抄一份出来。
+        `original_text` holds the refused wording, including the personal information that
+        triggered the refusal. This pins down that the report carries none of it —
+        otherwise a set of numbers assembled for an ethics review would copy out the very
+        thing it exists to protect.
         """
         sys.path.insert(0, str(ROOT / "scripts"))
         import teardown_demo
@@ -407,8 +413,9 @@ class Retention(Fixture):
         self.assertNotIn("their words", blob)
 
     def test_the_teardown_report_reads_zero_from_an_empty_table(self):
-        """空表上 SUM 回 NULL 不是 0。不 COALESCE 的话，刚清过的库会打印 None，
-        看着像报表坏了，而不是像「从来没有兜底放行过」。
+        """SUM over an empty table returns NULL, not 0. Without COALESCE a freshly
+        cleared database prints None, which reads like a broken report rather than like
+        nothing having ever fallen back.
         """
         sys.path.insert(0, str(ROOT / "scripts"))
         import teardown_demo
@@ -431,7 +438,7 @@ class Retention(Fixture):
 
 
 class Limits(Fixture):
-    """operations §3 的三条上限，落在表上而不是内存里。"""
+    """The three ceilings from operations §3, held in a table rather than in memory."""
 
     CAPS = {"chat": (2, 86400), "vision": (1, 3600), "submission": (2, 3600)}
 
@@ -451,12 +458,12 @@ class Limits(Fixture):
     def test_scopes_are_counted_apart(self):
         limiter = self.limiter()
         limiter.check_and_count(self.owner, "vision")
-        limiter.check_and_count(self.owner, "chat")      # vision 用满了也不该挡住 chat
+        limiter.check_and_count(self.owner, "chat")      # a used-up vision quota must not block chat
 
     def test_people_are_counted_apart(self):
         limiter = self.limiter()
         limiter.check_and_count(self.owner, "vision")
-        limiter.check_and_count(self.guest, "vision")    # 别人用满不该挡住我
+        limiter.check_and_count(self.guest, "vision")    # somebody else being out is not my problem
 
     def test_old_uses_fall_out_of_the_window(self):
         limiter = self.limiter()
@@ -465,7 +472,7 @@ class Limits(Fixture):
             "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, 'vision', ?)",
             (uuid4().hex, self.owner, stale))
         self.db.conn.commit()
-        limiter.check_and_count(self.owner, "vision")    # 两小时前那次不算数
+        limiter.check_and_count(self.owner, "vision")    # two hours ago does not count
         self.assertEqual(1, self.db.conn.execute(
             "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ?",
             (self.owner,)).fetchone()["c"])
@@ -478,7 +485,7 @@ class Limits(Fixture):
             user = first.add_user("across-processes")
             for _ in range(2):
                 self.limiter(first).check_and_count(user, "chat")
-            # 另一个实例，同一个库：serverless 上就是这个情形
+            # A different instance against the same database: the serverless case
             second = Database(path)
             with self.assertRaises(RateLimited):
                 self.limiter(second).check_and_count(user, "chat")

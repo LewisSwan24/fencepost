@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
-"""课程 demo 结束后清空数据库。
+"""Empty the database once the course demo is over.
 
-operations.md §1 最后一行：「课程 demo 结束 —— 全部清除，包括后端日志。这一条写进报告。」
-所以这不是一个便利脚本，是报告里要指得出来的东西。
+The last line of operations.md §1: "End of the course demo — clear everything, including
+the backend logs. This goes in the report." So this is not a convenience script; it is
+something the report has to be able to point at.
 
-    python scripts/teardown_demo.py            # 只数，不删
-    python scripts/teardown_demo.py --yes      # 真删
+    python scripts/teardown_demo.py            # count only, delete nothing
+    python scripts/teardown_demo.py --yes      # actually delete
 
-库的地址按 api/index.py 同样的顺序挑：--db → FENCEPOST_DB → TURSO_DATABASE_URL。
-这一条是补的：库搬到托管的 Turso 之后，这个脚本还在只认本地文件，`Path(...).exists()`
-对 `libsql://` 永远是假，于是它清不了真正存着数据的那个库——而「demo 结束全部清除」
-是写进报告的承诺（operations.md §1），承诺靠的就是这个脚本。
+The address is chosen the way api/index.py chooses it: --db → FENCEPOST_DB →
+TURSO_DATABASE_URL. That was added later: once the database moved to hosted Turso this
+script still recognised local files only, and `Path(...).exists()` is always false for
+`libsql://`, so it could not clear the database that actually held the data — while
+"everything cleared at the end of the demo" is a promise written into the report, and this
+script is what that promise rests on.
 
-对着托管库跑要用 **Python 3.12**：`libsql` 只有到 cp312 的轮子，本机默认的 3.14 装不上。
+Against the hosted database it needs **Python 3.12**: `libsql` ships wheels only up to
+cp312, and the machine default of 3.14 cannot install it.
 
-    py -3.12 scripts/teardown_demo.py          # 只数，不删
-    py -3.12 scripts/teardown_demo.py --yes    # 真删
+    py -3.12 scripts/teardown_demo.py          # count only
+    py -3.12 scripts/teardown_demo.py --yes    # actually delete
 
-后端日志不在这里：那是 Vercel 那边的运行日志，这个脚本删不了，也不该假装删得了。
-打印的提醒里说了怎么处理。
+The backend logs are not here: those are Vercel's runtime logs, which this script cannot
+delete and should not pretend to. The printed reminder says what to do about them.
 """
 
 import argparse
@@ -43,22 +47,26 @@ def counts(db: Database) -> dict:
 
 
 def screening_flags(db: Database) -> dict:
-    """两个只写不读的标记，清库之前数一次。
+    """Two write-only markers, counted once before the database is cleared.
 
-    `fail_open`：模型超时两次，Screener 兜底放行，条目照常发布。这是定好的行为
-    （CLAUDE.md 决策表：模型挂了不该让用户发不出内容），但它**一直没有人读回来**——
-    一次上游故障在库里留了痕，而没有任何地方看得见。伦理那一节要回答的
-    「筛查到底漏过几条」，答案只能从这里来。
+    `fail_open`: the model timed out twice, the Screener let the item through as a fallback,
+    and it published as normal. That is the agreed behaviour (CLAUDE.md decision table: a
+    broken model should not stop somebody posting), but **nothing has ever read it back** —
+    an upstream failure left a trace in the database that nowhere could see. The ethics
+    section has to answer how much screening was actually skipped, and this is the only
+    place that answer lives.
 
-    `downgraded_non_english`：非英语内容被地板从 reject 压成 review 的次数
-    （operations §4.3）。同样只写不读。它是「有没有系统性地误拒少数语言」的证据。
+    `downgraded_non_english`: how many times non-English content was pushed down from reject
+    to review by the floor (operations §4.3). Write-only in the same way. It is the evidence
+    for whether minority languages are being refused systematically.
 
-    **只数，不取原文。** `original_text` 里是被拒的原话，含触发拒绝的那些个人信息；
-    数出来是安全的，打印出来不是。有测试钉着这一条。
+    **Counted, never quoted.** `original_text` holds the refused wording, including whatever
+    personal information triggered the refusal; counting it is safe, printing it is not. A
+    test pins that down.
 
-    空表上 SUM 回的是 NULL 不是 0，MIN/MAX 也一样——所以全部 COALESCE。
-    否则一个刚清过的库会打印出 `fail_open = None`，看着像报表坏了，
-    而不是像「筛查从来没有兜底放行过」。
+    SUM over an empty table returns NULL rather than 0, and so do MIN and MAX — hence
+    COALESCE on all of them. Otherwise a freshly cleared database prints `fail_open = None`,
+    which reads like a broken report rather than like screening never once falling back.
     """
     row = db.conn.execute(
         "SELECT COUNT(*) AS total, "
@@ -72,19 +80,22 @@ def screening_flags(db: Database) -> dict:
 
 def report_flags(db: Database) -> None:
     flags = screening_flags(db)
-    print(f"\n筛查记录共 {flags['total']} 条，其中：")
+    print(f"\n{flags['total']} screening records, of which:")
     print(f"  fail_open = 1               {flags['fail_open']}   "
-          "模型超时兜底放行，条目照常发布了")
+          "let through as a fallback on a model timeout; the item published as normal")
     if flags["fail_open"]:
-        print(f"    最早 {flags['first_fail_open']}")
-        print(f"    最晚 {flags['last_fail_open']}")
+        print(f"    earliest {flags['first_fail_open']}")
+        print(f"    latest   {flags['last_fail_open']}")
     print(f"  downgraded_non_english = 1  {flags['downgraded']}   "
-          "非英语提交被地板从 reject 压成 review")
-    print("  （只数不取原文：original_text 里是被拒的原话，含触发拒绝的个人信息。）")
+          "non-English submission pushed down from reject to review by the floor")
+    print("  (counted, never quoted: original_text holds the refused wording, including "
+          "the personal information that triggered the refusal.)")
 
 
 def clear(db: Database) -> dict:
-    """按外键顺序从叶子往根删。返回每张表删掉多少行。"""
+    """Delete from the leaves up, following the foreign keys. Returns how many rows
+    went from each table.
+    """
     before = counts(db)
     for name in TABLES:
         db.conn.execute(f"DELETE FROM {name}")
@@ -93,68 +104,77 @@ def clear(db: Database) -> dict:
 
 
 def main() -> None:
-    # 托管库的地址在 .env.local 里。不先读，下面取到的是 None，于是静悄悄地清了本地
-    # 那个空库并报告「已清空」——api/index.py 里同样的坑，同样的解法。
+    # The hosted address lives in .env.local. Without reading it first the lookup below
+    # returns None, so the script quietly clears the empty local database and reports
+    # success — the same trap as in api/index.py, with the same fix.
     load_env()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--yes", action="store_true", help="真的删。不给就只数一数。")
+    parser.add_argument("--yes", action="store_true", help="actually delete. Without it, only counts.")
     parser.add_argument("--db", default=None,
-                        help="库地址。不给就按 FENCEPOST_DB、TURSO_DATABASE_URL 的顺序找。")
+                        help="database address. Without it, FENCEPOST_DB then TURSO_DATABASE_URL.")
     args = parser.parse_args()
 
     address = (args.db or os.getenv("FENCEPOST_DB") or os.getenv("TURSO_DATABASE_URL")
                or "fencepost.db")
-    # 只有本地文件才谈得上「存不存在」。托管库是个 URL，拿 Path.exists() 去问它，
-    # 答案永远是「没有这个库」——脚本于是从来碰不到真正存着数据的那个库。
+    # Only a local file can meaningfully be said to exist. A hosted database is a URL, and
+    # asking Path.exists() about one always answers that there is no such database — so the
+    # script never touched the database that actually held the data.
     if not address.startswith(REMOTE_PREFIXES) and not Path(address).exists():
-        sys.exit(f"没有这个库: {address}")
+        sys.exit(f"No such database: {address}")
     db = Database(address)
     remote = address.startswith(REMOTE_PREFIXES)
     shown = address.split("?", 1)[0] if remote else address
 
     if not args.yes:
-        print(f"{shown} 现在有：" if not remote else f"{shown}（托管库）现在有：")
+        print(f"{shown} currently holds:" if not remote else f"{shown} (hosted) currently holds:")
         for name, number in counts(db).items():
             print(f"  {name:22} {number}")
 
-        # 交付前查一次引用完整性。两个后端上外键都是开着的，所以这里应该永远是空的，
-        # 有东西就说明别处出了问题。
+        # Check referential integrity once before handing over. Foreign keys are on in both
+        # backends, so this should always be empty; anything here means something else has
+        # gone wrong.
         #
-        # （这行注释原先写着「托管的 libSQL 上外键强制不了」。那是错的：收不下
-        # PRAGMA foreign_keys 的是弃用的 libsql-client，不是 libSQL。官方 SDK 上
-        # 外键默认开启且真的拦，2026-09-13 实测过——proxy/store.py 的模块注释里有。）
+        # (This comment used to say foreign keys cannot be enforced on hosted libSQL. That
+        # was wrong: the thing that swallowed PRAGMA foreign_keys was the deprecated
+        # libsql-client, not libSQL. On the official SDK they are on by default and really
+        # do bite, measured 2026-09-13 — see the module comment in proxy/store.py.)
         bad = db.foreign_key_violations()
         if bad:
-            print(f"\n指向不存在父行的记录 {len(bad)} 条：")
+            print(f"\n{len(bad)} rows pointing at a parent that does not exist:")
             for row in bad[:10]:
-                print(f"  {row['table']} 的第 {row['rowid']} 行 → 找不到对应的 {row['parent']}")
+                print(f"  {row['table']} row {row['rowid']} → no matching {row['parent']}")
             if len(bad) > 10:
-                print(f"  …… 还有 {len(bad) - 10} 条")
+                print(f"  … and {len(bad) - 10} more")
         else:
-            print("\n引用完整性：没有指向不存在父行的记录。")
+            print("\nReferential integrity: no row points at a missing parent.")
 
         report_flags(db)
 
-        print("\n加 --yes 才会真删。")
-        # 托管库的客户端自己起了一条事件循环线程，不关这个进程就不退出。
+        print("\nAdd --yes to actually delete.")
+        # The hosted client runs an event-loop thread of its own; the process will not exit
+        # without closing it.
         db.close()
         return
 
-    # 这一行必须在 clear 之前。清完库这两个数就永远拿不回来，而报告要引它们——
-    # 直接跑 --yes 的人不会先跑一遍只数模式。
+    # This line has to come before clear. Once the database is empty those two numbers are
+    # gone for good, and the report quotes them — somebody running --yes straight off will
+    # never have run the counting mode first.
     report_flags(db)
 
     removed = clear(db)
-    print(f"已清空 {shown}：")
+    print(f"Cleared {shown}:")
     for name, number in removed.items():
         print(f"  {name:22} -{number}")
-    print("\n数据库清干净了。还剩三样不在这个脚本管辖内：")
-    print("  1. Vercel 的运行日志。控制台里按项目删，或者把整个项目删掉。")
-    print("  2. 上传的视频本身。videos 表只存 storage_key，文件在对象存储里，要另外清。")
-    print("  3. FENCEPOST_OPEN_SIGNUP。清完库它还开着，谁访问站点谁就能再建一批数据。")
-    print("     真要收尾，就在 Vercel 上把它删掉——那一刻 hybrid 的前端也跟着空了，")
-    print("     这两件事是一件事。")
+    print("\nThe database is clean. Three things sit outside this script:")
+    print("  1. Vercel runtime logs. Delete them per project in the console, or delete the")
+    print("     project itself.")
+    print("  2. The uploaded videos. videos holds only a storage_key; the files live in")
+    print("     object storage and have to be cleared separately.")
+    print("  3. FENCEPOST_OPEN_SIGNUP. It is still on, so anyone visiting the site can")
+    print("     create a fresh batch of data. To really finish, remove it in Vercel — at")
+    print("     that moment the hybrid front end goes blank too, because those two things")
+    print("     are one and the same.")
     db.close()
 
 

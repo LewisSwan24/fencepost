@@ -1,4 +1,4 @@
-"""代理的单元测试。不联网：模型换成假的，只验代理自己那几条硬规则。
+"""Unit tests for the proxy. Offline — the model is faked, so only the proxy's own rules run.
 
     python -m unittest discover -s tests -t .
 """
@@ -27,7 +27,7 @@ FACT = '{"text":"Brushtails are nocturnal.","confidence":"established"}'
 
 
 class FakeClient:
-    """按顺序吐出预置回应。是异常就抛出来。"""
+    """Return the prepared responses in order. If one is an exception, raise it."""
 
     def __init__(self, *replies):
         self.replies = list(replies)
@@ -131,7 +131,7 @@ class Screener(unittest.TestCase):
 
 
 class LanguageFloor(unittest.TestCase):
-    """operations §4.3 的地板靠 looks_non_english 判断，它的边界要钉住。"""
+    """The operations §4.3 floor rests on looks_non_english, so its edges are pinned here."""
 
     def test_real_sentences_are_recognised(self):
         for text in ("昨晚在栅栏上看到一只，盯着我看了好久。",
@@ -144,9 +144,11 @@ class LanguageFloor(unittest.TestCase):
         self.assertFalse(roles.looks_non_english("Saw one on the fence at the cafe last night."))
 
     def test_text_without_letters_counts_as_english(self):
-        """纯标点和数字不带语言信号，照常可以被 reject——这是刻意的，不是漏网。
+        """Punctuation and digits alone carry no language signal, so they can still
+        be rejected — deliberately, not as an escape.
 
-        跑批里 zh-5、vi-5、ar-5 就落在这里：键盘乱敲拒掉它，不构成对哪个语言社群的歧视。
+        zh-5, vi-5 and ar-5 in the sample run land here: refusing keyboard mashing is not
+        discrimination against any language community.
         """
         for text in ("。。。。。。1111111 ？？？", "........ ١١١١١١ ؟؟؟", "......... 1111111 ???"):
             with self.subTest(text=text[:8]):

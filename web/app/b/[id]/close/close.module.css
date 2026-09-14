@@ -6,7 +6,8 @@
 .quiet { color: var(--text-dim); }
 .error { color: var(--text-dim); }
 
-/* 四条后果。不用警示色——这不是出错，是一件有分量的正常操作。 */
+/* The four consequences. No warning colour: this is not an error, it is a weighty but
+   ordinary act. */
 .points {
   list-style: none; margin: 0 0 26px; padding: 16px 18px;
   border: 1px solid var(--line); border-radius: var(--radius-lg);
@@ -36,7 +37,8 @@
 .hint { font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
 .count { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* 「你不必这么做」。放在按钮上面，是因为它该在做决定之前被读到。 */
+/* There is no need to do this. Above the button, because it should be read before the
+   decision. */
 .notRequired {
   font-size: 13.5px; line-height: 1.55; color: var(--text-dim);
   margin: 0; padding-top: 16px; border-top: 1px solid var(--line);

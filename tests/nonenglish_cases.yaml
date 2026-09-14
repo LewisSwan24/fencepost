@@ -1,11 +1,13 @@
-# 非英语筛查样本集 —— 对应 operations.md §4.2
-# 每种语言 10 条：正常目击 3、乱填 2、攻击性 2、含他人信息 2、事实错误 1
+# Non-English screening sample set — operations.md §4.2
+# Ten cases per language: 3 ordinary sightings, 2 gibberish, 2 abusive, 2 carrying
+# somebody else's details, 1 factually wrong
 #
-# expect 是人工判断，只分两档：
-#   ok   —— 正常内容，应当照常发布
-#   flag —— 人看了觉得不该原样留着（乱填、攻击、含他人信息、事实错误）
+# expect is the human judgement, in two values only:
+#   ok   — ordinary content that should publish as normal
+#   flag — a person would not want it left as written (gibberish, abuse, somebody
+#          else's details, a factual error)
 #
-# 里面的地址、姓名、车牌全是编的。
+# Every address, name and plate in here is invented.
 
 - id: zh-1
   language: zh

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-阶段 1 冒烟 —— 结果写进 docs/qwen-integration.md。
+Stage 1 smoke test — the results go into docs/qwen-integration.md.
 
     python scripts/smoke.py
 
-三件事:
-1. 最小文本调用，确认端点、key、模型名都对
-2. 探测 reasoning_effort: 兼容模式认不认这个参数。不认的话它会被静默忽略，
-   qwen-integration.md §1 里 Screener 那档「关闭思考」就落不了地
-3. 发一张脚本自己生成的纯色 PNG 测 image_url。官方文档没写死 qwen3.8-max
-   在兼容模式下收不收图，只能实测
+Three things:
+1. A minimal text call, confirming the endpoint, the key and the model name are right
+2. Probe reasoning_effort: does compatible mode accept the parameter at all? If it does
+   not, the value is silently ignored and the "thinking off" setting for the Screener in
+   qwen-integration.md §1 never lands
+3. Send a flat-colour PNG the script generates itself, to test image_url. The official
+   documentation does not say whether qwen3.8-max accepts images in compatible mode, so
+   the only way to know is to measure
 """
 
 import base64
@@ -27,7 +29,9 @@ DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
 
 def tiny_png(size: int = 64, rgb: tuple[int, int, int] = (118, 92, 66)) -> bytes:
-    """纯色 PNG，手写字节。不引 Pillow，也不用真实素材——测的是接口收不收图。"""
+    """A flat-colour PNG written byte by byte. No Pillow and no real footage: what is
+    being tested is whether the endpoint accepts an image at all.
+    """
 
     def chunk(tag: bytes, data: bytes) -> bytes:
         crc = zlib.crc32(tag + data) & 0xFFFFFFFF
@@ -58,12 +62,12 @@ def main() -> int:
     load_env()
     key = os.getenv("DASHSCOPE_API_KEY")
     if not key:
-        sys.exit("没有 DASHSCOPE_API_KEY。把 key 填进仓库根目录的 .env，不要写进代码。")
+        sys.exit("No DASHSCOPE_API_KEY. Put the key in .env at the repository root, never in the code.")
 
     try:
         from openai import OpenAI
     except ImportError:
-        sys.exit("缺依赖: pip install openai")
+        sys.exit("Missing dependency: pip install openai")
 
     base_url = os.getenv("DASHSCOPE_BASE_URL", DEFAULT_BASE_URL)
     chat_model = os.getenv("CHAT_MODEL", "qwen3.8-max")
@@ -71,13 +75,13 @@ def main() -> int:
     client = OpenAI(api_key=key, base_url=base_url)
 
     def clean(exc: Exception) -> str:
-        """报错原文可能带上 key 片段，打印前先抹掉。"""
+        """An error message can carry a fragment of the key; wipe it before printing."""
         return str(exc).replace(key, "***")
 
-    print(f"端点: {base_url}")
-    print(f"模型: chat={chat_model}  vision={vision_model}\n")
+    print(f"endpoint: {base_url}")
+    print(f"models: chat={chat_model}  vision={vision_model}\n")
 
-    print("1. 文本调用 (reasoning_effort=low)")
+    print("1. Text call (reasoning_effort=low)")
     try:
         resp = client.chat.completions.create(
             model=chat_model,
@@ -85,25 +89,26 @@ def main() -> int:
             extra_body={"reasoning_effort": "low"},
         )
     except Exception as exc:
-        print(f"   失败: {clean(exc)}")
+        print(f"   failed: {clean(exc)}")
         return 1
     print(f"   OK  {describe(resp)}")
-    print(f"   回复: {resp.choices[0].message.content!r}")
+    print(f"   reply: {resp.choices[0].message.content!r}")
 
-    print("\n2. reasoning_effort 是否被校验")
+    print("\n2. Is reasoning_effort validated?")
     try:
         client.chat.completions.create(
             model=chat_model,
             messages=[{"role": "user", "content": "ping"}],
             extra_body={"reasoning_effort": "not_a_real_value"},
         )
-        print("   非法值也返回 200 —— 参数被静默忽略，配置里的思考档位不生效")
+        print("   An invalid value still returns 200 — the parameter is silently ignored "
+              "and the configured thinking level does nothing")
     except Exception as exc:
-        print(f"   非法值被拒 —— 参数有效。原文: {clean(exc)[:200]}")
+        print(f"   Invalid value refused — the parameter is real. Original: {clean(exc)[:200]}")
 
-    print("\n3. 图像输入 (image_url + base64 PNG)")
+    print("\n3. Image input (image_url + base64 PNG)")
     png = tiny_png()
-    print(f"   合成图 {len(png)} 字节")
+    print(f"   generated image, {len(png)} bytes")
     try:
         resp = client.chat.completions.create(
             model=vision_model,
@@ -123,12 +128,12 @@ def main() -> int:
             ],
         )
     except Exception as exc:
-        print(f"   拒收: {clean(exc)[:300]}")
-        print(f"   → 视觉调用切到 qwen3-vl 系列，聊天仍用 {chat_model}")
+        print(f"   refused: {clean(exc)[:300]}")
+        print(f"   → send vision calls to the qwen3-vl family; chat stays on {chat_model}")
         return 0
-    print(f"   收下了  {describe(resp)}")
-    print(f"   回复: {resp.choices[0].message.content!r}")
-    print(f"   → 视觉与聊天可以共用 {chat_model}")
+    print(f"   accepted  {describe(resp)}")
+    print(f"   reply: {resp.choices[0].message.content!r}")
+    print(f"   → vision and chat can share {chat_model}")
     return 0
 
 

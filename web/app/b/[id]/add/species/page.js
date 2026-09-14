@@ -2,9 +2,11 @@
 
 // 6 · Which one is it?
 //
-// 建议永不预选。它只是一句话加一个按钮，Next 一直禁用到用户自己点了某一档。
-// 而且那句话是模型回的散文，物种是这边从句子里认出来的——认不出（同时提到两种，
-// 或者一种都没提）就只显示句子，不给「Use this」。宁可不给，也不替用户选。
+// A suggestion is never preselected. It is a sentence and a button, and Next stays
+// disabled until the user picks one themselves. The sentence is prose the model returned
+// and the species is recognised out of it here — where it cannot be (both mentioned, or
+// neither), only the sentence shows and there is no "Use this". Better to offer nothing
+// than to choose on their behalf.
 
 import { use } from "react";
 import { useRouter } from "next/navigation";

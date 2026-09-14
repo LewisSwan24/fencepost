@@ -1,4 +1,4 @@
-"""三个角色。提示词一律从 prompts/ 读，代码里不留第二份。"""
+"""The three roles. Prompts always come from prompts/; the code keeps no second copy."""
 
 import json
 import re
@@ -13,19 +13,20 @@ CONFIDENCE = {"established", "unverified"}
 VERDICTS = {"ok", "review", "reject"}
 LENGTH_FACTOR = 1.6
 
-# §3.4 的数字注入检查。除阿拉伯数字外也拦英文数词与时间词：v0.9 起助手只写英文，
-# 编造细节最常见的形态就是 two possums、last night 这类。
+# The invented-number check from §3.4. Besides digits it catches English number words and
+# time words: since v0.9 the assistant writes only English, and made-up detail almost
+# always arrives as "two possums" or "last night".
 NUMBER_WORDS = {
     "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
     "eleven", "twelve", "dozen", "couple", "yesterday", "tonight", "midnight", "noon",
 }
 TOKEN = re.compile(r"[0-9]+(?:[.:,][0-9]+)*|[^\W\d_]+", re.UNICODE)
-CJK = re.compile(r"[㐀-鿿]")
+CJK = re.compile(r"[\u3400-\u9fff]")
 FENCE = re.compile(r"^`{3}(?:json)?|`{3}$", re.MULTILINE)
 
 
 def load_prompt(role: str) -> tuple[str, str]:
-    """返回 (system_prompt, version)。生成物首行的 GENERATED 注释不发给模型。"""
+    """Return (system_prompt, version). The GENERATED header line is not sent to the model."""
     version = (PROMPTS_DIR / "VERSION").read_text(encoding="utf-8").strip()
     blocks = []
     for name in ("shared", role):
@@ -53,8 +54,8 @@ def _neighbour_content(context: dict, message: str, image_b64=None):
     }
     own = context.get("own_entries") or []
     if own:
-        # Tier 1 承诺助手看得到用户自己的 entry，但 §2.2 的模板里没有这个槽位，
-        # 文档要补一行，见阶段 3 报告。
+        # Tier 1 promises the assistant can see the user's own entries, but the §2.2
+        # template has no slot for them. The doc needs a line added; see the stage 3 report.
         fields["own_entries"] = "".join(
             "\n- " + " | ".join(f"{k}: {e[k]}" for k in ("species", "fun_fact", "story") if e.get(k))
             for e in own
@@ -76,7 +77,7 @@ def neighbour(client, context: dict, history, message: str, image_b64=None) -> d
 
 
 class Stream:
-    """把增量转发出去，同时把完整文本攒在 text 里，跑完才好落库。"""
+    """Forward each delta while gathering the full text, so it can be stored at the end."""
 
     def __init__(self, prompt_version: str, chunks):
         self.prompt_version = prompt_version
@@ -100,7 +101,7 @@ def neighbour_stream(client, context: dict, history, message: str, image_b64=Non
 def writer(client, species_selected: str, story_draft: str) -> dict:
     system, version = load_prompt("writer")
     prompt = _wrap({"species_selected": species_selected}, f"story_draft: {story_draft}")
-    for _ in range(2):                      # §3.4 第 5 条：坏输出重试一次
+    for _ in range(2):                      # §3.4 item 5: retry a bad output once
         try:
             raw = client.call("writer", system, prompt)
         except UpstreamError:
@@ -108,13 +109,13 @@ def writer(client, species_selected: str, story_draft: str) -> dict:
         checked = validate_writer(raw, story_draft)
         if checked is not None:
             return {**checked, "prompt_version": version}
-    # 两次都不行就静默跳过。Writer 永远不是必经步骤。
+    # Silently skip when both attempts fail. The Writer is never a required step.
     return {"fun_facts": [], "tidied_story": None, "question": None, "skipped": True,
             "prompt_version": version}
 
 
 def validate_writer(raw: str, original: str):
-    """按 prompts.md §3.4 校验。返回 None 表示这次输出不可用，要重试。"""
+    """Validate against prompts.md §3.4. None means this output is unusable — retry."""
     try:
         data = json.loads(_strip_fences(raw))
     except json.JSONDecodeError:
@@ -129,7 +130,7 @@ def validate_writer(raw: str, original: str):
             return None
     tidied = data["tidied_story"]
     if isinstance(tidied, str) and not story_is_faithful(original, tidied):
-        tidied = None                       # 丢掉润色，fun_facts 照留
+        tidied = None                       # drop the tidy-up, keep the fun_facts
     return {"fun_facts": facts, "tidied_story": tidied, "question": data["question"], "skipped": False}
 
 
@@ -153,7 +154,7 @@ def _size(text: str) -> int:
 def screener(client, species_selected: str, field: str, submission: str) -> dict:
     system, version = load_prompt("screener")
     prompt = _wrap({"species_selected": species_selected, "field": field}, submission)
-    for _ in range(2):                      # 非法 JSON 重试一次，再失败按超时处理
+    for _ in range(2):                      # retry once on bad JSON, then treat as a timeout
         try:
             raw = client.call("screener", system, prompt)
         except UpstreamError:
@@ -161,7 +162,7 @@ def screener(client, species_selected: str, field: str, submission: str) -> dict
         parsed = parse_verdict(raw)
         if parsed is not None:
             return _language_floor(parsed, submission, version)
-    # fail-open：模型挂了不该让用户发不出内容（prompts.md §5）
+    # fail-open: a broken model should not stop somebody posting (prompts.md §5)
     return {"verdict": "review", "codes": [], "note": "", "fail_open": True,
             "downgraded_non_english": False, "prompt_version": version}
 
@@ -180,7 +181,7 @@ def parse_verdict(raw: str):
 
 
 def _language_floor(result: dict, submission: str, version: str) -> dict:
-    """operations.md §4.3：非英语提交最高只到 review，不得 reject。"""
+    """operations.md §4.3: a non-English submission tops out at review, never reject."""
     downgraded = result["verdict"] == "reject" and looks_non_english(submission)
     if downgraded:
         result["verdict"] = "review"
@@ -189,7 +190,7 @@ def _language_floor(result: dict, submission: str, version: str) -> dict:
 
 
 def looks_non_english(text: str) -> bool:
-    """只用来把 reject 降成 review，所以判错的方向永远是宽松那边。"""
+    """Only ever turns reject into review, so a wrong call always errs on the lenient side."""
     letters = [c for c in text if c.isalpha()]
     if not letters:
         return False

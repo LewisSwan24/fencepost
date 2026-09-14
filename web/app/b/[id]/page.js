@@ -1,11 +1,13 @@
 "use client";
 
-// 9 · 故事版详情。时间线、公开的复核标签、讨论区入口、助手抽屉。
+// 9 · Storyboard detail. The timeline, the public review label, the way into the
+// discussion, and the assistant drawer.
 //
-// 「Being checked by neighbours」是社区投票的结果，不是系统判定，所以人人可见，
-// 作者也一样——没有只给作者看的状态，也没有「你被标记了」这种提示。
-// 但作者不能给自己的 entry 投票（服务端回 403 not_your_call），所以那两个按钮
-// 在自己的条目上根本不出现，而不是点下去吃一个错误。
+// "Being checked by neighbours" is the outcome of a community vote, not a system verdict,
+// so everybody sees it including the author — there is no author-only state and no "you
+// have been flagged" notice. But an author cannot vote on their own entry (the server
+// answers 403 not_your_call), so those two buttons simply do not appear there, rather
+// than appearing and then failing.
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -30,7 +32,7 @@ export default function Storyboard({ params }) {
   const [who, setWho] = useState(null);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(Boolean(justPosted));
-  const [open, setOpen] = useState(null); // 展开的那条 entry
+  const [open, setOpen] = useState(null); // the entry currently expanded
   const [voted, setVoted] = useState({});
   const [chat, setChat] = useState(false);
   const [editing, setEditing] = useState(null);    // {id, funFact, story, species, codes}
@@ -48,7 +50,8 @@ export default function Storyboard({ params }) {
     me().then(setWho, () => {});
   }, [id]);
 
-  // 完结只有 owner 能做（服务端回 not_the_owner），而 owner 一定是 reshare 档。
+  // Only an owner can close it (the server answers not_the_owner), and an owner always
+  // holds reshare.
   useEffect(() => {
     if (!view?.level) return;
     isOwner(id, view.level).then(setOwner, () => {});
@@ -83,8 +86,8 @@ export default function Storyboard({ params }) {
     }
   }
 
-  // 改动是否真的存在，要和服务端算 changed 的方式一致（app.py edit_entry）：
-  // 空字符串等于「这一项别动」，不是「清空它」。
+  // Whether anything really changed has to match how the server computes changed
+  // (app.py edit_entry): an empty string means "leave this one alone", not "clear it".
   function changed(draft) {
     const row = entries.find((e) => e.id === draft.id) || {};
     const ff = draft.funFact.trim();
@@ -103,8 +106,8 @@ export default function Storyboard({ params }) {
         funFact: ff || undefined,
         story: st || undefined,
       });
-      // 被 Screener 拒掉回的是 200 带 published:false —— catch 接不到它。
-      // 库里那一条一个字没动，所以面板不关，字也不清。
+      // A Screener refusal comes back 200 with published:false — catch never sees it.
+      // Nothing in the database moved, so the panel stays open and the text stays put.
       if (result.published === false) {
         setEditing({ ...editing, codes: result.reason_codes || [] });
         setBusy(false);
@@ -126,7 +129,7 @@ export default function Storyboard({ params }) {
       await deleteEntry(confirming);
       setConfirming(null);
       setNote(COPY.deleted);
-      load();          // 计数、参与者、封面都跟着这一次重取变
+      load();          // the count, the participants and the cover all follow this refetch
     } catch (err) {
       setError(err.message);
     }
@@ -154,16 +157,19 @@ export default function Storyboard({ params }) {
 
         {view ? (
           <>
-            {/* 这里原本还有一张封面。它取的是第一条配得到图的 entry，于是只有一条
-                目击的时候，同一张照片在一屏里出现两次，看着像坏的。封面留在列表卡片上
-                ——那儿它是唯一的一张；这一页的画面属于每一条 entry 自己。 */}
+            {/* There used to be a cover image here. It took the first entry that had a
+                picture, so with only one sighting the same photograph appeared twice on
+                one screen and looked broken. The cover belongs on the list card, where it
+                is the only one; on this page the pictures belong to the entries. */}
             <h1 className={styles.title}>{view.title}</h1>
             <div className={styles.meta}>
               <span>{countLabel(entries.length, "sighting", "sightings")}</span>
             </div>
-            {/* 参与者从时间线的作者去重来。/api/dashboard 不回 participants，
-                照着原型写 view.participants 的话这里永远是空的——而这就是
-                「这个故事里有谁」，不是「谁有权限」（那份名单在分享页，且要 reshare 才看得到）。*/}
+            {/* Participants are the deduplicated authors from the timeline.
+                /api/dashboard does not return participants, so following the prototype and
+                reading view.participants would leave this permanently empty — and this is
+                "who is in this story", not "who has access" (that list is on the share
+                screen, and needs reshare to see). */}
             {people.length ? (
               <div className={styles.people}>
                 {people.map((h) => (
@@ -175,8 +181,9 @@ export default function Storyboard({ params }) {
             {archived ? (
               <>
                 <p className={styles.banner}>{view.closed_note ? COPY.closed : COPY.archived}</p>
-                {/* 结语。owner 完结时写的那句，写的时候说的是「留给所有参与过的人」，
-                    所以它必须有人读得到——在此之前它只存不读。 */}
+                {/* The closing line. When an owner writes it they are told it is for
+                    everyone who contributed, so somebody has to be able to read it — until
+                    now it was written and never read. */}
                 {view.closed_note ? (
                   <blockquote className={styles.closedNote}>
                     <p className={styles.closedNoteText}>{view.closed_note}</p>
@@ -186,10 +193,12 @@ export default function Storyboard({ params }) {
               </>
             ) : null}
 
-            {/* 待核实。只有贡献者以上看得到——服务端对 view 档回 read_only_access，
-                理由是「复核是贡献者之间的事」。刻意**不**按归档状态收：review_queue、
-                cast_review_vote、dispose_entry 三个都不查 storyboard_status，
-                归档的故事版上这些照样能做，藏起来就是界面在另一个方向上撒谎。 */}
+            {/* Second look. Only contributors and above see it — the server answers
+                read_only_access for a view grant, because reviewing is between
+                contributors. Deliberately **not** hidden on an archived storyboard:
+                review_queue, cast_review_vote and dispose_entry none of them consult
+                storyboard_status, so these still work there, and hiding them would be the
+                interface lying in the other direction. */}
             {level && level !== "view" ? (
               <button
                 type="button"
@@ -222,9 +231,10 @@ export default function Storyboard({ params }) {
               <p className={styles.quiet}>Nothing here yet. Yours would be the first.</p>
             ) : (
               entries.map((e) => {
-                // 服务端比的是 author_id（app.py 的 _own_editable_entry），界面也照它来。
-                // handle 在库里虽然唯一，但它不是主键，不该被当成主键用。
-                // fixtures 的行没有 author_id，所以留一条 handle 的退路。
+                // The server compares author_id (_own_editable_entry in app.py), so the
+                // interface does the same. A handle is unique in the database but it is
+                // not the primary key and should not be used as one. Fixtures rows have no
+                // author_id, so a handle fallback stays.
                 const mine = !!who && (e.author_id ? e.author_id === who.user_id
                                                    : e.handle === who.handle);
                 const frame = frameFor(e);
@@ -262,9 +272,10 @@ export default function Storyboard({ params }) {
                         {open === e.id ? (
                           <div className={styles.checkedBody}>
                             <p className={styles.checkedText}>{COPY.checkedBody}</p>
-                            {/* 只读的人不参与复核——服务端回 read_only_access，
-                                理由是「这是贡献者之间的事」。界面照这个来，
-                                不要给一个按下去必然被拒的按钮。 */}
+                            {/* Read-only people take no part in review — the server
+                                answers read_only_access, because this is between
+                                contributors. The interface follows that rather than
+                                drawing a button certain to be refused. */}
                             {mine || !canContribute ? null : voted[e.id] ? (
                               <p className={styles.thanks}>
                                 {voted[e.id] === "looks_right" ? COPY.votedYes : COPY.votedNo}
@@ -293,8 +304,9 @@ export default function Storyboard({ params }) {
                       </div>
                     ) : null}
                     <p className={styles.story}>{e.story}</p>
-                    {/* 只有作者看得到，而且故事版归档后没有——服务端对归档的回
-                        storyboard_closed，改和删都不收。 */}
+                    {/* Only the author sees these, and they are gone once the storyboard
+                        is archived — the server answers storyboard_closed and takes
+                        neither an edit nor a delete. */}
                     {mine && !archived ? (
                       <div className={styles.own}>
                         <button type="button" className={styles.ownBtn}
@@ -315,9 +327,10 @@ export default function Storyboard({ params }) {
               })
             )}
 
-            {/* 完结的入口放在时间线末尾，不放页脚：它罕用、只有 owner 有、而且不可逆，
-                不该和「Add your sighting」并排。归档之后也不再出现——服务端其实允许
-                owner 再关一次，但那会悄悄盖掉上一句结语。 */}
+            {/* Closing sits at the end of the timeline rather than in the footer: it is
+                rare, owner-only and irreversible, and does not belong beside "Add your
+                sighting". It disappears once archived too — the server would let an owner
+                close it again, but that would quietly overwrite the previous line. */}
             {owner && !archived ? (
               <button type="button" className={styles.closeRow}
                       onClick={() => router.push("/b/" + id + "/close")}>
@@ -352,8 +365,9 @@ export default function Storyboard({ params }) {
       {editing ? (
         <Sheet onClose={() => !busy && setEditing(null)} labelledBy="edit-title">
           <h2 id="edit-title" className={ui.sheetTitle}>{COPY.editTitle}</h2>
-          {/* 物种是只读的。服务端的 edit handler 根本不读请求体里的 species，
-              而「视觉识别不得自动设定物种」那条红线的另一面是：物种归当初选它的那一步。 */}
+          {/* The species is read-only. The server edit handler does not read species from
+              the request body at all, and the other side of "visual identification must
+              never set the species" is that the species belongs to the step that chose it. */}
           <p className={styles.editSpecies}>
             {SPECIES_LABEL[editing.species] || "Not sure"}
           </p>

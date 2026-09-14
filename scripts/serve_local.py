@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""把 api/index.py 的 handler 跑在本机。
+"""Run the handler from api/index.py on this machine.
 
     python scripts/serve_local.py --port 8787
 
-Vercel 的 Python function 用的就是同一个 handler 类，这里只是自己起了个 HTTPServer。
-跑得起来不等于 Vercel 上跑得起来——那边还有打包和依赖安装。
+Vercel's Python function uses the same handler class; this only starts an HTTPServer around
+it. Running here does not mean it runs on Vercel — that adds packaging and dependency
+installation on top.
 """
 
 import argparse
@@ -22,7 +23,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8787)
     args = parser.parse_args()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
-    print(f"POST http://127.0.0.1:{args.port}/api/assistant   Ctrl+C 停")
+    print(f"POST http://127.0.0.1:{args.port}/api/assistant   Ctrl+C to stop")
     server.serve_forever()
 
 

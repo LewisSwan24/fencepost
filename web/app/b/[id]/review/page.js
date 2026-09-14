@@ -1,20 +1,23 @@
 "use client";
 
-// 待核实队列（operations.md §2）。两件事在这一屏发生：贡献者投第一票，owner 拿主意。
+// The second-look queue (operations.md §2). Two things happen on this screen: a
+// contributor casts the first vote, and the owner decides.
 //
-// **这一屏是必须的，不是补充。** 故事版详情页上那两个投票按钮挂在 `being_checked` 下面，
-// 而 `being_checked` 要凑够两票 `worth_checking` 才会为真——也就是说没有这一屏，
-// 第一票根本无处可投，那两个按钮永远不会出现。复核这条链在产品里原本是断的。
+// **This screen is required, not an extra.** The two vote buttons on the storyboard page
+// hang off `being_checked`, and `being_checked` is only true once two `worth_checking`
+// votes have landed — which means that without this screen the first vote has nowhere to
+// go and those buttons can never appear. The review chain was broken in the product.
 //
-// 三条红线在这里同时成立，而且都不是靠界面藏：
-//   · 看不到自己的条目 —— 服务端 SQL 里就写着 e.author_id != viewer
-//   · 看不到作者是谁   —— 返回的字段里根本没有 handle 或 author_id
-//   · 看不到谁投了票   —— 只回票数
-// 界面能泄漏的前提是数据到了界面上。这里数据就没来。
+// Three red lines hold here at once, and none of them by the interface hiding anything:
+//   · you never see your own entries — the server SQL itself says e.author_id != viewer
+//   · you never see who wrote it     — no handle and no author_id are returned
+//   · you never see who voted        — only the counts come back
+// An interface can only leak what reached it. Here the data never arrives.
 //
-// 还有一件刻意的事：**不把 Screener 的 reason code 摆给复核的人看。** 告诉邻居
-// 「该重读哪一段」，而不是「模型判了 pii」。后者等于请邻居当审查员，
-// 而 Screener 连文采与价值都不判（CLAUDE.md 决策表）。
+// And one more deliberate thing: **the Screener's reason code is never shown to the
+// reviewer.** Tell a neighbour which part to read again, not that the model judged it pii.
+// The latter makes a censor of a neighbour, and the Screener does not even judge writing
+// quality or worth (CLAUDE.md decision table).
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,7 +28,7 @@ import { stamp } from "../../../../lib/format";
 import { BackButton, Sheet, ui } from "../../../../components/ui";
 import styles from "./review.module.css";
 
-// 哪一段被挑出来了。fields 是 fun_fact / story 的组合。
+// Which part was picked out. fields is a combination of fun_fact and story.
 function whichPart(fields) {
   const list = fields || [];
   const fact = list.includes("fun_fact");
@@ -59,11 +62,14 @@ export default function Review({ params }) {
     setVoted((prev) => ({ ...prev, [entryId]: choice }));
     try {
       await castVote(entryId, choice);
-      // 这里刻意**不**重取队列。投完要出现的那句话挂在这一行上，而重取会把这一行
-      // 抽走——够两票的时候 cast_vote 当场结算，它就不在队列里了。于是投下决定性
-      // 那一票的人什么也读不到，一行字凭空消失。列表下次进这一屏再取。
+      // Deliberately **not** refetching the queue here. The sentence that has to appear
+      // after a vote hangs on this row, and a refetch takes the row away — once two votes
+      // land, cast_vote settles it on the spot and it leaves the queue. Whoever cast the
+      // deciding vote would then read nothing at all, with a line of writing blinking out.
+      // The list is fetched again the next time this screen is opened.
     } catch (e) {
-      // 最常见的一种：这条 entry 在你读队列和你点下去之间被作者自己删了。
+      // The most common one: the author deleted the entry between you reading the queue
+      // and you pressing the button.
       setVoted((prev) => ({ ...prev, [entryId]: undefined }));
       setError(e.message);
     }
@@ -75,8 +81,8 @@ export default function Review({ params }) {
       await disposeEntry(entryId, action);
       setDone((prev) => ({ ...prev, [entryId]: true }));
       setConfirming(null);
-      // 同上，而且这里更严重：处置一定把条目移出队列，所以 COPY.disposeDone
-      // 那句话一次都没出现过。留着这一行，让它说完再走。
+      // As above, and worse here: disposal always removes the item from the queue, so the
+      // COPY.disposeDone sentence had never once appeared. Keep the row and let it finish.
     } catch (e) {
       setError(e.message);
     }
@@ -102,7 +108,7 @@ export default function Review({ params }) {
         {items?.map((item) => (
           <article key={item.entry_id} className={styles.card}>
             <div className={styles.head}>
-              {/* 这里没有 @handle。队列里就没有这个字段。 */}
+              {/* No @handle here. The queue does not carry that field. */}
               <span className={styles.when}>{stamp(item.created_at)}</span>
               <span className={styles.species}>
                 {SPECIES_LABEL[item.species] || "Not sure"}
@@ -140,11 +146,12 @@ export default function Review({ params }) {
                   </div>
                 )}
 
-                {/* owner 的最终处置。只有 owner 看得到——服务端对别人回 not_the_owner。 */}
+                {/* The owner's final disposal. Only the owner sees it; the server answers
+                    not_the_owner to anybody else. */}
                 {owner ? (
                   <div className={styles.owner}>
                     <p className={styles.ownerCall}>{COPY.ownerCall}</p>
-                    {/* 「保留」不问第二遍：它不改变任何人看到的东西。另外两个会。 */}
+                    {/* "Leave it" asks nothing: it changes nothing anybody sees. The other two do. */}
                     <button type="button" className={styles.ownerBtn} disabled={busy}
                             onClick={() => settle(item.entry_id, "kept")}>
                       {COPY.disposeKeep}
@@ -168,9 +175,10 @@ export default function Review({ params }) {
         {items?.length ? <p className={styles.window}>{COPY.secondLookWindow}</p> : null}
       </div>
 
-      {/* 这两个选项一个加上去就撤不掉、一个直接把别人的条目拿下来，是全站风险最高的
-          确认框 —— 而它原先是手写的一层 div：没有 role="dialog"，没有名字，Escape
-          关不掉，焦点也不进来。改用 Sheet，和「删掉自己那一条」用的是同一件东西。 */}
+      {/* These two options add something that cannot be taken off and take somebody else's
+          entry down, which makes this the highest-risk confirm in the product — and it used
+          to be a hand-written div: no role="dialog", no name, Escape did nothing, focus
+          never moved in. It is a Sheet now, the same thing "delete your own" uses. */}
       {confirming ? (
         <Sheet onClose={() => !busy && setConfirming(null)} labelledBy="dispose-confirm">
           <p id="dispose-confirm" className={styles.confirmText}>
