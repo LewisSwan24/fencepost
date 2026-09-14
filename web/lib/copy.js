@@ -26,12 +26,28 @@ export const COPY = {
   checkedYes: "Looks right",
   checkedNo: "Worth checking",
   assistantOffline: "The assistant is offline right now. Writing and posting work as normal.",
+  // 这一句在抽屉里，不在页脚。首页页脚确实写了「Possum Help is running from fixtures」，
+  // 但直接点进某个故事版的人看不到那行字——而「我在跟一个 AI 说话」这个念头，
+  // 正是在这个抽屉里形成的。产品里每一处替身都在原地说明自己：二维码占位说了、
+  // 挑帧那几张说了、/credits 也说了。助手是最不该含糊的那一个。
+  assistantCanned: "Pre-written answers for this demo. Nothing is generated live.",
 
   // 原型新增，已同步进 ux-copy.md
   captureLede: "Start with a clip you already have.",
   noCameras: "Fencepost doesn't run any cameras. Everything here comes off your own phone.",
-  frameLede: "This is the still people see in the storyboard.",
+  // 原先这句是「This is the still people see in the storyboard.」——那是假的。
+  // 挑出来的帧从来没有被带走过：frameIndex 只在挑帧那一屏里被读，提交时不发，
+  // 服务端也没有存帧的地方（`videos` 只记 storage_key，而「视觉帧是否落盘」
+  // 在 CLAUDE.md 里还是未决项）。界面不该替产品许一个它做不到的承诺。
+  frameLede: "Scrub to the moment that shows it best.",
+  frameNote: "Placeholder stills. In the real thing these are frames from your own video.",
   maskHint: "Drag across anything that shouldn't be shared",
+  // 这一屏刻意**不**铺真实照片。挑帧那边铺了，这边不铺，是因为那四张是负鼠的照片：
+  // 在一张树上的负鼠上画一个「FACE」和一个「NUMBER PLATE」的框，等于当着人的面
+  // 指着不存在的东西——它会把这道安全闸门演成一个笑话。这一屏演的是机制，不是画面。
+  // 所以画布保持抽象，但要说出来它是替身，否则看着只像没做完。
+  maskNote:
+    "A stand-in frame. The markers show what has to be covered before anything is sent.",
   helperDisclosure: "AI suggestions. Nothing goes into your post unless you put it there.",
   helperEmpty: "No fun facts for this one. Possum Help only knows brushtail and ringtail possums.",
   helperOpen: "Possum Help — writing suggestions",

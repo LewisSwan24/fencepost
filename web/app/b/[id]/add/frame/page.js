@@ -6,11 +6,25 @@ import { use, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { CLIP } from "../../../../../lib/fixtures";
 import { COPY } from "../../../../../lib/copy";
+import { FRAMES } from "../../../../../lib/frames";
 import { BackButton, Steps, ui } from "../../../../../components/ui";
+import Shot from "../../../../../components/Shot";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
 
-const TONES = ["#1d1812", "#251e16", "#2f251a", "#3a2d1f"];
+// 这一屏原先画的是四块棕色色块。加进真实素材之后，全站只剩这里还是空的——
+// 而这偏偏是「画面」本身就是主角的那一屏。
+//
+// 用 lib/frames.js 那四张顶上，八个刻度两两对应一张，所以拖动是看得见变化的。
+// 它们是**占位**，底下那行字直说了——和分享页那个二维码占位一个路数。
+//
+// **挑出来的帧不会被带走，这是实情，不是遗漏。** frameIndex 只在这一屏被读：
+// 提交时不发，服务端也没有存帧的地方（`videos` 只记 storage_key，而
+// 「视觉帧是否落盘」在 CLAUDE.md 里仍是未决项，落盘要加 frames 表和 TTL 任务）。
+// 所以文案也改了，不再说「这就是别人会看到的那一帧」——那句话是假的。
+function stillFor(index) {
+  return FRAMES[Math.floor(index / 2) % FRAMES.length];
+}
 
 export default function PickFrame({ params }) {
   const { id } = use(params);
@@ -37,11 +51,13 @@ export default function PickFrame({ params }) {
         <h1 className={ui.h1}>Pick a frame</h1>
         <p className={ui.lede} style={{ marginBottom: 18 }}>{COPY.frameLede}</p>
 
-        <div style={{ position: "relative", width: "100%", height: 206,
-                      borderRadius: "var(--radius-md)", overflow: "hidden",
-                      background: TONES[frames[draft.frameIndex].tone] }}>
+        <Shot src={stillFor(draft.frameIndex).file}
+              alt={stillFor(draft.frameIndex).alt}
+              graded={!stillFor(draft.frameIndex).night}
+              height={206}>
           <span className={styles.stampChip}>{frames[draft.frameIndex].label}</span>
-        </div>
+        </Shot>
+        <p className={styles.footnote}>{COPY.frameNote}</p>
 
         <div style={{ marginTop: 20 }}
              onPointerDown={(e) => {
@@ -56,8 +72,9 @@ export default function PickFrame({ params }) {
             <div className={styles.strip}>
               {frames.map((f, i) => (
                 <span key={f.t} className={styles.cell}
-                      style={{ background: TONES[f.tone],
-                               opacity: i === draft.frameIndex ? 1 : 0.55 }} />
+                      style={{ backgroundImage: `url(${stillFor(i).file})`,
+                               backgroundSize: "cover", backgroundPosition: "center",
+                               opacity: i === draft.frameIndex ? 1 : 0.45 }} />
               ))}
             </div>
             <div className={styles.scrub}

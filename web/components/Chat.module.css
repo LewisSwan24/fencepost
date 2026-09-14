@@ -36,3 +36,9 @@
   display: flex; align-items: center; justify-content: center;
 }
 .send:hover:not(:disabled) { background: var(--accent-hover); }
+
+/* 「这些回答是预先写好的」。安静，但在抽屉里，不在页脚——
+   形成「我在跟 AI 说话」这个念头的地方就在这里。 */
+.canned {
+  margin: 10px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim);
+}

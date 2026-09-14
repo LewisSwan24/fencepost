@@ -139,6 +139,7 @@ export default function Mask({ params }) {
           ))}
           {drawn.length === 0 ? <span className={styles.hint}>{COPY.maskHint}</span> : null}
         </div>
+        <p className={styles.footnote} style={{ marginTop: 10 }}>{COPY.maskNote}</p>
 
         <div className={styles.checklist}>
           {targets.map((t) => (

@@ -22,7 +22,7 @@ import { reviewQueue, castVote, disposeEntry, storyboard, isOwner } from "../../
 import { SPECIES_LABEL } from "../../../../lib/fixtures";
 import { COPY } from "../../../../lib/copy";
 import { stamp } from "../../../../lib/format";
-import { BackButton, ui } from "../../../../components/ui";
+import { BackButton, Sheet, ui } from "../../../../components/ui";
 import styles from "./review.module.css";
 
 // 哪一段被挑出来了。fields 是 fun_fact / story 的组合。
@@ -59,7 +59,9 @@ export default function Review({ params }) {
     setVoted((prev) => ({ ...prev, [entryId]: choice }));
     try {
       await castVote(entryId, choice);
-      load();                 // 够两票的话，这一条会从队列里消失
+      // 这里刻意**不**重取队列。投完要出现的那句话挂在这一行上，而重取会把这一行
+      // 抽走——够两票的时候 cast_vote 当场结算，它就不在队列里了。于是投下决定性
+      // 那一票的人什么也读不到，一行字凭空消失。列表下次进这一屏再取。
     } catch (e) {
       // 最常见的一种：这条 entry 在你读队列和你点下去之间被作者自己删了。
       setVoted((prev) => ({ ...prev, [entryId]: undefined }));
@@ -73,7 +75,8 @@ export default function Review({ params }) {
       await disposeEntry(entryId, action);
       setDone((prev) => ({ ...prev, [entryId]: true }));
       setConfirming(null);
-      load();
+      // 同上，而且这里更严重：处置一定把条目移出队列，所以 COPY.disposeDone
+      // 那句话一次都没出现过。留着这一行，让它说完再走。
     } catch (e) {
       setError(e.message);
     }
@@ -165,25 +168,26 @@ export default function Review({ params }) {
         {items?.length ? <p className={styles.window}>{COPY.secondLookWindow}</p> : null}
       </div>
 
+      {/* 这两个选项一个加上去就撤不掉、一个直接把别人的条目拿下来，是全站风险最高的
+          确认框 —— 而它原先是手写的一层 div：没有 role="dialog"，没有名字，Escape
+          关不掉，焦点也不进来。改用 Sheet，和「删掉自己那一条」用的是同一件东西。 */}
       {confirming ? (
-        <div className={styles.confirmWrap}>
-          <div className={styles.confirm}>
-            <p className={styles.confirmText}>
-              {confirming.action === "removed"
-                ? COPY.disposeRemoveConfirm
-                : COPY.disposeLabelConfirm}
-            </p>
-            <button type="button" className={ui.btn} disabled={busy}
-                    onClick={() => settle(confirming.entryId, confirming.action)}>
-              {busy ? COPY.saving
-                : confirming.action === "removed" ? COPY.disposeRemove : COPY.disposeLabel}
-            </button>
-            <button type="button" className={styles.cancel} disabled={busy}
-                    onClick={() => setConfirming(null)}>
-              {COPY.cancel}
-            </button>
-          </div>
-        </div>
+        <Sheet onClose={() => !busy && setConfirming(null)} labelledBy="dispose-confirm">
+          <p id="dispose-confirm" className={styles.confirmText}>
+            {confirming.action === "removed"
+              ? COPY.disposeRemoveConfirm
+              : COPY.disposeLabelConfirm}
+          </p>
+          <button type="button" className={ui.btn} disabled={busy}
+                  onClick={() => settle(confirming.entryId, confirming.action)}>
+            {busy ? COPY.saving
+              : confirming.action === "removed" ? COPY.disposeRemove : COPY.disposeLabel}
+          </button>
+          <button type="button" className={styles.cancel} disabled={busy}
+                  onClick={() => setConfirming(null)}>
+            {COPY.cancel}
+          </button>
+        </Sheet>
       ) : null}
     </div>
   );

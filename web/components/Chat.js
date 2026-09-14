@@ -6,7 +6,7 @@
 // 第一句永远是 AI 披露。四条演示脚本做成可点的问题，省得现场手打。
 
 import { useEffect, useRef, useState } from "react";
-import { askAssistant, assistantOffline } from "../lib/api";
+import { askAssistant, assistantOffline, assistantIsLive } from "../lib/api";
 import { ASSISTANT_DISCLOSURE, ASSISTANT_SCRIPT } from "../lib/fixtures";
 import { COPY } from "../lib/copy";
 import { Sheet, Spinner, ui } from "./ui";
@@ -50,9 +50,17 @@ export default function Chat({ storyboardId, onClose }) {
         {offline ? (
           <p className={styles.offline}>{COPY.assistantOffline}</p>
         ) : (
-          <p className={styles.disclosure}>
-            <strong>{ASSISTANT_DISCLOSURE.lead}</strong>{ASSISTANT_DISCLOSURE.rest}
-          </p>
+          <>
+            <p className={styles.disclosure}>
+              <strong>{ASSISTANT_DISCLOSURE.lead}</strong>{ASSISTANT_DISCLOSURE.rest}
+            </p>
+            {/* 答辩跑的是 hybrid，助手那一半走 fixture（CLAUDE.md 决策表：真模型有概率
+                当场说出违反红线的话）。这是刻意的，但不能只写在首页页脚—— 
+                直接点进来的人看不到那行字。 */}
+            {assistantIsLive ? null : (
+              <p className={styles.canned}>{COPY.assistantCanned}</p>
+            )}
+          </>
         )}
 
         {messages.map((m, i) => (

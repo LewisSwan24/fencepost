@@ -13,11 +13,82 @@
 // hybrid 和 live 都需要一个令牌，而令牌只能从 /api/session 换，那个端点默认关着，
 // 要部署上有 FENCEPOST_OPEN_SIGNUP 才开。这是这两种模式的前提，不是可选项。
 
-import * as fixtures from "./fixtures";
+// 带上扩展名：Next 两种写法都认，而 `node --test` 只认带扩展名的那种。
+// lib/api.test.mjs 要能直接 import 这个文件。
+import * as fixtures from "./fixtures.js";
 
 export const BASE = process.env.NEXT_PUBLIC_FENCEPOST_API || "http://127.0.0.1:8787";
 export const MODE = process.env.NEXT_PUBLIC_FENCEPOST_MODE || "hybrid";
-export const HANDLE = process.env.NEXT_PUBLIC_FENCEPOST_HANDLE || "mel_k";
+// 固定 handle。**设了就用它，没设就一人一个**——见下面的 visitorHandle。
+//
+// 这里原先的默认值是 "mel_k"，而 mel_k 是 demo 故事版的 owner：谁忘了配这个变量，
+// 每一位访客就都成了 owner，归档、撤权限、删别人的条目全都拿得到。默认值现在是空的，
+// 宁可退回「一人一个陌生身分」，也不要退回「所有人都是 owner」。
+export const HANDLE = process.env.NEXT_PUBLIC_FENCEPOST_HANDLE || "";
+
+// 每位访客自己的 handle 存在这里；兑换过入场码也记一笔，免得每次开页都兑一次。
+const HANDLE_KEY = "fencepost.handle";
+const JOINED_KEY = "fencepost.joined";
+
+// 入场码：一张 contribute 档的分享链接，明文放在前端。
+// 这不新增任何暴露——开放注册本来就让任何人拿任意 handle 换令牌，而这张码只给
+// demo 故事版的 contribute。它换来的是**每位访客有自己的身分**，而不是所有人共用一个。
+const JOIN_TOKEN = process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN || "";
+
+const FIXTURES_HANDLE = "mel_k";     // 离线演示里「我」是谁，和 fixtures 的 owner 对上
+
+let ephemeralHandle = null;          // localStorage 用不了时的退路，只活在这一次会话
+
+function readStore(key) {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+
+function writeStore(key, value) {
+  try { window.localStorage.setItem(key, value); } catch { /* 无痕模式等，忽略 */ }
+}
+
+// 八个字节的密码学随机数，取十六进制。不用 Math.random：V8 的实现是 xorshift128+，
+// 看过几个输出就能反推状态、预测后面的，而在开放注册下「知道一个 handle」等于
+// 「能以那个人的身分登录」。拿可预测的数去生成一个能换到令牌的名字，是不对的。
+//
+// **但把话说全：这没有把洞补上。** handle 印在每一条 entry 上（`@{e.handle}`），
+// 时间线也照回不误——它是公开的。谁在屏幕上读到 `@guest_…`，就能拿它去
+// `/api/session` 换一张令牌，然后以那个人的身分改、删。熵防不住这一条，
+// 因为这个值本来就是给人看的。
+//
+// 所以一人一个身分解决的是**误伤**：访客 A 不会再顺手改到访客 B 的东西，
+// 因为他们不再是同一个用户。它不是一道安全边界——真正的边界是开放注册那个决定
+// （CLAUDE.md 决策表），而那是明知代价留下的。见 operations.md §1.1。
+function randomSuffix() {
+  const bytes = new Uint8Array(8);
+  const c = globalThis.crypto;
+  if (c && typeof c.getRandomValues === "function") {
+    c.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  // 拿不到 CSPRNG 的环境早就不存在了（IE11 起就有）。真落到这里也不能让站崩，
+  // 而且如上所述，这个值公开可见，本来就不是靠猜不到来保护的。
+  return Array.from({ length: 8 },
+    () => Math.floor(Math.random() * 256).toString(16).padStart(2, "0")).join("");
+}
+
+// 一人一个 handle，存在浏览器里，所以回访的人还是自己，自己写的条目也还归自己。
+//
+// 为什么要这样：所有访客共用一个 handle 的时候，`author_id` 在他们之间是相等的，
+// 于是访客 A 能改能删访客 B 写的东西——owner 那一层挡住了，访客彼此之间没有。
+export function visitorHandle() {
+  if (HANDLE) return HANDLE;                     // 显式配了就听它的（本机开发、测试）
+  if (ephemeralHandle) return ephemeralHandle;
+  const saved = readStore(HANDLE_KEY);
+  if (saved) return saved;
+  // 服务端校验 handle 长度 1..40，这里是 22。
+  const made = "guest_" + randomSuffix();
+  writeStore(HANDLE_KEY, made);
+  // 存不进去（无痕模式）就退回会话内的临时身分：这一次浏览里至少还是同一个人，
+  // 刷新之后换人——比每个请求换一次好。
+  ephemeralHandle = made;
+  return made;
+}
 
 export const usesNetwork = MODE !== "fixtures";
 export const assistantIsLive = MODE === "live";
@@ -33,17 +104,37 @@ let pending = null;
 async function ensureSession() {
   if (session) return session;
   if (!pending) {
-    pending = request("/api/session", { body: { handle: HANDLE } })
-      .then((got) => (session = got))
+    pending = request("/api/session", { body: { handle: visitorHandle() } })
+      .then(async (got) => {
+        session = got;
+        await joinDemo(got.token);
+        return got;
+      })
       .finally(() => (pending = null));
   }
   return pending;
 }
 
+// 新访客换到令牌之后，拿入场码兑一张 contribute 的 grant，否则他打开就是空 dashboard：
+// 一人一个身分的代价就是这个——新身分在任何故事版上都没有权限。
+//
+// 兑换不成不拦人。码可能过期了或被关掉了，那时候界面照常，只是看不到 demo 故事版——
+// 比整个站崩掉好。链接有效期上限是 90 天（服务端强制 1..90），所以这不是「永远有效」，
+// 到期要重签一张并更新 NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN。
+async function joinDemo(token) {
+  if (!JOIN_TOKEN || readStore(JOINED_KEY)) return;
+  try {
+    await request("/api/share-links/redeem", { body: { token: JOIN_TOKEN }, auth: token });
+    writeStore(JOINED_KEY, "1");
+  } catch {
+    /* 没兑上就算了，下次开页再试 */
+  }
+}
+
 export async function me() {
   // 和 fixtures 里 GRANTS 的 owner_id 对上，否则分享页永远判不出「我是 owner」，
   // 撤销按钮一次都不会出现。
-  if (!usesNetwork) return { user_id: "u_mel", handle: HANDLE };
+  if (!usesNetwork) return { user_id: "u_mel", handle: FIXTURES_HANDLE };
   const { user_id, handle } = await ensureSession();
   return { user_id, handle };
 }

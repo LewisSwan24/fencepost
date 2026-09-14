@@ -372,6 +372,54 @@ class Retention(Fixture):
         self.db.delete_account(self.guest)
         self.assertIsNotNone(self.db.share_link(link)["revoked_at"])
 
+    def flagged_row(self, fail_open=0, downgraded=0):
+        self.db.conn.execute(
+            "INSERT INTO screening_results (id, subject_type, subject_id, author_id, field, "
+            "verdict, codes, original_text, fail_open, downgraded_non_english, created_at) "
+            "VALUES (?, 'submission', NULL, ?, 'fun_fact', 'review', '[]', 'their words', "
+            "?, ?, ?)",
+            (uuid4().hex, self.owner, fail_open, downgraded,
+             datetime.now(timezone.utc).isoformat(timespec="seconds")))
+        self.db.conn.commit()
+
+    def test_the_teardown_report_counts_fail_open_and_the_language_floor(self):
+        """两个标记一直只写不读。伦理那一节问「筛查漏过几条」，只能从这里回答。"""
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import teardown_demo
+        self.flagged_row(fail_open=1)
+        self.flagged_row(fail_open=1)
+        self.flagged_row(downgraded=1)
+        flags = teardown_demo.screening_flags(self.db)
+        self.assertEqual(2, flags["fail_open"])
+        self.assertEqual(1, flags["downgraded"])
+        self.assertEqual(3, flags["total"])
+
+    def test_the_teardown_report_never_carries_the_refused_text(self):
+        """数出来是安全的，打印出来不是。
+
+        `original_text` 是被拒的原话，含触发拒绝的那些个人信息。这条钉的是报告里
+        一个字都不带它——否则一份「给伦理审查看的数字」会把它本该保护的东西抄一份出来。
+        """
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import teardown_demo
+        self.flagged_row(fail_open=1)
+        blob = json.dumps(teardown_demo.screening_flags(self.db), ensure_ascii=False, default=str)
+        self.assertNotIn("their words", blob)
+
+    def test_the_teardown_report_reads_zero_from_an_empty_table(self):
+        """空表上 SUM 回 NULL 不是 0。不 COALESCE 的话，刚清过的库会打印 None，
+        看着像报表坏了，而不是像「从来没有兜底放行过」。
+        """
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import teardown_demo
+        self.db.conn.execute("DELETE FROM screening_results")
+        self.db.conn.commit()
+        flags = teardown_demo.screening_flags(self.db)
+        self.assertEqual(0, flags["total"])
+        self.assertEqual(0, flags["fail_open"])
+        self.assertEqual(0, flags["downgraded"])
+        self.assertIsNone(flags["first_fail_open"])
+
     def test_the_teardown_script_empties_every_table(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import teardown_demo
