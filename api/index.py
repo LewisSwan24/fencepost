@@ -1,0 +1,210 @@
+"""Vercel function 入口。逻辑都在 proxy/，这里只做 HTTP 收发。"""
+
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler
+from pathlib import Path
+from urllib.parse import parse_qs
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, handle_stream,
+                       cast_review_vote, close_storyboard, create_post, create_thread,
+                       dashboard, delete_entry, dispose_entry,
+                       edit_entry, issue_share_link, list_grants, list_share_links, list_threads, read_thread,
+                       review_queue,
+                       redeem_share_link, register_video, revoke_grant, revoke_share_link,
+                       submit_entry, timeline)
+from proxy.env import load_env
+from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
+                      SqliteScreeningLog)
+from proxy.model import DashScope, UpstreamError, redact
+
+POST_ROUTES = ("/api/session", "/api/storyboards", "/api/storyboards/close",
+               "/api/videos", "/api/entries",
+               "/api/entries/edit", "/api/entries/delete", "/api/share-links",
+               "/api/share-links/redeem", "/api/share-links/revoke", "/api/grants/revoke",
+               "/api/forum/threads", "/api/forum/posts", "/api/review/vote",
+               "/api/review/dispose", "/api/assistant")
+GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
+              "/api/forum": list_threads, "/api/forum/thread": read_thread,
+              "/api/review": review_queue, "/api/grants": list_grants,
+              "/api/share-links": list_share_links}
+_DEPS = None
+# 两个 Vercel 专案的代价就是这一条：前端跨域来调，得放行。
+# 生产环境把 FENCEPOST_ALLOWED_ORIGIN 设成前端的域名，别留星号。
+#
+# 可以给多个，逗号分隔。理由不是灵活：同一个前端在 Vercel 上同时挂着好几个生产别名
+# （`-ten`、`-git-main-`、`-<team>`），只认其中一个，从另一个别名打开站点就是一片空白，
+# 而浏览器只说 CORS 失败，不说是哪个来源被拒——现场最难查的那一类故障。
+ALLOWED_ORIGINS = tuple(
+    origin.strip() for origin in os.getenv("FENCEPOST_ALLOWED_ORIGIN", "*").split(",")
+    if origin.strip()
+) or ("*",)
+
+
+def _allow_origin(requested: str | None) -> str:
+    """回给这次请求的 access-control-allow-origin。
+
+    命中就原样回显（`vary: origin` 已经在发，缓存不会串）。没命中不回星号——那等于白设——
+    而是回清单里的第一个，浏览器照样拦，但响应里留下了「这里认的是谁」这条线索。
+    """
+    if "*" in ALLOWED_ORIGINS:
+        return "*"
+    if requested and requested in ALLOWED_ORIGINS:
+        return requested
+    return ALLOWED_ORIGINS[0]
+
+
+def _deps() -> Deps:
+    # 历史、上下文、筛查记录与限流都走 SQLite；库文件路径用 FENCEPOST_DB 指定。
+    global _DEPS
+    if _DEPS is None:
+        # 先把 .env 与 .env.local 读进来。DashScope() 自己也会调，但那是在下面几行之后，
+        # 而托管库的地址就在 .env.local 里——不先读，本机跑的时候这里取到的是 None，
+        # 于是静悄悄地退回本地文件，看起来一切正常。
+        load_env()
+        # 地址按这个顺序挑：
+        #   FENCEPOST_DB        显式指定，测试和本机文件库用它
+        #   TURSO_DATABASE_URL  托管库。vercel integration add 自动注入，没人需要手抄
+        #   /tmp                Vercel 上的退路，每实例一份、冷启动清空
+        #   本地文件            开发机
+        #
+        # /tmp 只能当退路：2026-09-13 实测，同一个 handle 在不同实例上拿到过两个不同的
+        # user_id，一次页面加载里 dashboard 列得出的故事版，timeline 回 403。
+        # serverless 上的 SQLite 是能跑，不是能用。
+        default_db = ("/tmp/fencepost.db" if os.getenv("VERCEL")
+                      else str(Path(__file__).resolve().parent.parent / "fencepost.db"))
+        db = Database(os.getenv("FENCEPOST_DB")
+                      or os.getenv("TURSO_DATABASE_URL")
+                      or default_db)
+        _DEPS = Deps(client=DashScope(), limiter=SqliteRateLimiter(db),
+                     history=SqliteHistory(db), context=SqliteContext(db),
+                     screening=SqliteScreeningLog(db), db=db)
+    return _DEPS
+
+
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        # 新版 Vercel Python builder 只认 pyproject.toml 里那一个入口，所有路径都进这里，
+        # 所以路由得自己分。
+        path = self.path.split("?")[0].rstrip("/") or "/"
+        length = int(self.headers.get("content-length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            body = json.loads(raw or b"{}")
+        except json.JSONDecodeError:
+            return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
+        if path not in POST_ROUTES:
+            # 先判路径再建依赖：不认识的地址不该因为缺配置而回 503
+            return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
+        token = (self.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        try:
+            deps = _deps()
+        except Exception as exc:
+            # 配置缺失（例如没配 DASHSCOPE_API_KEY）不该让整个函数崩掉。这条是真部署打出来的：
+            # 崩了之后 Vercel 只会回一句 FUNCTION_INVOCATION_FAILED，客户端什么也看不出来。
+            print(f"[proxy] deps: {redact(str(exc))[:200]}", file=sys.stderr)
+            return self._json(503, {"error": {"code": "upstream_unavailable",
+                                              "message": COPY["upstream_unavailable"]}})
+        if path == "/api/session":
+            return self._json(*create_session(body, deps))
+        if path == "/api/storyboards":
+            return self._json(*create_storyboard(body, token, deps))
+        if path == "/api/storyboards/close":
+            return self._json(*close_storyboard(body, token, deps))
+        if path == "/api/videos":
+            return self._json(*register_video(body, token, deps))
+        if path == "/api/entries":
+            return self._json(*submit_entry(body, token, deps))
+        if path == "/api/entries/edit":
+            return self._json(*edit_entry(body, token, deps))
+        if path == "/api/entries/delete":
+            return self._json(*delete_entry(body, token, deps))
+        if path == "/api/share-links":
+            return self._json(*issue_share_link(body, token, deps))
+        if path == "/api/share-links/redeem":
+            return self._json(*redeem_share_link(body, token, deps))
+        if path == "/api/share-links/revoke":
+            return self._json(*revoke_share_link(body, token, deps))
+        if path == "/api/grants/revoke":
+            return self._json(*revoke_grant(body, token, deps))
+        if path == "/api/forum/threads":
+            return self._json(*create_thread(body, token, deps))
+        if path == "/api/forum/posts":
+            return self._json(*create_post(body, token, deps))
+        if path == "/api/review/vote":
+            return self._json(*cast_review_vote(body, token, deps))
+        if path == "/api/review/dispose":
+            return self._json(*dispose_entry(body, token, deps))
+        if body.get("stream"):
+            return self._sse(body, token, deps)
+        self._json(*handle(body, token, deps))
+
+    def do_GET(self):
+        path, _, query = self.path.partition("?")
+        path = path.rstrip("/") or "/"
+        if path not in GET_ROUTES:
+            return self._json(404, {"error": {"code": "not_found", "message": COPY["not_found"]}})
+        token = (self.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        try:
+            deps = _deps()
+        except Exception as exc:
+            print(f"[proxy] deps: {redact(str(exc))[:200]}", file=sys.stderr)
+            return self._json(503, {"error": {"code": "upstream_unavailable",
+                                              "message": COPY["upstream_unavailable"]}})
+        params = {key: values[0] for key, values in parse_qs(query).items()}
+        self._json(*GET_ROUTES[path](params, token, deps))
+
+    def _sse(self, body: dict, token: str, deps) -> None:
+        status, result = handle_stream(body, token, deps)
+        if status != 200:
+            return self._json(status, result)
+        self.send_response(200)
+        self._cors()
+        self.send_header("content-type", "text/event-stream")
+        self.send_header("cache-control", "no-cache")
+        self.send_header("x-accel-buffering", "no")     # 别让中间层把流缓冲成一坨
+        self.end_headers()
+        self._event({"prompt_version": result.prompt_version})
+        try:
+            for piece in result:
+                self._event({"delta": piece})
+        except UpstreamError:
+            # 半路断了就发一个错误事件，且不落库——半截回复也是伪造回复。
+            self._event({"error": {"code": "upstream_unavailable",
+                                   "message": COPY["upstream_unavailable"]}})
+            return
+        result.finish()
+        self._event({"done": True})
+
+    def _event(self, payload: dict) -> None:
+        """SSE 的一帧：data: 开头，空行结尾。"""
+        self.wfile.write(("data: " + json.dumps(payload) + "\n\n").encode())
+        self.wfile.flush()
+
+    def _cors(self) -> None:
+        self.send_header("access-control-allow-origin", _allow_origin(self.headers.get("origin")))
+        self.send_header("vary", "origin")
+
+    def do_OPTIONS(self):
+        """预检。浏览器带 authorization 头就一定会先问一次。"""
+        self.send_response(204)
+        self._cors()
+        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+        self.send_header("access-control-allow-headers", "authorization, content-type")
+        self.send_header("access-control-max-age", "86400")
+        self.end_headers()
+
+    def _json(self, status: int, payload: dict) -> None:
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self._cors()
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        """默认日志会把请求行写进 stdout，这里静默，免得日志成为另一个泄漏面。"""

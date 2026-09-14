@@ -1,0 +1,149 @@
+/* 设计系统的 token，来自 Claude Design 的 Organic 系统（_ds/.../styles.css）。
+   那套是浅色的，Fencepost 用的是同一组色阶的夜间反转——原型里那些十六进制不是随手挑的：
+   #d67f48 是 accent-500，#f6a06b 是 400，#b2622d 是 600，灰是 neutral-300/400/500/700。
+   所以这里带过来的是色阶本身，语义 token 建在色阶上，不抄散落的 hex。 */
+
+:root {
+  /* ── 色阶（原样搬自设计系统） ── */
+  --color-neutral-100: #f9f4ed;
+  --color-neutral-200: #eee7db;
+  --color-neutral-300: #dcd3c4;
+  --color-neutral-400: #c0b6a5;
+  --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-neutral-800: #474238;
+  --color-neutral-900: #2e2b25;
+
+  --color-accent-300: #ffc6a5;
+  --color-accent-400: #f6a06b;
+  --color-accent-500: #d67f48;
+  --color-accent-600: #b2622d;
+  --color-accent-700: #8c491a;
+
+  --color-accent-2-300: #ccdbb2;
+  --color-accent-2-400: #aebf92;
+  --color-accent-2-800: #3d472b;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+  --radius-pill: 999px;
+
+  /* ── 夜间语义层 ──
+     负鼠是夜行动物，整个产品发生在傍晚到深夜。暖调深色，不要蓝黑也不要纯黑。 */
+  --bg-outer: #100e0c;       /* 内容区外面那圈 */
+  --bg: #1a1713;             /* 页面 */
+  --surface: #241e18;        /* 卡片 */
+  --surface-raised: #2f2820; /* 卡片上的东西 */
+  --surface-sunken: #14110e; /* 图片位 */
+
+  --text: #f4ebdc;
+  --text-body: var(--color-neutral-300);
+  --text-muted: var(--color-neutral-400);
+  --text-dim: var(--color-neutral-500);
+  --text-faint: #7d7365;
+  --line: rgba(244, 235, 220, 0.14);
+  --line-strong: rgba(244, 235, 220, 0.22);
+
+  --accent: var(--color-accent-500);
+  --accent-hover: var(--color-accent-400);
+  --accent-active: var(--color-accent-600);
+  --on-accent: #201e1d;
+  --accent-wash: rgba(214, 127, 72, 0.12);
+
+  --leaf: var(--color-accent-2-400);
+  --leaf-wash: rgba(174, 191, 146, 0.09);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-outer);
+  color: var(--text);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 展示字体只留给字标。设计系统的 --font-heading 是 Caprasimo，很重的展示体，
+   拿来做正文标题就踩了「不要卡通」那条线——原型里每一个 h1 都显式改回了正文字体，
+   那是判断不是巧合，所以这里把它固化成规则。 */
+h1,
+h2,
+h3 {
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 2px;
+}
+
+a {
+  color: inherit;
+}
+
+@keyframes fp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fp-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
