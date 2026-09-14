@@ -340,10 +340,6 @@ const TIMELINES = {
 // author never sees the internal judgement.
 export const BLOCKED_TRIGGER = "42 Example St";
 
-export const REASON_COPY = {
-  pii: "This mentions someone's address or name. Take that part out and you're good to post.",
-};
-
 let entrySeq = 0;
 
 export function dashboard() {
@@ -647,11 +643,22 @@ export function revokeGrant({ storyboardId, userId }) {
 
 export function issueShareLink({ storyboardId, level, expiresInDays }) {
   const days = expiresInDays || 7;
+  const id = "sl_" + Math.random().toString(36).slice(2, 8);
+  const expires_at = new Date(Date.now() + days * 86400000).toISOString();
+  // The share screen loads the code list again as soon as a code is issued, so a code that
+  // is not kept here is made and then missing from the list directly underneath it, which
+  // reads as the product losing it. Every other offline mutation already persists: turning
+  // a code off, revoking a grant, starting a thread, replying to one. This was the one that
+  // did not. Newest first, because the server lists them ORDER BY rowid DESC.
+  (LINKS[storyboardId] || (LINKS[storyboardId] = [])).unshift({
+    id, level, expires_at, max_uses: null, used_count: 0, revoked_at: null,
+    created_by: "u_mel", created_by_handle: "mel_k",   // whoever "I" am offline, as elsewhere
+  });
   return {
-    share_link_id: "sl_" + Math.random().toString(36).slice(2, 8),
+    share_link_id: id,
     token: "fixture-" + Math.random().toString(36).slice(2, 14),
     level,
-    expires_at: new Date(Date.now() + days * 86400000).toISOString(),
+    expires_at,
     max_uses: null,
   };
 }

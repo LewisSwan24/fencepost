@@ -135,3 +135,34 @@ test("no sentence blames the person who wrote it", () => {
     assert.ok(!forbidden.test(line), `${key} reads like a judgement of the person: ${line}`);
   }
 });
+
+test("the sentence somebody is stopped with is written in exactly one place", () => {
+  // fixtures.js used to carry its own REASON_COPY with a second copy of the pii sentence,
+  // next to the trigger that produces that code. Nothing imported it, so the interface was
+  // never wrong; what it was was a trap. Someone changing what an author reads would find
+  // two definitions, and the one sitting beside the trigger is the one they would reach
+  // for. The sentence would then be changed everywhere except where it is read.
+  //
+  // This is the copy §1 calls the most important in the product, and the test above cannot
+  // see a mistake like that: every key would still exist and every key would still be used.
+  const scan = [...sourceFiles(join(WEB, "app")), ...sourceFiles(join(WEB, "components")),
+                ...sourceFiles(join(WEB, "lib"))]
+    .filter((file) => !file.endsWith("copy.js"));
+
+  const duplicated = [];
+  for (const file of scan) {
+    const text = readFileSync(file, "utf8");
+    const where = file.slice(WEB.length + 1).replaceAll("\\", "/");
+    if (/export\s+(const|let|function)\s+REASON_/.test(text)) {
+      duplicated.push(`${where} exports its own REASON_ copy`);
+    }
+    for (const [code, sentence] of Object.entries(REASON_COPY)) {
+      if (text.includes(sentence)) duplicated.push(`${where} repeats the ${code} sentence`);
+    }
+    if (text.includes(REASON_FALLBACK)) duplicated.push(`${where} repeats the fallback sentence`);
+  }
+  // String.fromCharCode(10) rather than an escape: this file has been written through
+  // enough layers of quoting to have had the backslash eaten twice.
+  const NL = String.fromCharCode(10);
+  assert.deepEqual(duplicated, [], NL + duplicated.join(NL));
+});

@@ -82,16 +82,37 @@ This has been changed twice, both times for the same class of fault, which is wo
    what visitor B wrote.
 
 A new identity has access to no storyboard at all, so there has to be a **join code**:
-`NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN` holds a contribute-level share link, redeemed once
-automatically after a token is obtained, and a browser that has redeemed is noted so it does not
-redeem again. Holding the plaintext in the front end exposes nothing new — open sign-up already
-lets anyone exchange any handle for a token, and this code only grants contribute on the demo
-storyboard.
+`NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN` holds a share link to the demo storyboard, redeemed once
+automatically after a token is obtained. Holding the plaintext in the front end exposes nothing
+new — open sign-up already lets anyone exchange any handle for a token, and the code reaches one
+storyboard holding demo data.
+
+**The level it carries is the whole thing, and getting it wrong is silent.** The first code
+granted `contribute`. The Share button asks for `reshare`. So every visitor arrived one level
+below the permissioned QR code this product is about, the share screen was reachable by nobody
+on any storyboard a visitor could see, and typing the address went straight back to the
+storyboard because the screen stops people the server would refuse. Nothing failed and nothing
+was logged. A button was not drawn. Reported as "the share page has disappeared" on 2026-09-15,
+which is exactly what it looks like from outside.
+
+**What is remembered is the code, not the fact of having joined.** It used to store `"1"`,
+answering "has this browser ever joined?", and that is the wrong question: the moment a
+replacement code is issued, every visitor who had already joined skips it for good and stays on
+whatever the old one gave them. Keyed on the code, a new code is redeemed exactly once more by
+everybody, including the people carrying the old `"1"`, and an unchanged one is still never
+redeemed twice. Six tests in `api.test.mjs`.
 
 **It expires.** The server enforces 1 to 90 days; a permanent one cannot be issued. The current
 code runs until **2026-12-13**, after which a new visitor cannot redeem and opens to an empty
-dashboard (existing visitors are unaffected, their grant is already in the database). When it
-expires, issue another and update the variable.
+dashboard (existing visitors are unaffected, their grant is already in the database).
+
+Issuing one is `scripts/issue_join_code.py`, which did not exist until the level was wrong and
+there turned out to be no written-down way to make another. It lists what the owner can reach,
+refuses to issue without being told which storyboard, defaults to `reshare`, and then **redeems
+the code once as somebody else and checks what that person actually received** before saying it
+worked. The token is written to a file and never printed, so it stays out of scrollback and
+transcripts; the command it prints for `vercel env add` reads that file. The redeploy afterwards
+is not optional, because `NEXT_PUBLIC_` values are compiled into the bundle.
 
 A token by itself grants very little: visibility still follows `access_grants`, and a storyboard
 nobody shared with you will not open — the timeline answers 403 `no_access` and the assistant
@@ -196,6 +217,40 @@ for every one of them after something else slips in. Each mutation was checked: 
 species filter, collapsing the hash so a third of the pictures are never chosen, renaming a
 file, and emptying an author field each fail exactly the test meant to catch them.
 
+## Checked in a browser
+
+Some things the suite cannot reach, because they are React behaviour or focus behaviour and
+the tests run without a DOM. These were measured against `npm run dev` on 2026-09-15 by
+dispatching real pointer and keyboard events at the page, not by clicking through by hand:
+the preview pane scales an emulated viewport, so coordinates written by eye land somewhere
+else, and an earlier attempt to drag a mask box failed for that reason rather than because
+anything was wrong with the page. Computing the coordinates inside the page from
+`getBoundingClientRect()` removes that whole class of false finding.
+
+**The mask screen, and why dev mode is where it showed.** One drag left two identical boxes
+stacked exactly on top of each other, so the remove button looked broken: the first click
+took one away and the copy underneath was still sitting in the same place. Releasing a drag
+had been reaching the box through a `setLive` updater and calling `setBoxes` from inside it,
+and React invokes updaters twice under StrictMode precisely to make that show. React said so
+itself in the console, `Cannot update a component (DraftProvider) while rendering a different
+component (Mask)`. There is no `next.config`, so strict mode is on by default and anybody who
+clones this meets it at once; the production build does not double invoke, which is why
+walking the deployment by hand never turned it up. With `reactStrictMode: false` and nothing
+else changed, one drag gave one box, which is what identifies the mechanism rather than
+guessing at it. After the fix, with strict mode back on: one drag, one box; a twitchy tap
+still refused; remove works on the first click; covering both targets still enables Next.
+
+**The consent sheet.** `aria-modal="true"` is a statement to a screen reader that everything
+outside the dialog is not there, and it is only true if Tab is actually trapped. Verified on
+the same run: the dialog carries `aria-modal` and an `aria-labelledby` that points at a
+heading that exists, focus moves into the dialog on open, Tab from the last control wraps to
+the first and Shift+Tab from the first wraps to the last, Escape closes it, and focus returns
+to the button that opened it rather than being dropped on the body.
+
+**The rest of the screens.** Every route was loaded and the console read: no errors and no
+warnings beyond React's own DevTools notice. `/b/[id]/add/write` correctly bounces to the
+species step when the draft has no species, which is the guard doing its job.
+
 ## Layout
 
 ```
@@ -226,6 +281,7 @@ lib/fixtures.js              assistant responses and the offline dataset
 lib/copy.js                  user-facing copy, defined in one place
 lib/format.js                displaying times and handles
 lib/frames.js                the four images, their attribution, and the rule for matching them
+lib/mask.js                  whether a face or a plate is covered enough to send the frame
 ```
 
 ## Places the interface narrows to the server's rules, rather than pretending to

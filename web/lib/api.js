@@ -37,10 +37,15 @@ export const HANDLE = process.env.NEXT_PUBLIC_FENCEPOST_HANDLE || "";
 const HANDLE_KEY = "fencepost.handle";
 const JOINED_KEY = "fencepost.joined";
 
-// The join code: a contribute-level share link, in plaintext in the front end.
+// The join code: a share link to the demo storyboard, in plaintext in the front end.
 // This exposes nothing new — open sign-up already lets anyone exchange any handle for a
-// token, and this code only grants contribute on the demo storyboard. What it buys is
+// token, and the code reaches one storyboard holding demo data. What it buys is
 // **a separate identity per visitor** instead of everyone sharing one.
+//
+// The level it carries is decided when the code is issued, not here, so it is not written
+// down in this file. It was contribute at first, and that quietly took the share screen out
+// of the product: the Share button needs reshare, so every visitor arrived one level below
+// the thing Fencepost is actually about. scripts/issue_join_code.py is how a code is made.
 const JOIN_TOKEN = process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN || "";
 
 const FIXTURES_HANDLE = "mel_k";     // who "I" am offline, matching the fixtures owner
@@ -131,20 +136,30 @@ async function ensureSession() {
   return pending;
 }
 
-// Once a new visitor has a token, redeem the join code for a contribute grant, or they open
-// to an empty dashboard: that is the price of one identity per visitor — a new identity has
-// access to no storyboard at all.
+// Once a new visitor has a token, redeem the join code, or they open to an empty dashboard:
+// that is the price of one identity per visitor — a new identity has access to no
+// storyboard at all.
+//
+// What is remembered is **the code that was redeemed**, not the fact of having redeemed one.
+// It used to write "1", which answers "has this browser ever joined?", and that is the wrong
+// question. A join code does not last: the server allows at most 90 days, and the level it
+// grants is a decision that can change. The moment a replacement is issued, every visitor
+// who had already joined would skip it for good and stay on whatever the old code gave them
+// — with nothing to see, because joining is silent and the difference only shows up as a
+// missing button. Keying on the code means a new code is redeemed exactly once more, by
+// everybody, and an unchanged one is still never redeemed twice.
+//
+// Keeping the code in localStorage exposes nothing: NEXT_PUBLIC_ puts it in the bundle in
+// plaintext, which is where this copy came from.
 //
 // A failed redemption does not block anybody. The code may have expired or been turned off,
 // and then the interface carries on and simply shows no demo storyboard — better than the
-// whole site collapsing. A link lasts at most 90 days (the server enforces 1..90), so this
-// is not valid for ever: when it expires a new one has to be issued and
-// NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN updated.
+// whole site collapsing.
 async function joinDemo(token) {
-  if (!JOIN_TOKEN || readStore(JOINED_KEY)) return;
+  if (!JOIN_TOKEN || readStore(JOINED_KEY) === JOIN_TOKEN) return;
   try {
     await request("/api/share-links/redeem", { body: { token: JOIN_TOKEN }, auth: token });
-    writeStore(JOINED_KEY, "1");
+    writeStore(JOINED_KEY, JOIN_TOKEN);
   } catch {
     /* no redemption this time; try again on the next page open */
   }
