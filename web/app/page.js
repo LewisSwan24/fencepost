@@ -101,7 +101,10 @@ export default function Home() {
         <Sheet onClose={() => setNewOpen(false)} labelledBy="new-title">
           <h2 id="new-title" className={ui.sheetTitle}>New storyboard</h2>
           <label htmlFor="sb-title" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Title</label>
+          {/* Capped where the server caps it, so nobody types past a limit they cannot
+              see and then meets a 400 that explains nothing. */}
           <input id="sb-title" value={title} onChange={(e) => setTitle(e.target.value)}
+                 maxLength={120}
                  placeholder="The one in the jacaranda"
                  style={{
                    width: "100%", height: 48, padding: "0 16px", marginTop: 6,

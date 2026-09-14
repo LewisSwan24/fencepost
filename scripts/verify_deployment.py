@@ -7,9 +7,16 @@
 The walk: 404, bad token 401, exchange a token, create a storyboard, post an entry, read
 the timeline, did the Screener really run, the review queue, the share chain (issue, a
 second person redeems, turn it off, cannot redeem once off, turning off leaves existing
-access alone), the forum (start a thread, reply, a refused reply carrying a reason), the
-Neighbour non-streaming and streaming, the Writer, and the submission rate limit. Seven
-real model calls (four Screener, three assistant); the rate-limit loop makes none.
+access alone), the refusals (see below), the forum (start a thread, reply, a refused
+reply carrying a reason), the Neighbour non-streaming and streaming, the Writer, and the
+submission rate limit. Seven real model calls (four Screener, three assistant); neither
+the refusals nor the rate-limit loop makes any.
+
+The refusals are there because every other check is a path that should work, and a
+deployment can also fail by letting something through. That failure makes no noise: a
+permission gate that wrongly opens looks exactly like one that works. The unit suite
+asserts these same gates against a local store, while here they are read through the
+hosted driver, which is the difference that has cost time before.
 
 **Use the production alias** (`fencepost-api.vercel.app`), not the
 `fencepost-<hash>-<team>.vercel.app` that `vercel deploy` prints. That one sits behind
@@ -117,6 +124,10 @@ def main():
         print("\n" + why)
         sys.exit(1)
 
+    def refusal(payload):
+        """The error code a refusal carries, or an empty string if it was not one."""
+        return (payload.get("error") or {}).get("code", "")
+
     print(f"Running against {client.base}:\n")
 
     status, payload = client.send("/api/nothing-here", body={})
@@ -163,7 +174,8 @@ def main():
     record("got a token", True, session["handle"])
     token = session["token"]
 
-    status, board = client.send("/api/storyboards", body={"title": "deployment check"}, token=token)
+    TITLE = "deployment check"
+    status, board = client.send("/api/storyboards", body={"title": TITLE}, token=token)
     if status != 200:
         record("created a storyboard", False, f"HTTP {status} {board}")
         stop("Every check below hangs off this storyboard, so this is as far as it goes.")
@@ -243,6 +255,76 @@ def main():
     # closed a door.
     status, still = client.send(f"/api/timeline?storyboard_id={storyboard}", token=guest)
     record("turning off keeps access", status == 200, f"HTTP {status}")
+
+    # ── Refusals ──
+    # The edit probe deliberately sends the text the entry already carries, so even a
+    # wrongly-successful call would write nothing. The delete probe has no such comfort,
+    # which is exactly why it is worth asserting.
+    status, grants = client.send(f"/api/grants?storyboard_id={storyboard}", token=token)
+    people = grants.get("grants") or []
+    owner_id = grants.get("owner_id")
+    record("who has access", status == 200 and len(people) == 2 and bool(owner_id),
+           f"HTTP {status}, {len(people)} people" if status == 200 else str(grants)[:50])
+
+    status, payload = client.send(f"/api/grants?storyboard_id={storyboard}", token=guest)
+    record("view cannot read that list", status == 403 and refusal(payload) == "cannot_share",
+           f"HTTP {status} {refusal(payload)}")
+
+    stranger = client.send("/api/session",
+                           body={"handle": args.handle + "-stranger"})[1].get("token")
+    status, payload = client.send(f"/api/timeline?storyboard_id={storyboard}", token=stranger)
+    record("no grant, no timeline", status == 403 and refusal(payload) == "no_access",
+           f"HTTP {status} {refusal(payload)}")
+
+    # The one that matters most in the whole script. Context is assembled server-side
+    # from the requester's identity, and build() raises before any model call, so this
+    # refusal costs nothing and proves the assistant cannot be pointed at a storyboard
+    # the caller holds no grant on.
+    status, payload = client.send("/api/assistant", token=stranger, body={
+        "role": "neighbour", "storyboard_id": storyboard, "message": "what is on this one?"})
+    record("assistant refuses a hidden board",
+           status == 403 and refusal(payload) == "no_access",
+           f"HTTP {status} {refusal(payload)}")
+
+    # And the refusal says nothing about the storyboard. One that echoed the title back
+    # would turn a guessed id into a way of confirming that a storyboard exists.
+    quiet = TITLE not in str(payload)
+    record("the refusal leaks nothing", quiet,
+           "title absent" if quiet else "the title came back inside the refusal")
+
+    mine = entry.get("entry_id")
+    same_text = shown[0].get("story") if shown else ""
+    status, payload = client.send("/api/entries/edit", token=guest,
+                                  body={"entry_id": mine, "story": same_text})
+    record("cannot edit another author", status == 403 and refusal(payload) == "not_your_entry",
+           f"HTTP {status} {refusal(payload)}")
+
+    status, payload = client.send("/api/entries/delete", token=guest, body={"entry_id": mine})
+    record("cannot delete another author", status == 403 and refusal(payload) == "not_your_entry",
+           f"HTTP {status} {refusal(payload)}")
+
+    status, payload = client.send("/api/review/vote", token=guest,
+                                  body={"entry_id": mine, "vote": "worth_checking"})
+    record("view cannot vote", status == 403 and refusal(payload) == "read_only_access",
+           f"HTTP {status} {refusal(payload)}")
+
+    status, payload = client.send("/api/storyboards/close", token=guest,
+                                  body={"storyboard_id": storyboard})
+    record("only the owner closes", status == 403 and refusal(payload) == "not_the_owner",
+           f"HTTP {status} {refusal(payload)}")
+
+    status, payload = client.send("/api/grants/revoke", token=guest,
+                                  body={"storyboard_id": storyboard, "user_id": owner_id})
+    record("only the owner revokes", status == 403 and refusal(payload) == "not_the_owner",
+           f"HTTP {status} {refusal(payload)}")
+
+    # Asserting the refusals is not the same as asserting nothing happened. A gate that
+    # answers 403 after having already written is still a gate that wrote.
+    status, after = client.send(f"/api/timeline?storyboard_id={storyboard}", token=token)
+    left = after.get("entries", [])
+    record("nothing was touched", status == 200 and len(left) == 1
+           and (left[0].get("story") if left else None) == same_text,
+           f"{len(left)} entry, text unchanged" if status == 200 else f"HTTP {status}")
 
     # The forum. Starting a thread screens the title joined to the body, not the body
     # alone — otherwise a question naming somebody's street address, with a clean body

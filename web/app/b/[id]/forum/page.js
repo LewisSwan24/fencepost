@@ -114,7 +114,7 @@ export default function Forum({ params }) {
           </div>
           <div className={styles.field}>
             <label className={styles.label} htmlFor="t-body">Your message</label>
-            <textarea id="t-body" className={styles.input} rows={5} value={body}
+            <textarea id="t-body" className={styles.input} rows={5} maxLength={4000} value={body}
                       onChange={(e) => { setBody(e.target.value); setBlocked(null); }}
                       placeholder="In your own words" />
           </div>

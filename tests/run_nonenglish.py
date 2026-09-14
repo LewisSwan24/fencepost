@@ -37,6 +37,7 @@ def main() -> None:
     cases = yaml.safe_load(CASES.read_text(encoding="utf-8"))
     client = DashScope()
     rows, agreed, floored = [], 0, 0
+    versions = set()
 
     for case in cases:
         result = roles.screener(client, "unknown", case["field"], case["input"])
@@ -47,6 +48,10 @@ def main() -> None:
         agreed += match
         floored += bool(result["downgraded_non_english"])
         rows.append((case, raw, verdict, result["codes"], match))
+        # Taken from the result rather than read off disk: this is the version the call
+        # actually recorded. A run that somehow spanned two would show both, rather than
+        # quietly claiming one.
+        versions.add(result["prompt_version"])
         mark = "match" if match else "differs"
         print(f"  {case['id']:6} {case['category']:9} human={case['expect']:4} "
               f"model={raw:6} final={verdict:6} {mark}")
@@ -59,6 +64,7 @@ def main() -> None:
         "# Non-English screening batch",
         "",
         f"- Run: {datetime.now():%Y-%m-%d %H:%M}",
+        f"- Prompt version: `{', '.join(sorted(versions)) or 'unknown'}`",
         f"- Sample: {total} cases, zh/vi/ar {counts['zh']}/{counts['vi']}/{counts['ar']}",
         f"- Agreed with the human judgement: {agreed}/{total} ({agreed / total:.0%})",
         "  - " + ", ".join(f"{lang} {by_language[lang]}/{counts[lang]}" for lang in ("zh", "vi", "ar")),

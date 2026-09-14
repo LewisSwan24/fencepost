@@ -19,6 +19,7 @@
 // Keep the extension: Next accepts either spelling, but `node --test` only accepts this
 // one, and lib/api.test.mjs has to import this file directly.
 import * as fixtures from "./fixtures.js";
+import { COPY } from "./copy.js";
 
 export const BASE = process.env.NEXT_PUBLIC_FENCEPOST_API || "http://127.0.0.1:8787";
 export const MODE = process.env.NEXT_PUBLIC_FENCEPOST_MODE || "hybrid";
@@ -161,11 +162,24 @@ async function request(path, { method, body, auth } = {}) {
   const headers = {};
   if (body) headers["content-type"] = "application/json";
   if (auth) headers.authorization = "Bearer " + auth;
-  const response = await fetch(BASE + path, {
-    method: method || (body ? "POST" : "GET"),
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(BASE + path, {
+      method: method || (body ? "POST" : "GET"),
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (cause) {
+    // fetch rejects before there is a response at all: the network is down, DNS failed,
+    // or the browser refused the origin. Every one of those arrives as a browser-specific
+    // string, and putting one in front of somebody makes a reachability problem look like
+    // a broken site.
+    //
+    // CORS lands here too, which matters on a deployment split across two projects: the
+    // browser says only that it failed, never which origin was refused. The original is
+    // kept on `cause`, so the console still has it while the screen does not.
+    throw new ApiError(COPY.unreachable, 0, "unreachable", cause);
+  }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     // The proxy always returns fixed copy, so it is safe to show the user directly.
@@ -176,11 +190,12 @@ async function request(path, { method, body, auth } = {}) {
 }
 
 export class ApiError extends Error {
-  constructor(message, status, code) {
+  constructor(message, status, code, cause) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.cause = cause;   // the browser own error, for the console rather than the screen
   }
 }
 

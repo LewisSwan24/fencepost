@@ -12,21 +12,10 @@ import { useRouter } from "next/navigation";
 import { CLIP } from "../../../../../lib/fixtures";
 import { COPY } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
+import { covered, isDeliberate } from "../../../../../lib/mask";
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
-
-const COVERED_ENOUGH = 0.78;
-
-function coverage(target, boxes) {
-  let best = 0;
-  for (const b of boxes) {
-    const ix = Math.max(0, Math.min(b.x + b.w, target.x + target.w) - Math.max(b.x, target.x));
-    const iy = Math.max(0, Math.min(b.y + b.h, target.y + target.h) - Math.max(b.y, target.y));
-    best = Math.max(best, (ix * iy) / (target.w * target.h));
-  }
-  return best;
-}
 
 export default function Mask({ params }) {
   const { id } = use(params);
@@ -40,7 +29,7 @@ export default function Mask({ params }) {
 
   const boxes = draft.boxes;
   const drawn = live ? [...boxes, live] : boxes;
-  const targets = CLIP.mask_targets.map((t) => ({ ...t, done: coverage(t, drawn) >= COVERED_ENOUGH }));
+  const targets = CLIP.mask_targets.map((t) => ({ ...t, done: covered(t, drawn) }));
   const blocked = targets.some((t) => !t.done);
 
   const pos = (e) => {
@@ -57,6 +46,14 @@ export default function Mask({ params }) {
   // new value and looked fine; the moment all three events fall in one task it reads the
   // old array and the box just drawn is treated as never drawn, and dropped. Not depending
   // on render timing removes that coin-flip.
+  //
+  // The version after that reached the box through a setLive updater and called setBoxes
+  // from inside it. Updaters have to be pure, and StrictMode invokes them twice to say so,
+  // which meant every drag under `npm run dev` left two identical boxes stacked exactly on
+  // top of each other. The remove button then looked broken: the first click took one away
+  // and the copy underneath was still there, in the same place. Measured on 2026-09-15 by
+  // dispatching one drag, which gave two boxes with StrictMode on and one with it off. The
+  // live box is in the ref now, so release reads it without an updater in the way.
   function down(e) {
     // A synthetic pointer event has no active pointerId and capture throws NotFoundError.
     // If it cannot be captured, let it go: dragging still works, it only breaks when a
@@ -71,20 +68,20 @@ export default function Mask({ params }) {
     if (!drag.current) return;
     const p = pos(e);
     const { from } = drag.current;
-    setLive({
+    const box = {
       x: Math.min(p.x, from.x), y: Math.min(p.y, from.y),
       w: Math.abs(p.x - from.x), h: Math.abs(p.y - from.y),
-    });
+    };
+    drag.current.box = box;
+    setLive(box);
   }
 
   function up() {
     if (!drag.current) return;
+    const { box } = drag.current;
     drag.current = null;
-    setLive((box) => {
-      // A twitchy tap is not a box
-      if (box && box.w >= 5 && box.h >= 5) draft.setBoxes((prev) => [...prev, box]);
-      return null;
-    });
+    if (isDeliberate(box)) draft.setBoxes((prev) => [...prev, box]);
+    setLive(null);
   }
 
   async function sendFrame() {

@@ -27,6 +27,11 @@ export const COPY = {
   checkedYes: "Looks right",
   checkedNo: "Worth checking",
   assistantOffline: "The assistant is offline right now. Writing and posting work as normal.",
+  // Shown when fetch rejects before there is a response: the network is down, DNS failed,
+  // or the browser refused the origin. Without it the screen carries whatever string that
+  // browser happens to use, which reads like a broken site rather than one that cannot be
+  // reached, and differs depending on what they opened it in.
+  unreachable: "Can't reach Fencepost right now. Try again in a moment.",
   // This line lives in the drawer, not in the footer. The home page footer does say "Possum
   // Help is running from fixtures", but somebody who opens a storyboard directly never sees
   // it — and the thought "I am talking to an AI" forms inside this drawer. Every stand-in in

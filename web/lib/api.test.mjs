@@ -101,3 +101,24 @@ test("an unusable localStorage must not crash, or change who you are each time",
   assert.match(a, /^guest_/);
   assert.equal(a, b, "the identity changed inside one session");
 });
+
+test("a server that cannot be reached says so in words, not in the browser's", async () => {
+  // fetch rejects before there is a response when the network is down, DNS fails, or the
+  // browser refuses the origin. Whatever string that browser uses for it ("Failed to fetch",
+  // "NetworkError when attempting to fetch resource.", "Load failed") used to go straight to
+  // the screen, where it reads like a broken site and differs by browser.
+  //
+  // CORS arrives here too, which is the one that matters on a deployment split across two
+  // projects: the browser says only that it failed, never which origin was refused.
+  const api = await freshApi();
+  const original = new TypeError("Failed to fetch");
+  globalThis.fetch = () => Promise.reject(original);
+
+  const err = await api.dashboard().then(() => null, (e) => e);
+  assert.ok(err, "an unreachable server resolved instead of rejecting");
+  assert.equal(err.code, "unreachable", "callers need to tell this apart from a refusal");
+  assert.equal(err.status, 0);
+  assert.match(err.message, /reach Fencepost/, "the browser string reached the screen");
+  assert.doesNotMatch(err.message, /fetch/i);
+  assert.equal(err.cause, original, "the original is kept for the console");
+});

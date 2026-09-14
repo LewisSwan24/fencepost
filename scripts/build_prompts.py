@@ -87,7 +87,11 @@ def main() -> None:
         path.write_text(header + body + "\n", encoding="utf-8", newline="\n")
         print(f"  {path.relative_to(ROOT)}  ({len(body.splitlines())} lines)")
 
-    (OUT / "VERSION").write_text(version + "\n", encoding="utf-8")
+    # newline="\n" matters here as much as it does above: without it, write_text
+    # translates on Windows and VERSION alone comes out CRLF while every other generated
+    # file is LF. The generator then dirties git on every run, which makes it look
+    # non-deterministic and invites somebody to commit a line-ending-only change.
+    (OUT / "VERSION").write_text(version + "\n", encoding="utf-8", newline="\n")
     print(f"  prompts/VERSION  ({version})")
     print("\nReminder: every model call must record this version in "
           "screening_results / chat_messages.")
