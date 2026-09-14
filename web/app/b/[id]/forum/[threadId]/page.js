@@ -80,7 +80,7 @@ export default function Thread({ params }) {
         {canReply ? (
           <div className={styles.field} style={{ marginTop: 20 }}>
             <label className={styles.label} htmlFor="reply">{COPY.reply}</label>
-            <textarea id="reply" className={styles.input} rows={4} value={body}
+            <textarea id="reply" className={styles.input} rows={4} maxLength={4000} value={body}
                       onChange={(e) => { setBody(e.target.value); setBlocked(null); }}
                       placeholder="Add to the thread" />
           </div>

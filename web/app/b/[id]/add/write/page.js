@@ -91,7 +91,10 @@ export default function WriteItUp({ params }) {
             <label htmlFor="fun-fact">Fun fact</label>
             <span className={styles.optional}>optional</span>
           </div>
-          <textarea id="fun-fact" className={styles.input} rows={3}
+          {/* The server caps these at FUN_FACT_LIMIT and STORY_LIMIT. Capping here too
+              stops somebody typing past a limit they cannot see and meeting a 400 that
+              says nothing useful. */}
+          <textarea id="fun-fact" className={styles.input} rows={3} maxLength={500}
                     placeholder="Something true about this one"
                     value={draft.funFact}
                     onChange={(e) => draft.setFunFact(e.target.value)} />
@@ -99,7 +102,7 @@ export default function WriteItUp({ params }) {
 
         <div className={styles.field}>
           <label htmlFor="story" className={styles.label}>What happened</label>
-          <textarea id="story" className={styles.input} rows={6}
+          <textarea id="story" className={styles.input} rows={6} maxLength={4000}
                     placeholder="What you saw, in your own words"
                     value={draft.story}
                     onChange={(e) => { draft.setStory(e.target.value); setHelper(null); }} />

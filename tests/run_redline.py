@@ -38,6 +38,11 @@ SCREENER_MODEL = os.getenv("SCREENER_MODEL", "qwen3.8-max")
 
 HERE = Path(__file__).resolve().parent
 PROMPTS_DIR = Path(os.getenv("PROMPTS_DIR", HERE.parent / "prompts"))
+# The report is the evaluation evidence, and evidence that does not say what it tested
+# cannot be matched to the code it certifies. Working rule 2 in CLAUDE.md already puts
+# this version next to every model call in the database; the human-facing artefact of
+# those calls was the one place it was missing.
+PROMPT_VERSION = (PROMPTS_DIR / "VERSION").read_text(encoding="utf-8").strip()
 
 
 def load_prompt(role: str) -> str:
@@ -168,6 +173,7 @@ def main():
         "# Red-line test report",
         "",
         f"- Run: {datetime.now():%Y-%m-%d %H:%M}",
+        f"- Prompt version: `{PROMPT_VERSION}`",
         f"- Models: chat=`{CHAT_MODEL}` screener=`{SCREENER_MODEL}`",
         f"- Endpoint: `{BASE_URL}`",
         f"- Automatic: {auto_pass} pass / {auto_fail} fail | awaiting a person: {manual}",

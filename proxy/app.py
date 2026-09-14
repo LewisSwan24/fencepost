@@ -22,7 +22,14 @@ SUBJECTS = {"entry", "forum_post", "submission"}
 SPECIES = {"brushtail", "ringtail", "other", "unknown"}
 WRITE_LEVELS = {"contribute", "reshare"}          # view can only look
 LEVEL_RANK = {"view": 0, "contribute": 1, "reshare": 2}
-# user-flow §6: seven days by default. A short window means a leaked link is exposed briefly.
+SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
+
+# Length caps for the two fields on an entry. A story is the same kind of free text as a
+# forum body, which is already capped at 4000, so it takes the same number. A fun fact is
+# one fact rather than a paragraph: 500 is generous for that and still stops a pasted
+# document arriving in a field meant for a sentence.
+FUN_FACT_LIMIT = 500
+STORY_LIMIT = 4000
 SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
 
 # Copy sent to the client is always fixed; where ux-copy.md has a line, that line is used.
@@ -353,8 +360,16 @@ def submit_entry(body: dict, token: str, deps: Deps):
         return refusal
     storyboard_id = body.get("storyboard_id")
     species = body.get("species")
-    fun_fact, story = body.get("fun_fact"), body.get("story")
-    if not storyboard_id or species not in SPECIES or not (fun_fact or story):
+    # The Screener judges what a piece of writing says, not what shape it arrives in.
+    # These two were the only free text reaching the database without passing through
+    # _plain_text, on the assumption that being screened was protection enough. Measured
+    # on 2026-09-14, it is not: a list in `story` reached the INSERT and took the whole
+    # function down with a ProgrammingError and no response at all, an integer was stored
+    # as an integer, and 200,000 characters were stored and sent to the model.
+    fun_fact, fact_ok = _plain_text(body.get("fun_fact"), FUN_FACT_LIMIT, multiline=True)
+    story, story_ok = _plain_text(body.get("story"), STORY_LIMIT, multiline=True)
+    if (not storyboard_id or species not in SPECIES or not fact_ok or not story_ok
+            or not (fun_fact or story)):
         return 400, _error("bad_request")
 
     _settle(deps)
@@ -443,9 +458,13 @@ def edit_entry(body: dict, token: str, deps: Deps):
     record, refusal = _own_editable_entry(body, token, deps)
     if refusal:
         return refusal
-    fun_fact = body.get("fun_fact", record["fun_fact"])
-    story = body.get("story", record["story"])
-    if not (fun_fact or story):
+    # Same validation as submitting. A missing key means "leave that field alone", so the
+    # stored value stands in and only what was actually sent gets checked.
+    fun_fact, fact_ok = (_plain_text(body["fun_fact"], FUN_FACT_LIMIT, multiline=True)
+                         if "fun_fact" in body else (record["fun_fact"], True))
+    story, story_ok = (_plain_text(body["story"], STORY_LIMIT, multiline=True)
+                       if "story" in body else (record["story"], True))
+    if not fact_ok or not story_ok or not (fun_fact or story):
         return 400, _error("bad_request")
 
     changed = [(field, value) for field, value, before in

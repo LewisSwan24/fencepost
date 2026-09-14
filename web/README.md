@@ -138,11 +138,13 @@ live. Replacing or adding an image means doing this step too, and adding the att
 ## Tests
 
 ```
-node --test lib/api.test.mjs lib/copy.test.mjs lib/format.test.mjs lib/fixtures.test.mjs
+npm test
 ```
 
-(`node --test lib/` would treat the non-test `.js` files in the directory as tests, so the files
-are listed.)
+That is `node --test "lib/*.test.mjs"`. The pattern is quoted because cmd.exe does not expand
+globs, and it matches `*.test.mjs` rather than the directory because `node --test lib/` would
+treat the ordinary `.js` modules in there as test files. A new test file is picked up without
+anything being edited, which the previous hand-written list of four filenames was not.
 
 `fixtures.test.mjs` pins the assistant's routing table: one case per demo script, plus several
 that once went to the wrong branch ("Will it hurt my cat?" belongs with injured rather than
@@ -160,6 +162,39 @@ fixtures locally on 2026-09-14.
 copying mistake — this file is the trace left by doing the comparison by hand. On 2026-09-14 it
 turned up three mismatches: two codes the Screener never sends were configured, five it really
 does send were missing, and the fallback sentence had been written separately.
+
+`classnames.test.mjs` is the same idea in a second namespace. `ui` and `styles` are CSS-module
+objects, so `ui.btnn` is `undefined`, React renders `className={undefined}` as no class at all,
+and what you get is a control that works perfectly with none of its styling: no error, no
+warning, nothing in the console. There are over 400 such references across one stylesheet per
+screen, which is more than anyone re-checks after a rename. The test also checks its own
+assumption, that `ui` is still `components/ui.module.css`, because if that export were rewired
+every other assertion would be reading the wrong stylesheet and would go on passing.
+
+`mask.test.mjs` covers the one place a safety line is enforced in code rather than written on
+a screen. `lib/mask.js` decides whether a face or a number plate is covered enough to send the
+frame; it used to sit inside the mask screen, where the suite could not reach it, while that
+screen's own header called it a hard requirement. The threshold is pinned at exactly 0.78 so a
+box that is precisely good enough is not refused with nothing on screen to say why, and two
+boxes that between them cover a target still do not count, which is deliberate: the gate asks
+for more than it needs rather than less.
+
+One mutation there is worth recording because it is not a test gap. Dropping either
+`Math.max(0, ...)` overlap clamp on its own changes nothing at all, since the other clamp
+already zeroes the product; measured, both give identical results on every case. Dropping both
+makes a box diagonally away from a target score 9 rather than 0, and a face nowhere near the
+box reads as covered. Two tests catch that.
+
+`frames.test.mjs` pins **the two promises attached to the placeholder photographs**. The first
+is a red line: visual identification never sets the species, and this module is where that is
+actually drawn in the interface, so an entry whose species is `other` or `unknown` gets no
+picture at all. A helpful-looking fallback would break the line silently, with a plausible
+possum on screen and nothing to notice. The second is the licence condition above. The credits
+page maps over `FRAMES`, so it can never miss an image; what it can do is keep saying "all
+four" and "three were taken in daylight" after a fifth is added, and go on claiming CC BY-SA
+for every one of them after something else slips in. Each mutation was checked: dropping the
+species filter, collapsing the hash so a third of the pictures are never chosen, renaming a
+file, and emptying an author field each fail exactly the test meant to catch them.
 
 ## Layout
 

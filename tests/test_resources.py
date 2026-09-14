@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 import api.index as entry                                          # noqa: E402
-from proxy.app import COPY, Deps                                   # noqa: E402
+from proxy.app import COPY, FUN_FACT_LIMIT, STORY_LIMIT, Deps      # noqa: E402
 from proxy.db import (Database, SqliteContext, SqliteHistory,      # noqa: E402
                       SqliteScreeningLog)
 
@@ -278,6 +278,97 @@ class Entries(Fixture):
         status, payload = self.get(f"/api/timeline?storyboard_id={board}", token=stranger["token"])
         self.assertEqual(403, status)
         self.assertEqual("no_access", payload["error"]["code"])
+
+
+class TheShapeOfAnEntry(Fixture):
+    """fun_fact and story are free text that reaches a model and then the database.
+
+    They were the only free text in the product that skipped _plain_text, because they
+    are screened and that was taken for protection. The Screener judges what writing
+    says, not what shape it arrives in.
+
+    Measured on 2026-09-14, before the fix: a list in `story` reached the INSERT and took
+    the whole function down with a ProgrammingError and no response at all, which on
+    Vercel is FUNCTION_INVOCATION_FAILED and nothing the client can read. An integer was
+    stored as an integer. 200,000 characters were stored, and sent to the model on the
+    way in.
+    """
+
+    def setUp(self):
+        super().setUp()
+        who, self.board_id = self.board()
+        self.token = who["token"]
+
+    def submit(self, **fields):
+        body = {"storyboard_id": self.board_id, "species": "ringtail"}
+        body.update(fields)
+        return self.post("/api/entries", body, token=self.token)
+
+    def stored(self):
+        _, view = self.get(f"/api/timeline?storyboard_id={self.board_id}",
+                           token=self.token)
+        return view.get("entries", [])
+
+    def test_a_list_is_refused_rather_than_killing_the_function(self):
+        status, out = self.submit(story=["on the fence", "at eleven"])
+        self.assertEqual(400, status)
+        self.assertEqual("bad_request", out["error"]["code"])
+        self.assertEqual([], self.stored())
+
+    def test_a_number_is_not_a_fun_fact(self):
+        status, _ = self.submit(fun_fact=42, story="on the fence")
+        self.assertEqual(400, status, "an integer was stored as an integer")
+        self.assertEqual([], self.stored())
+
+    def test_a_story_longer_than_the_cap_is_refused(self):
+        status, _ = self.submit(story="o" * (STORY_LIMIT + 1))
+        self.assertEqual(400, status)
+        self.assertEqual([], self.stored())
+
+    def test_a_story_exactly_at_the_cap_is_allowed(self):
+        """The boundary belongs to the user, not to the validator."""
+        status, out = self.submit(story="o" * STORY_LIMIT)
+        self.assertEqual(200, status)
+        self.assertTrue(out["published"])
+
+    def test_a_fun_fact_longer_than_the_cap_is_refused(self):
+        status, _ = self.submit(fun_fact="f" * (FUN_FACT_LIMIT + 1), story="on the fence")
+        self.assertEqual(400, status)
+        self.assertEqual([], self.stored())
+
+    def test_a_hidden_control_character_is_refused(self):
+        """Built with chr() rather than an escape: a real one in the source would stop
+        Python compiling the file at all.
+        """
+        status, _ = self.submit(story="on the fence" + chr(7))
+        self.assertEqual(400, status)
+
+    def test_newlines_are_still_allowed(self):
+        """A story is multiline. Refusing control characters must not refuse a paragraph
+        break, or the cure is worse than the disease.
+        """
+        status, out = self.submit(story="on the fence" + chr(10) + "then the jacaranda")
+        self.assertEqual(200, status)
+        self.assertTrue(out["published"])
+
+    def test_whitespace_alone_is_not_a_sighting(self):
+        status, _ = self.submit(story="    ")
+        self.assertEqual(400, status, "a blank entry would render as an unexplained gap")
+
+    def test_the_text_is_stored_stripped(self):
+        self.submit(story="   on the fence at eleven   ")
+        self.assertEqual("on the fence at eleven", self.stored()[0]["story"])
+
+    def test_an_edit_cannot_smuggle_in_what_a_submission_cannot(self):
+        """The edit path reads the same two fields and had the same hole."""
+        self.submit(story="on the fence at eleven")
+        entry_id = self.stored()[0]["id"]
+        for bad in (["a", "b"], 42, "o" * (STORY_LIMIT + 1), "on the fence" + chr(7)):
+            status, _ = self.post("/api/entries/edit",
+                                  {"entry_id": entry_id, "story": bad}, token=self.token)
+            self.assertEqual(400, status, f"{type(bad).__name__} got through the edit path")
+        self.assertEqual("on the fence at eleven", self.stored()[0]["story"],
+                         "a refused edit changed the stored text")
 
 
 class Edits(Fixture):
