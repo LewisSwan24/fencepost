@@ -1,0 +1,43 @@
+/* Field styling matches forum.module.css and write.module.css rather than inventing a
+   third look for the same control. */
+
+.lede {
+  font-size: 15px; line-height: 1.6; color: var(--text-body); margin: 0 0 24px;
+}
+
+.form {
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+.field {
+  display: flex; flex-direction: column; gap: 7px;
+}
+
+.label {
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim);
+}
+
+.input {
+  width: 100%; padding: 13px 15px; border-radius: var(--radius-md);
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font-size: 15px; line-height: 1.6;
+}
+.input:focus { border-color: var(--accent-hover); outline: none; }
+
+/* Not an error, and not styled as one. It is a condition of making an account here, said
+   before the account exists rather than discovered after the password is forgotten. */
+.warn {
+  font-size: 13px; line-height: 1.55; color: var(--text-dim); margin: 0;
+  padding: 11px 13px; border-radius: var(--radius-md); background: var(--surface);
+}
+
+.error {
+  font-size: 13.5px; line-height: 1.55; color: var(--accent-hover); margin: 0;
+}
+
+.swap {
+  margin-top: 22px; background: none; border: none; padding: 0;
+  font: inherit; font-size: 13.5px; color: var(--text-dim);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.swap:hover { color: var(--text-body); }

@@ -27,9 +27,14 @@ async function freshApi({ store = {}, crypto, brokenStorage = false, joinToken }
   globalThis.window = {
     localStorage: brokenStorage
       ? { getItem() { throw new Error("SecurityError"); },
-          setItem() { throw new Error("SecurityError"); } }
+          setItem() { throw new Error("SecurityError"); },
+          removeItem() { throw new Error("SecurityError"); } }
+      // removeItem belongs here for the same reason the other two do: leaving it off makes
+      // every clear a silent no-op, and a test for "the dead session is dropped" then fails
+      // against a product that drops it perfectly well in a browser.
       : { getItem: (k) => (k in store ? store[k] : null),
-          setItem: (k, v) => { store[k] = String(v); } },
+          setItem: (k, v) => { store[k] = String(v); },
+          removeItem: (k) => { delete store[k]; } },
   };
   // Node's globalThis.crypto is a read-only getter; assigning does nothing, so defineProperty.
   if (crypto !== undefined) {
@@ -164,11 +169,12 @@ test("a new visitor redeems the join code, once", async () => {
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "the code was not redeemed");
   assert.equal(redeems(calls)[0].body.token, "jt-one");
-  assert.equal(store["fencepost.joined"], "jt-one", "what was redeemed was not remembered");
+  assert.equal(store["fencepost.joined"], "jt-one|u_guest",
+    "what was redeemed, and by whom, was not remembered");
 });
 
 test("the same code is never redeemed twice", async () => {
-  const store = { "fencepost.joined": "jt-one" };
+  const store = { "fencepost.joined": "jt-one|u_guest" };
   const api = await freshApi({ store, joinToken: "jt-one" });
   const calls = stubFetch(HAPPY);
 
@@ -181,14 +187,14 @@ test("a replacement code is picked up by somebody who already joined", async () 
   // it grants is a decision that can change, so replacing one has to reach the people
   // already here. Storing a flag instead of the code meant it never did: they skipped the
   // new code for good and stayed on whatever the old one gave them.
-  const store = { "fencepost.joined": "jt-one" };
+  const store = { "fencepost.joined": "jt-one|u_guest" };
   const api = await freshApi({ store, joinToken: "jt-two" });
   const calls = stubFetch(HAPPY);
 
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "the replacement code was skipped");
   assert.equal(redeems(calls)[0].body.token, "jt-two");
-  assert.equal(store["fencepost.joined"], "jt-two");
+  assert.equal(store["fencepost.joined"], "jt-two|u_guest");
 });
 
 test("somebody carrying the old flag picks up the code too", async () => {
@@ -201,7 +207,7 @@ test("somebody carrying the old flag picks up the code too", async () => {
 
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "a visitor from before the change never joins again");
-  assert.equal(store["fencepost.joined"], "jt-two");
+  assert.equal(store["fencepost.joined"], "jt-two|u_guest");
 });
 
 test("a code that no longer works leaves the rest of the site standing", async () => {
@@ -223,4 +229,55 @@ test("with no code configured nothing is redeemed", async () => {
 
   await api.dashboard();
   assert.equal(redeems(calls).length, 0);
+});
+
+test("a second identity in the same browser joins on its own account", async () => {
+  // Registering makes a second person in a browser that already holds a guest. Keyed on the
+  // code alone, the mark said "this browser has joined" and the new account skipped it — so
+  // somebody would sign up and land on an empty dashboard, holding a grant to nothing.
+  const store = { "fencepost.joined": "jt-one|u_guest" };
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch({ ...HAPPY,
+    "/api/register": { token: "tok2", user_id: "u_ada", handle: "ada_l" } });
+
+  const made = await api.registerAccount("ada_l", "correct horse battery staple");
+  assert.equal(made.user_id, "u_ada");
+  assert.equal(redeems(calls).length, 1, "the new account was left with access to nothing");
+  assert.equal(store["fencepost.joined"], "jt-one|u_ada");
+});
+
+test("signing in is remembered across a reload, and signing out is too", async () => {
+  const store = {};
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  stubFetch({ ...HAPPY, "/api/login": { token: "tok2", user_id: "u_ada", handle: "ada_l" } });
+
+  await api.signIn("ada_l", "correct horse battery staple");
+  const kept = JSON.parse(store["fencepost.session"]);
+  assert.equal(kept.user_id, "u_ada");
+  assert.equal(kept.account, true, "the interface cannot tell an account from a guest");
+
+  // A fresh module is a reload: the stored session has to be picked up without another
+  // /api/session exchange, or a refresh would silently sign somebody out.
+  const reloaded = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch(HAPPY);
+  const back = await reloaded.whoAmI();
+  assert.equal(back.handle, "ada_l");
+  assert.equal(back.account, true);
+  assert.equal(calls.filter((c) => c.path === "/api/session").length, 0,
+    "a reload threw away the session and became a guest again");
+
+  reloaded.signOut();
+  assert.equal(store["fencepost.session"], undefined, "signing out left the token behind");
+});
+
+test("a token the server no longer accepts is dropped rather than kept for ever", async () => {
+  // Rotating FENCEPOST_TOKEN_SECRET, or clearing the database, leaves a stored token that
+  // answers 401 to everything. Kept, it fails every call and the site reads as broken
+  // instead of as signed out.
+  const store = { "fencepost.session": JSON.stringify({ user_id: "u_old", handle: "ada_l", token: "stale", account: true }) };
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  stubFetch({ "/api/dashboard": { status: 401, payload: { error: { code: "unauthorized", message: "no" } } } });
+
+  await api.dashboard().then(() => null, (e) => e);
+  assert.equal(store["fencepost.session"], undefined, "the dead session was kept");
 });

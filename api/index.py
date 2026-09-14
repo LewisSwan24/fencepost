@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, handle_stream,
                        cast_review_vote, close_storyboard, create_post, create_thread,
                        dashboard, delete_entry, dispose_entry,
-                       edit_entry, issue_share_link, list_grants, list_share_links, list_threads, read_thread,
+                       edit_entry, issue_share_link, list_grants, list_share_links, list_threads,
+                       login, read_thread, register,
                        review_queue,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        submit_entry, timeline)
@@ -21,7 +22,8 @@ from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
                       SqliteScreeningLog)
 from proxy.model import DashScope, UpstreamError, redact
 
-POST_ROUTES = ("/api/session", "/api/storyboards", "/api/storyboards/close",
+POST_ROUTES = ("/api/session", "/api/register", "/api/login",
+               "/api/storyboards", "/api/storyboards/close",
                "/api/videos", "/api/entries",
                "/api/entries/edit", "/api/entries/delete", "/api/share-links",
                "/api/share-links/redeem", "/api/share-links/revoke", "/api/grants/revoke",
@@ -120,6 +122,10 @@ class handler(BaseHTTPRequestHandler):
                                               "message": COPY["upstream_unavailable"]}})
         if path == "/api/session":
             return self._json(*create_session(body, deps))
+        if path == "/api/register":
+            return self._json(*register(body, deps))
+        if path == "/api/login":
+            return self._json(*login(body, deps))
         if path == "/api/storyboards":
             return self._json(*create_storyboard(body, token, deps))
         if path == "/api/storyboards/close":

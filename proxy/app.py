@@ -30,7 +30,15 @@ SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
 # document arriving in a field meant for a sentence.
 FUN_FACT_LIMIT = 500
 STORY_LIMIT = 4000
-SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
+
+# Accounts. A handle is one word that sits next to what somebody wrote, so 24 is generous
+# and 3 stops a single letter. The password floor is 8; the ceiling is not a rule about
+# passwords but about scrypt, which is deliberately expensive and should not be pointed at
+# a megabyte of text by anybody who asks.
+HANDLE_MIN = 3
+HANDLE_MAX = 24
+PASSWORD_MIN = 8
+PASSWORD_MAX = 200
 
 # Copy sent to the client is always fixed; where ux-copy.md has a line, that line is used.
 # Upstream errors, prompt contents and keys never travel outward, not a word.
@@ -56,6 +64,14 @@ COPY = {
     "rate_limited_chat": "You have used today's assistant allowance. Writing, posting and sharing all still work.",
     "rate_limited_vision": "You have used this hour's frame identifications. You can still ask in words.",
     "rate_limited_submission": "That is a lot of posts in a short time. Try again shortly.",
+    "bad_handle": "A name needs 3 to 24 characters and no spaces.",
+    "weak_password": "A password needs at least 8 characters.",
+    "handle_taken": "That name is taken. Try another one.",
+    # One sentence for every way of failing to sign in. Saying which half was wrong tells
+    # somebody whether that name exists, which is the first thing worth knowing to an
+    # attacker and of no use at all to the person who mistyped their own password.
+    "bad_credentials": "That name and password do not match.",
+    "rate_limited_login": "Too many sign-in attempts. Try again in a few minutes.",
 }
 
 
@@ -255,6 +271,72 @@ def handle_stream(body: dict, token: str, deps: Deps):
 
 
 # ---------- resource endpoints ----------
+
+def _handle(value):
+    """A display name: one word, shown as @handle beside what a person wrote.
+
+    Deliberately not restricted to ASCII. This product already refuses to treat non-English
+    writing as second class (operations.md §4.3 and the language floor), and somebody's name
+    is a worse place to start than their sighting. What is refused is whitespace inside it,
+    because the interface renders it as one token and a space there reads as two people.
+    """
+    text, ok = _plain_text(value, HANDLE_MAX)
+    if not ok or not text or len(text) < HANDLE_MIN or any(c.isspace() for c in text):
+        return None, False
+    return text, True
+
+
+def register(body: dict, deps: Deps):
+    """Create an account with a password.
+
+    Not behind FENCEPOST_OPEN_SIGNUP, unlike /api/session: this endpoint is the thing that
+    makes that flag removable. Open sign-up exists because there was no other way to become
+    somebody; once there is, the flag is only needed by the demo's join flow and by the
+    scripts that walk the deployment.
+
+    There is no password reset, because there is no email service. Say so on the form.
+    """
+    handle, ok = _handle(body.get("handle"))
+    if not ok:
+        return 400, _error("bad_handle")
+    password = body.get("password")
+    if not isinstance(password, str) or not PASSWORD_MIN <= len(password) <= PASSWORD_MAX:
+        return 400, _error("weak_password")
+    user_id = deps.db.create_account(handle, auth.hash_password(password))
+    if user_id is None:
+        return 409, _error("handle_taken")
+    return 200, {"user_id": user_id, "handle": handle, "token": auth.issue(user_id)}
+
+
+def login(body: dict, deps: Deps):
+    """Exchange a handle and password for the same token /api/session hands out.
+
+    A malformed handle answers 401 rather than 400. Telling somebody their input was not a
+    valid handle is a small oracle, and there is nothing a real person gains from the
+    distinction: either way, they cannot get in with what they typed.
+
+    The ceiling is counted before the password is checked, so a wrong guess costs the same
+    as a right one. It is counted only when the handle belongs to somebody, because
+    rate_limits.user_id is a foreign key with nowhere to point otherwise — and an identity
+    with no password is one that guessing cannot open anyway.
+    """
+    handle, ok = _handle(body.get("handle"))
+    password = body.get("password")
+    if not ok or not isinstance(password, str):
+        return 401, _error("bad_credentials")
+    record = deps.db.user_by_handle(handle)
+    if record is not None:
+        try:
+            deps.limiter.check_and_count(record["id"], "login")
+        except RateLimited:
+            return 429, _error("rate_limited_login")
+    # check_password against None still does the work, so "no such person" and "wrong
+    # password" take the same time as well as saying the same thing.
+    if not auth.check_password(password, record["password_hash"] if record else None):
+        return 401, _error("bad_credentials")
+    return 200, {"user_id": record["id"], "handle": record["handle"],
+                 "token": auth.issue(record["id"])}
+
 
 def create_session(body: dict, deps: Deps):
     """Demo-grade identity: hand over a handle and get a token, with no password.

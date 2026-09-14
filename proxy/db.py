@@ -112,12 +112,36 @@ class Database:
 
     # ---------- writes ----------
 
-    def add_user(self, handle: str) -> str:
+    def add_user(self, handle: str, password_hash: str = None) -> str:
         user_id = new_id()
-        self.conn.execute("INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
-                          (user_id, handle, now()))
+        self.conn.execute(
+            "INSERT INTO users (id, handle, password_hash, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, handle, password_hash, now()))
         self.conn.commit()
         return user_id
+
+    def create_account(self, handle: str, password_hash: str):
+        """Register a handle nobody holds. Returns None if somebody already does.
+
+        The uniqueness is left to the UNIQUE constraint rather than checked first: two
+        registrations of the same handle arriving together would both pass a check and one
+        would still lose at the insert. Letting the constraint answer means there is one
+        code path, and it is the one that is actually race-free.
+
+        A handle taken by a passwordless demo identity is taken all the same. That is the
+        point: mel_k owns the demo storyboard, and nobody gets to take it over by
+        registering a password for the name.
+        """
+        try:
+            return self.add_user(handle, password_hash)
+        except Exception as exc:                       # sqlite3.IntegrityError, or libSQL's own
+            if "UNIQUE" not in str(exc).upper():
+                raise
+            return None
+
+    def user_by_handle(self, handle: str):
+        return self.conn.execute(
+            "SELECT id, handle, password_hash FROM users WHERE handle = ?", (handle,)).fetchone()
 
     def ensure_user(self, handle: str) -> str:
         """Return the user if they exist, otherwise create them. The demo has no

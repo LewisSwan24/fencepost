@@ -43,12 +43,15 @@ export default function Home() {
     <div className={ui.screen}>
       <div className={styles.head}>
         <span className={styles.wordmark}>Fencepost</span>
-        <span className={styles.who}>
+        {/* The one way in to your own account page. Before this the handle sat here as
+            static text, so a visitor could read the name this browser had invented for
+            them and had nowhere at all to go with it. */}
+        <a className={styles.who} href="/you" aria-label="You">
           <span className={styles.initials} aria-hidden="true">
             {initials(who?.handle)}
           </span>
           {who?.handle || ""}
-        </span>
+        </a>
       </div>
 
       <div className={ui.body}>
