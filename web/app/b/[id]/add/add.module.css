@@ -1,0 +1,56 @@
+.bigPrimary, .bigQuiet {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  min-height: 72px; padding: 0 20px; border-radius: var(--radius-lg);
+  font-size: 16.5px; font-weight: 700;
+}
+.bigPrimary { border: 0; background: var(--accent); color: var(--on-accent); }
+.bigPrimary:hover { background: var(--accent-hover); }
+.bigQuiet {
+  margin-top: 12px; border: 1px solid var(--line-strong);
+  background: transparent; color: var(--text); font-weight: 600;
+}
+.bigQuiet:hover { background: rgba(244, 235, 220, 0.06); }
+.footnote { font-size: 13px; line-height: 1.6; color: var(--text-dim); margin: 22px 2px 0; }
+
+/* 选帧 */
+.strip { display: flex; gap: 3px; }
+.cell { flex: 1; height: 46px; border-radius: 4px; }
+.track { position: relative; padding: 8px 0; touch-action: none; user-select: none; }
+.scrub { position: absolute; top: 0; bottom: 0; width: 18px; display: flex; flex-direction: column; }
+.knob {
+  width: 18px; height: 18px; border-radius: 999px; background: var(--accent-hover);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); margin: 0 auto;
+}
+.stem { width: 2px; flex: 1; background: var(--accent-hover); margin: 0 auto; }
+.times { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-faint); margin-top: 8px; }
+.stampChip {
+  position: absolute; left: 12px; bottom: 12px; padding: 5px 11px; border-radius: 999px;
+  background: rgba(20, 17, 14, 0.78); font-size: 12px; font-weight: 600; pointer-events: none;
+}
+
+/* 打码 */
+.canvas {
+  position: relative; width: 100%; height: 232px; border-radius: var(--radius-md);
+  overflow: hidden; touch-action: none; user-select: none; cursor: crosshair;
+  background: radial-gradient(120% 90% at 30% 20%, #2b241c 0%, var(--surface-sunken) 70%);
+}
+.target { position: absolute; border-radius: 4px; }
+.targetLabel {
+  position: absolute; top: -9px; left: 0; font-size: 10px; letter-spacing: 0.06em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.box { position: absolute; background: rgba(16, 14, 12, 0.94); border-radius: 4px; }
+.boxKill {
+  position: absolute; top: -11px; right: -11px; width: 26px; height: 26px; border-radius: 999px;
+  border: 0; background: var(--text); color: var(--on-accent);
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.hint {
+  position: absolute; left: 0; right: 0; bottom: 12px; text-align: center;
+  font-size: 12.5px; color: var(--text-dim); pointer-events: none;
+}
+.checklist { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.checkRow { display: flex; align-items: center; gap: 9px; font-size: 13.5px; }
+.pip { width: 9px; height: 9px; border-radius: 999px; flex: none; }
+.state { margin-left: auto; font-size: 12px; }
+.blockedNote { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; text-align: center; }

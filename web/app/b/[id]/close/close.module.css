@@ -1,0 +1,48 @@
+.title {
+  font-size: 27px; font-weight: 800; letter-spacing: -0.02em;
+  line-height: 1.15; margin: 6px 0 10px;
+}
+.lede { font-size: 15px; line-height: 1.6; color: var(--text-body); margin: 0 0 22px; }
+.quiet { color: var(--text-dim); }
+.error { color: var(--text-dim); }
+
+/* 四条后果。不用警示色——这不是出错，是一件有分量的正常操作。 */
+.points {
+  list-style: none; margin: 0 0 26px; padding: 16px 18px;
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+.point {
+  position: relative; padding-left: 20px; font-size: 14.5px; line-height: 1.55;
+  color: var(--text-body);
+}
+.point + .point { margin-top: 11px; }
+.point::before {
+  content: ""; position: absolute; left: 2px; top: 9px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim);
+}
+
+.field { margin-bottom: 20px; }
+.label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 7px; }
+.input {
+  width: 100%; padding: 12px 14px; border-radius: var(--radius-md);
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  font: inherit; font-size: 15px; line-height: 1.55; resize: vertical;
+}
+.hintRow {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-top: 7px;
+}
+.hint { font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.count { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* 「你不必这么做」。放在按钮上面，是因为它该在做决定之前被读到。 */
+.notRequired {
+  font-size: 13.5px; line-height: 1.55; color: var(--text-dim);
+  margin: 0; padding-top: 16px; border-top: 1px solid var(--line);
+}
+
+.cancel {
+  width: 100%; margin-top: 10px; padding: 12px; border: 0; background: transparent;
+  color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer;
+}

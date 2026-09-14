@@ -1,0 +1,88 @@
+/* 共用外壳与控件。颜色一律走 token，不写 hex。 */
+
+.screen { display: flex; flex-direction: column; min-height: 100dvh; }
+
+.bar {
+  display: flex; align-items: center; gap: 2px;
+  padding: max(12px, env(safe-area-inset-top)) 8px 4px;
+  flex: none;
+}
+.barTitle {
+  flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.icon {
+  width: 44px; height: 44px; flex: none; display: flex; align-items: center;
+  justify-content: center; background: transparent; border: 0;
+  border-radius: var(--radius-pill); color: var(--text);
+}
+.icon:hover { background: rgba(244, 235, 220, 0.08); }
+
+.body { flex: 1; padding: 0 20px 24px; }
+.body::-webkit-scrollbar { width: 0; }
+
+.footer {
+  flex: none; padding: 10px 20px max(24px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 10px;
+}
+.footerSticky {
+  position: sticky; bottom: 0;
+  background: linear-gradient(to top, var(--bg) 62%, transparent);
+}
+
+.h1 { font-size: 26px; margin: 20px 0 8px; }
+.lede { font-size: 14.5px; color: var(--text-dim); margin: 0 0 24px; }
+.kicker {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-dim); margin: 26px 0 10px;
+}
+
+.btn {
+  width: 100%; min-height: 52px; padding: 8px 18px; border: 0;
+  border-radius: var(--radius-pill); font-size: 16px; font-weight: 700;
+  background: var(--accent); color: var(--on-accent);
+}
+.btn:hover:not(:disabled) { background: var(--accent-hover); }
+.btn:active:not(:disabled) { background: var(--accent-active); }
+
+/* 次要按钮和主按钮的区别只在填充，不在尺寸——同意弹窗那两个必须视觉等重，
+   所以那里两个都用 .btnQuiet，谁也不比谁轻。 */
+.btnQuiet {
+  width: 100%; min-height: 52px; padding: 8px 18px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-pill);
+  background: transparent; color: var(--text); font-size: 15.5px; font-weight: 600;
+  line-height: 1.35;
+}
+.btnQuiet:hover:not(:disabled) { background: rgba(244, 235, 220, 0.07); }
+
+.frame {
+  position: relative; width: 100%; border-radius: var(--radius-md); overflow: hidden;
+  background: radial-gradient(120% 90% at 30% 20%, #2b241c 0%, var(--surface-sunken) 70%);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.frameNote {
+  font-size: 12px; color: var(--text-faint); padding: 10px; text-align: center;
+}
+
+.steps { display: flex; gap: 5px; padding: 6px 20px 0; flex: none; }
+.step { height: 3px; flex: 1; border-radius: 999px; background: rgba(244, 235, 220, 0.14); }
+.stepOn { background: var(--accent); }
+.stepDone { background: var(--accent-active); }
+
+.spinner {
+  width: 17px; height: 17px; border-radius: 999px;
+  border: 2px solid rgba(244, 235, 220, 0.2); border-top-color: var(--accent-hover);
+  animation: fp-spin 0.7s linear infinite; display: block;
+}
+
+.sheetScrim {
+  position: fixed; inset: 0; z-index: 30; background: rgba(10, 9, 7, 0.72);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  width: 100%; max-width: 430px; max-height: 86dvh; overflow-y: auto;
+  padding: 22px 22px max(28px, env(safe-area-inset-bottom));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface); animation: fp-fade 0.22s ease;
+}
+.sheetTitle { font-size: 21px; font-weight: 700; letter-spacing: -0.015em; margin: 0 0 12px; }
