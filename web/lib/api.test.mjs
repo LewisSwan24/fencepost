@@ -20,7 +20,10 @@ import assert from "node:assert/strict";
 let seq = 0;
 
 // Install the window and crypto stubs, then take a clean copy of api.js
-async function freshApi({ store = {}, crypto, brokenStorage = false } = {}) {
+async function freshApi({ store = {}, crypto, brokenStorage = false, joinToken } = {}) {
+  // Read at module load, so it has to be set before the import rather than after.
+  if (joinToken === undefined) delete process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN;
+  else process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN = joinToken;
   globalThis.window = {
     localStorage: brokenStorage
       ? { getItem() { throw new Error("SecurityError"); },
@@ -121,4 +124,103 @@ test("a server that cannot be reached says so in words, not in the browser's", a
   assert.match(err.message, /reach Fencepost/, "the browser string reached the screen");
   assert.doesNotMatch(err.message, /fetch/i);
   assert.equal(err.cause, original, "the original is kept for the console");
+});
+
+
+// ── The join code ──────────────────────────────────────────────────────────────
+// A visitor with their own identity reaches no storyboard at all until a code lets them in,
+// so this runs on every first page load and is the only thing standing between somebody and
+// an empty site.
+
+function stubFetch(responses = {}) {
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url).replace(/^https?:[/][/][^/]+/, "");
+    const body = init?.body ? JSON.parse(init.body) : null;
+    calls.push({ path, body });
+    const answer = responses[path];
+    if (answer instanceof Error) throw answer;
+    if (answer && answer.status) {
+      return { ok: false, status: answer.status, json: async () => answer.payload };
+    }
+    return { ok: true, status: 200, json: async () => answer ?? {} };
+  };
+  return calls;
+}
+
+const SESSION = { token: "tok", user_id: "u_guest", handle: "guest_0000000000000000" };
+const HAPPY = {
+  "/api/session": SESSION,
+  "/api/share-links/redeem": { storyboard_id: "sb_demo", level: "reshare" },
+  "/api/dashboard": { active: [], past: [] },
+};
+const redeems = (calls) => calls.filter((c) => c.path === "/api/share-links/redeem");
+
+test("a new visitor redeems the join code, once", async () => {
+  const store = {};
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 1, "the code was not redeemed");
+  assert.equal(redeems(calls)[0].body.token, "jt-one");
+  assert.equal(store["fencepost.joined"], "jt-one", "what was redeemed was not remembered");
+});
+
+test("the same code is never redeemed twice", async () => {
+  const store = { "fencepost.joined": "jt-one" };
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 0, "it joined again on a code it had already used");
+});
+
+test("a replacement code is picked up by somebody who already joined", async () => {
+  // The case this whole design exists for. A join code lasts at most 90 days and the level
+  // it grants is a decision that can change, so replacing one has to reach the people
+  // already here. Storing a flag instead of the code meant it never did: they skipped the
+  // new code for good and stayed on whatever the old one gave them.
+  const store = { "fencepost.joined": "jt-one" };
+  const api = await freshApi({ store, joinToken: "jt-two" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 1, "the replacement code was skipped");
+  assert.equal(redeems(calls)[0].body.token, "jt-two");
+  assert.equal(store["fencepost.joined"], "jt-two");
+});
+
+test("somebody carrying the old flag picks up the code too", async () => {
+  // What is actually in the browsers of everyone already using the deployment: the literal
+  // string "1", written before the code was the thing remembered. They have to be upgraded
+  // by visiting, not by being told to clear their storage.
+  const store = { "fencepost.joined": "1" };
+  const api = await freshApi({ store, joinToken: "jt-two" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 1, "a visitor from before the change never joins again");
+  assert.equal(store["fencepost.joined"], "jt-two");
+});
+
+test("a code that no longer works leaves the rest of the site standing", async () => {
+  // Expired or turned off. The page carries on and simply shows no demo storyboard, and
+  // nothing is remembered, so a code issued later is still picked up on the next visit.
+  const store = {};
+  const api = await freshApi({ store, joinToken: "jt-dead" });
+  stubFetch({ ...HAPPY, "/api/share-links/redeem": { status: 403, payload: { error: { code: "link_revoked", message: "no" } } } });
+
+  const view = await api.dashboard();
+  assert.deepEqual(view, { active: [], past: [] }, "a dead join code took the dashboard down with it");
+  assert.equal(store["fencepost.joined"], undefined, "a failed join was recorded as done");
+});
+
+test("with no code configured nothing is redeemed", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 0);
 });

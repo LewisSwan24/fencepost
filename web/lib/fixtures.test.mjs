@@ -10,7 +10,8 @@ import assert from "node:assert/strict";
 import { assistantReply, assistantFrames, writer, suggestedSpecies, PROMPT_VERSION,
          createThread, createPost, boardAccess, editEntry, deleteEntry,
          timeline, dashboard, closeStoryboard, reviewQueue, castVote, disposeEntry,
-         shareLinks, revokeShareLink, grants, BLOCKED_TRIGGER } from "./fixtures.js";
+         shareLinks, revokeShareLink, issueShareLink, grants,
+         BLOCKED_TRIGGER } from "./fixtures.js";
 
 const CASES = [
   ["How do I catch the possum in my roof?", "licensed operator"],
@@ -255,4 +256,56 @@ test("after being turned off it stays in the list, marked as turned off", () => 
   const again = shareLinks("sb_jacaranda").links.find((l) => l.id === target.id);
   assert.ok(again, "it disappeared from the list after being turned off");
   assert.ok(again.revoked_at);
+});
+
+test("a code you make turns up in the list underneath it", () => {
+  // The share screen loads the list again the moment a code is issued. Offline, issuing
+  // used to return a code and keep nothing, so the code appeared in the QR panel and was
+  // missing from the list directly below it, which reads as the product losing it. Seen in
+  // the browser on 2026-09-15, three codes before and three after.
+  const before = shareLinks("sb_jacaranda").links;
+  const made = issueShareLink({ storyboardId: "sb_jacaranda", level: "view", expiresInDays: 30 });
+  const after = shareLinks("sb_jacaranda").links;
+
+  assert.equal(after.length, before.length + 1);
+  const kept = after.find((l) => l.id === made.share_link_id);
+  assert.ok(kept, "the code that was just made is not in the list");
+});
+
+test("it is listed newest first, the way the server lists them", () => {
+  // The server answers ORDER BY rowid DESC. A code that arrived at the bottom of a list of
+  // a dozen would be reported as missing by anybody who did not scroll.
+  const made = issueShareLink({ storyboardId: "sb_jacaranda", level: "contribute" });
+  assert.equal(shareLinks("sb_jacaranda").links[0].id, made.share_link_id);
+});
+
+test("what it was asked for is what it stores", () => {
+  const made = issueShareLink({ storyboardId: "sb_jacaranda", level: "reshare", expiresInDays: 90 });
+  const kept = shareLinks("sb_jacaranda").links.find((l) => l.id === made.share_link_id);
+
+  assert.equal(kept.level, "reshare");
+  assert.equal(kept.expires_at, made.expires_at, "the list and the panel disagree about the expiry");
+  const days = (new Date(kept.expires_at) - Date.now()) / 86400000;
+  assert.ok(days > 89 && days <= 90, `90 days was asked for and ${days.toFixed(1)} stored`);
+});
+
+test("a code you just made is one you can turn off", () => {
+  // The Turn off control is drawn on created_by, matching the server gate of "you issued
+  // it, or you own the storyboard". A new code attributed to nobody would be one you had
+  // just made and could not withdraw.
+  const made = issueShareLink({ storyboardId: "sb_jacaranda", level: "view" });
+  const view = shareLinks("sb_jacaranda");
+  const kept = view.links.find((l) => l.id === made.share_link_id);
+
+  assert.equal(kept.created_by, view.owner_id, "the offline me did not make the code the offline me made");
+  assert.equal(kept.revoked_at, null, "it arrived already turned off");
+  assert.equal(kept.used_count, 0);
+  assert.ok(new Date(kept.expires_at) > new Date(), "it arrived already expired");
+});
+
+test("a code made for one storyboard does not appear on another", () => {
+  const made = issueShareLink({ storyboardId: "sb_roof", level: "view" });
+  assert.ok(shareLinks("sb_roof").links.some((l) => l.id === made.share_link_id));
+  assert.ok(!shareLinks("sb_jacaranda").links.some((l) => l.id === made.share_link_id),
+    "the code leaked into another storyboard list");
 });

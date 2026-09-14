@@ -5,12 +5,14 @@
     python scripts/verify_deployment.py <url> --bypass <protection-bypass-token>
 
 The walk: 404, bad token 401, exchange a token, create a storyboard, post an entry, read
-the timeline, did the Screener really run, the review queue, the share chain (issue, a
-second person redeems, turn it off, cannot redeem once off, turning off leaves existing
-access alone), the refusals (see below), the forum (start a thread, reply, a refused
-reply carrying a reason), the Neighbour non-streaming and streaming, the Writer, and the
-submission rate limit. Seven real model calls (four Screener, three assistant); neither
-the refusals nor the rate-limit loop makes any.
+the timeline, did the Screener really run, the dashboard, the review queue, the share
+chain (issue, a second person redeems, it appears on their dashboard at the level the
+code carried, turn it off, cannot redeem once off, turning off leaves existing access
+alone), the refusals (see below), the forum (start a thread, reply, a refused reply
+carrying a reason), the Neighbour non-streaming and streaming, the Writer, the submission
+rate limit, and last of all closing the storyboard and watching it move from active to
+past with its closing line. Seven real model calls (four Screener, three assistant);
+neither the refusals, nor the dashboard checks, nor the rate-limit loop makes any.
 
 The refusals are there because every other check is a path that should work, and a
 deployment can also fail by letting something through. That failure makes no noise: a
@@ -202,6 +204,21 @@ def main():
            "marked review — fail-open let it through, the upstream is down" if flagged else
            "clean pass" if shown else "no entry to look at, this one cannot be judged")
 
+    # The dashboard. This walk had never once loaded the first screen of the product, so
+    # a deployment could answer every check below and still open blank. It is also the only
+    # endpoint that computes entry_count and latest_species, two correlated subqueries that
+    # nothing else exercises: the timeline returns entries, not counts, and the cover on the
+    # list screen is the only reader of the species.
+    status, home = client.send("/api/dashboard", token=token)
+    mine_now = [b for b in home.get("active", []) if b.get("id") == storyboard]
+    row = mine_now[0] if mine_now else {}
+    record("it is on my dashboard",
+           status == 200 and len(mine_now) == 1 and row.get("level") == "reshare",
+           f"HTTP {status}, {len(home.get('active', []))} active, level {row.get('level')}")
+    record("the dashboard counted the entry",
+           row.get("entry_count") == 1 and row.get("latest_species") == "ringtail",
+           f"{row.get('entry_count')} entries, latest {row.get('latest_species')}")
+
     # The review queue. It looks like a check added for the sake of it, and it is the most
     # expensive lesson in this script: `settle_review()` reads `execute(...).rowcount`, and
     # the wrapper for the hosted database had no such attribute, so this path returned 500
@@ -239,6 +256,15 @@ def main():
 
     status, seen = client.send(f"/api/timeline?storyboard_id={storyboard}", token=guest)
     record("can read after redeeming", status == 200, f"HTTP {status}, {len(seen.get('entries', []))} entries")
+
+    # Redeeming has to put it on their list as well, or somebody scans a code, reads the
+    # storyboard, closes the tab and has no way back to it. The level has to be the one the
+    # code carried, not the one the owner holds.
+    status, their_home = client.send("/api/dashboard", token=guest)
+    theirs = [b for b in their_home.get("active", []) if b.get("id") == storyboard]
+    record("it is on their dashboard too",
+           status == 200 and len(theirs) == 1 and theirs[0].get("level") == "view",
+           f"HTTP {status}, level {theirs[0].get('level') if theirs else 'absent'}")
 
     status, off = client.send("/api/share-links/revoke", token=token,
                               body={"share_link_id": link_id})
@@ -280,6 +306,12 @@ def main():
     # from the requester's identity, and build() raises before any model call, so this
     # refusal costs nothing and proves the assistant cannot be pointed at a storyboard
     # the caller holds no grant on.
+    status, nothing = client.send("/api/dashboard", token=stranger)
+    listed = [b for b in nothing.get("active", []) + nothing.get("past", [])
+              if b.get("id") == storyboard]
+    record("a stranger's dashboard does not list it", status == 200 and not listed,
+           f"HTTP {status}, {len(listed)} of ours visible")
+
     status, payload = client.send("/api/assistant", token=stranger, body={
         "role": "neighbour", "storyboard_id": storyboard, "message": "what is on this one?"})
     record("assistant refuses a hidden board",
@@ -316,6 +348,16 @@ def main():
     status, payload = client.send("/api/grants/revoke", token=guest,
                                   body={"storyboard_id": storyboard, "user_id": owner_id})
     record("only the owner revokes", status == 403 and refusal(payload) == "not_the_owner",
+           f"HTTP {status} {refusal(payload)}")
+
+    # "kept" rather than "removed", because the disposal the owner is being protected from
+    # here is not the destructive one: the shape of the body is checked before the caller
+    # is, so an action the server does not recognise comes back 400 and says nothing at all
+    # about who may do it. That is how this check first ran, passing nothing and reporting a
+    # failure that was mine rather than the deployment's.
+    status, payload = client.send("/api/review/dispose", token=guest,
+                                  body={"entry_id": mine, "action": "kept"})
+    record("only the owner disposes", status == 403 and refusal(payload) == "not_the_owner",
            f"HTTP {status} {refusal(payload)}")
 
     # Asserting the refusals is not the same as asserting nothing happened. A gate that
@@ -404,6 +446,26 @@ def main():
             break
     record("rate limit (submission)", hit is not None and hit.get("scope") == "submission",
            f"attempt {spent} → HTTP {status}" + (f" {hit.get('message', '')[:40]}" if hit else ""))
+
+    # Closing goes after the rate limit, because it is the one action that changes what
+    # every check above is allowed to do. Archived is not deleted: user-flow §9 says the
+    # storyboard moves from active to past and keeps its closing line. Nothing had ever
+    # checked that partition against a deployment, only against a local store.
+    note = "That is the season done. Thanks for filming, all."
+    status, closed = client.send("/api/storyboards/close", token=token,
+                                 body={"storyboard_id": storyboard, "closed_note": note})
+    record("the owner closed it", status == 200 and closed.get("status") == "archived",
+           f"HTTP {status} {closed.get('status')}")
+
+    status, home = client.send("/api/dashboard", token=token)
+    still_active = [b for b in home.get("active", []) if b.get("id") == storyboard]
+    now_past = [b for b in home.get("past", []) if b.get("id") == storyboard]
+    record("it moved from active to past",
+           status == 200 and not still_active and len(now_past) == 1,
+           f"{len(still_active)} active, {len(now_past)} past")
+    record("the closing line came back with it",
+           bool(now_past) and now_past[0].get("closed_note") == note,
+           repr((now_past[0].get("closed_note") if now_past else None))[:46])
 
     print(f"\n{len(checks) - failures}/{len(checks)} passed")
     if deltas and spread < 1.0:
