@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 from proxy import auth                                               # noqa: E402
+from proxy import db as db_module                                   # noqa: E402
 from proxy.app import Deps, handle                                   # noqa: E402
 from proxy.db import (Database, SqliteContext, SqliteHistory,        # noqa: E402
                       SqliteRateLimiter, SqliteScreeningLog)
@@ -498,6 +499,127 @@ class Limits(Fixture):
         self.assertEqual(0, self.db.conn.execute(
             "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ?",
             (self.guest,)).fetchone()["c"])
+
+
+class SchemaRepairs(unittest.TestCase):
+    """What happens to a database that was made before the document changed.
+
+    _apply_schema returns early once all twelve tables exist, which is every deployed
+    database. So a column added to data-model.md afterwards was never created, and the
+    first code to use it failed on every call. Adding users.password_hash on 2026-09-15
+    would have taken the live site down whole: INSERT INTO users is what every visitor's
+    first request does, so the answer would have been 500 for everybody, not a degraded
+    corner of the product.
+
+    Its own empty database rather than the shared Fixture, which seeds users, a storyboard
+    and grants: dropping the users table underneath those is a foreign key violation, and
+    the thing being tested here is the shape of the schema rather than anything in it.
+    """
+
+    def setUp(self):
+        self.db = Database()
+
+    def columns(self, table):
+        return {row["name"] for row in
+                self.db.conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+    def make_old_users_table(self):
+        """A users table as it was before password_hash, with somebody already in it."""
+        self.db.conn.execute("DROP TABLE users")
+        self.db.conn.execute(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE, "
+            "created_at TIMESTAMP NOT NULL)")
+        self.db.conn.execute(
+            "INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
+            ("u_old", "mel_k", "2026-09-01T10:00:00+00:00"))
+        self.db.conn.commit()
+
+    def test_a_column_added_to_the_document_reaches_an_existing_database(self):
+        self.make_old_users_table()
+        self.assertNotIn("password_hash", self.columns("users"))
+        self.db._apply_schema()
+        self.assertIn("password_hash", self.columns("users"))
+
+    def test_the_rows_already_there_survive_it(self):
+        """ADD COLUMN keeps the rows; a rebuild done carelessly would not."""
+        self.make_old_users_table()
+        self.db._apply_schema()
+        row = self.db.conn.execute("SELECT * FROM users WHERE id = 'u_old'").fetchone()
+        self.assertEqual("mel_k", row["handle"])
+        self.assertIsNone(row["password_hash"], "an existing person got a password somehow")
+
+    def test_the_repair_is_what_lets_the_column_be_written(self):
+        """The same failure from the other side: without the repair, the insert every
+        visitor makes is the one that breaks.
+        """
+        self.make_old_users_table()
+        self.db._apply_schema()
+        self.assertTrue(self.db.add_user("ada_l", "scrypt$16384$8$1$c2FsdA==$aGFzaA=="))
+
+    def test_running_it_again_changes_nothing(self):
+        """It runs on every open, so it has to be quiet when there is nothing to do."""
+        self.make_old_users_table()
+        self.db._apply_schema()
+        before = self.columns("users")
+        self.db._apply_schema()
+        self.assertEqual(before, self.columns("users"))
+
+    def test_a_column_that_cannot_be_added_in_place_says_so(self):
+        """NOT NULL without a default cannot be added to a populated table at all. Skipping
+        it quietly would move the failure to the first insert, which is a worse place to
+        find out about it.
+        """
+        self.make_old_users_table()
+        real = db_module._schema_columns
+        db_module._schema_columns = lambda table: (
+            [("nickname", "nickname TEXT NOT NULL")] if table == "users" else real(table))
+        try:
+            with self.assertRaises(RuntimeError) as caught:
+                self.db._apply_schema()
+            self.assertIn("users.nickname", str(caught.exception))
+            self.assertIn("by hand", str(caught.exception))
+        finally:
+            db_module._schema_columns = real
+
+    def test_a_check_constraint_that_gained_a_value_is_rebuilt(self):
+        """SQLite cannot alter a CHECK. rate_limits enumerates its scopes, so a database
+        made before the login ceiling refuses that insert and answers 500 to every sign-in
+        attempt, and a bucket that errors is not a bucket that limits.
+        """
+        self.db.conn.execute("DROP TABLE rate_limits")
+        self.db.conn.execute(
+            "CREATE TABLE rate_limits (id TEXT PRIMARY KEY, "
+            "user_id TEXT NOT NULL REFERENCES users(id), "
+            "scope TEXT NOT NULL CHECK (scope IN ('chat','vision','submission')), "
+            "used_at TIMESTAMP NOT NULL)")
+        self.db.conn.commit()
+
+        self.db._apply_schema()
+
+        self.db.conn.execute("INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
+                             ("u_1", "ada_l", "2026-09-15T10:00:00+00:00"))
+        self.db.conn.execute(
+            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
+            ("r_1", "u_1", "login", "2026-09-15T10:00:00+00:00"))
+        self.db.conn.commit()
+        kept = self.db.conn.execute("SELECT scope FROM rate_limits").fetchone()
+        self.assertEqual("login", kept["scope"])
+
+    def test_a_current_table_is_not_rebuilt_underneath_the_counters(self):
+        """The trigger has to be narrow. A rebuild that fires on every open is a rate
+        limiter that never counts to anything, and nothing would say so.
+        """
+        self.db.conn.execute("INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
+                             ("u_1", "ada_l", "2026-09-15T10:00:00+00:00"))
+        self.db.conn.execute(
+            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
+            ("r_1", "u_1", "login", "2026-09-15T10:00:00+00:00"))
+        self.db.conn.commit()
+
+        self.db._apply_schema()
+
+        left = self.db.conn.execute("SELECT COUNT(*) AS c FROM rate_limits").fetchone()["c"]
+        self.assertEqual(1, left, "the counters were wiped by a repair with nothing to repair")
 
 
 if __name__ == "__main__":

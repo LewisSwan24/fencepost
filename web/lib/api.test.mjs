@@ -281,3 +281,38 @@ test("a token the server no longer accepts is dropped rather than kept for ever"
   await api.dashboard().then(() => null, (e) => e);
   assert.equal(store["fencepost.session"], undefined, "the dead session was kept");
 });
+
+const SIGNED_IN = () => ({
+  "fencepost.session": JSON.stringify(
+    { user_id: "u_ada", handle: "ada_l", token: "tok", account: true }),
+  "fencepost.joined": "jt-one|u_ada",
+});
+
+test("a code replaced while somebody is signed in still reaches them", async () => {
+  // Registering and signing in both redeem, so a new account is fine. Somebody already
+  // signed in comes back through the restored-session path instead, and that path used to
+  // return before joinDemo was ever reached: they would keep whatever the code granted on
+  // the day they registered, for good, while every guest around them was upgraded.
+  const store = SIGNED_IN();
+  const api = await freshApi({ store, joinToken: "jt-two" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 1, "a signed-in account never heard about the new code");
+  assert.equal(redeems(calls)[0].body.token, "jt-two");
+  assert.equal(store["fencepost.joined"], "jt-two|u_ada");
+});
+
+test("a restored session with nothing to redeem asks for nothing", async () => {
+  // The other half: this runs on every page load for everybody signed in, so it has to be
+  // free when the code has not moved. One request, the one that was asked for.
+  const store = SIGNED_IN();
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 0, "it redeemed a code it had already redeemed");
+  assert.equal(calls.filter((c) => c.path === "/api/session").length, 0,
+    "the stored session was thrown away and exchanged again");
+  assert.deepEqual(calls.map((c) => c.path), ["/api/dashboard"]);
+});

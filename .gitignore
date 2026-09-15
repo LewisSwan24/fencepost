@@ -7,6 +7,9 @@ CLAUDE.md
 tests/redline_report_*.md
 .vercel/
 tests/nonenglish_report_*.md
+# scripts/issue_join_code.py writes the plaintext share token here by default,
+# and it is a redeemable grant until somebody turns it off.
+joincode.txt
 
 .agents/
 skills-lock.json

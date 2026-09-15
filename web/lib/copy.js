@@ -121,6 +121,15 @@ export const COPY = {
   deleteConfirm: "Delete it",
   deleted: "Deleted",
 
+  // Taking down your own forum post. Worded as withdrawing rather than deleting: the
+  // replies under it stay where they are, and promising more than that would be a lie the
+  // first time somebody used it on a thread other people had answered.
+  deletePost: "Take it down",
+  deletePostTitle: "Take down this post?",
+  deletePostBody:
+    "It comes off the thread straight away. Anything other people wrote stays.",
+  deletePostConfirm: "Take it down",
+
   // The owner closing it deliberately (ux-copy.md §5)
   closeStoryboard: "Close this storyboard",
   closeTitle: "Close this storyboard",
