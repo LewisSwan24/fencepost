@@ -11,8 +11,8 @@
 // Promise two is a licence condition, not a courtesy. These are somebody else's photographs
 // under CC BY-SA 4.0, and /credits carries the attribution that permits using them. The
 // page maps over this array, so it cannot miss an image; what it can do is go stale in the
-// prose around it, and carry a blanket "all four, all CC BY-SA" that a fifth image quietly
-// makes false.
+// prose around it, and carry a blanket count and licence that the next image quietly makes
+// false.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -77,13 +77,26 @@ test("the same entry gets the same picture every time", () => {
   }
 });
 
-test("every ringtail picture is actually reachable", () => {
-  // There are three, and a hash that collapsed would leave one or two of them permanently
-  // unused: no error, no visible fault, just an unexplained sameness down the timeline.
-  const seen = new Set(ids(120).map((id) => frameFor({ species: "ringtail", id }).slug));
-  const available = FRAMES.filter((f) => f.species === "ringtail").map((f) => f.slug);
-  for (const slug of available) {
-    assert.ok(seen.has(slug), slug + " is never picked for any entry id");
+test("every picture is actually reachable, in both species", () => {
+  // A hash that collapsed would leave some of them permanently unused: no error, no visible
+  // fault, just an unexplained sameness down the timeline. This used to check ringtail only,
+  // which was the species that happened to have more than one picture at the time — so it
+  // would not have noticed the same fault in the other half of the set.
+  for (const species of SPECIES_WITH_PICTURES) {
+    const seen = new Set(ids(200).map((id) => frameFor({ species, id }).slug));
+    for (const frame of FRAMES.filter((f) => f.species === species)) {
+      assert.ok(seen.has(frame.slug), frame.slug + " is never picked for any entry id");
+    }
+  }
+});
+
+test("no species is left with a single picture", () => {
+  // Not a style preference. One picture for a species means every sighting of it down a
+  // timeline carries the same photograph, which reads as a broken page rather than as a
+  // stand-in — and nothing else here would fail if that happened.
+  for (const species of SPECIES_WITH_PICTURES) {
+    const count = FRAMES.filter((f) => f.species === species).length;
+    assert.ok(count > 1, "only " + count + " picture for " + species);
   }
 });
 
