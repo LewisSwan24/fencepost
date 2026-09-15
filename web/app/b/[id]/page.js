@@ -11,7 +11,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { storyboard, isArchived, castVote, me, editEntry, deleteEntry, isOwner } from "../../../lib/api";
+import { storyboard, isArchived, castVote, me, editEntry, deleteEntry, removeEntry, isOwner } from "../../../lib/api";
 import { SPECIES_LABEL } from "../../../lib/fixtures";
 import { COPY, reasonSentence } from "../../../lib/copy";
 import { stamp, countLabel } from "../../../lib/format";
@@ -37,6 +37,7 @@ export default function Storyboard({ params }) {
   const [chat, setChat] = useState(false);
   const [editing, setEditing] = useState(null);    // {id, funFact, story, species, codes}
   const [confirming, setConfirming] = useState(null);
+  const [clearing, setClearing] = useState(null);   // somebody else's, on a board I own
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [owner, setOwner] = useState(false);
@@ -130,6 +131,20 @@ export default function Storyboard({ params }) {
       setConfirming(null);
       setNote(COPY.deleted);
       load();          // the count, the participants and the cover all follow this refetch
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  }
+
+  async function clear() {
+    if (!clearing) return;
+    setBusy(true);
+    try {
+      await removeEntry(clearing);
+      setClearing(null);
+      setNote(COPY.removed);
+      load();
     } catch (err) {
       setError(err.message);
     }
@@ -307,6 +322,18 @@ export default function Storyboard({ params }) {
                     {/* Only the author sees these, and they are gone once the storyboard
                         is archived — the server answers storyboard_closed and takes
                         neither an edit nor a delete. */}
+                    {/* Not yours, but this is your storyboard. A separate control from
+                        the two below on purpose: those withdraw your own writing, this
+                        takes somebody else's off a space you made, and the server records
+                        that you were the one who did it. */}
+                    {!mine && owner && !archived ? (
+                      <div className={styles.own}>
+                        <button type="button" className={styles.ownBtn}
+                                onClick={() => setClearing(e.id)}>
+                          {COPY.removeIt}
+                        </button>
+                      </div>
+                    ) : null}
                     {mine && !archived ? (
                       <div className={styles.own}>
                         <button type="button" className={styles.ownBtn}
@@ -395,6 +422,21 @@ export default function Storyboard({ params }) {
           </button>
           <button type="button" className={styles.sheetQuiet}
                   disabled={busy} onClick={() => setEditing(null)}>
+            {COPY.cancel}
+          </button>
+        </Sheet>
+      ) : null}
+
+      {clearing ? (
+        <Sheet onClose={() => !busy && setClearing(null)} labelledBy="rm-title">
+          <h2 id="rm-title" className={ui.sheetTitle}>{COPY.removeTitle}</h2>
+          <p className={styles.quiet}>{COPY.removeBody}</p>
+          <button type="button" className={ui.btn} style={{ marginTop: 18 }}
+                  disabled={busy} onClick={clear}>
+            {busy ? COPY.saving : COPY.removeConfirm}
+          </button>
+          <button type="button" className={styles.sheetQuiet}
+                  disabled={busy} onClick={() => setClearing(null)}>
             {COPY.cancel}
           </button>
         </Sheet>

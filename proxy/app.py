@@ -786,6 +786,63 @@ def delete_post(body: dict, token: str, deps: Deps):
     return 200, {"post_id": record["id"], "deleted": True}
 
 
+def _owned_storyboard(storyboard_id: str, user_id: str, deps: Deps):
+    """The caller owns this storyboard and it still takes changes, or a refusal."""
+    if storyboard_id is None:
+        return 404, _error("gone")
+    if deps.db.storyboard_owner(storyboard_id) != user_id:
+        return 403, _error("not_the_owner")
+    if deps.db.storyboard_status(storyboard_id) != "active":
+        return 409, _error("storyboard_closed")
+    return None
+
+
+def remove_entry(body: dict, token: str, deps: Deps):
+    """A storyboard owner taking somebody else's entry off their storyboard.
+
+    Deleting what you wrote is the author's, and stays that way; delete_entry answers
+    not_your_entry to everybody else. This is the deliberate exception, and it is written
+    down as one: you made the space and invited people into it, so you can clear it, and
+    the database records that you were the one who did.
+
+    It is a separate endpoint from the review disposal on purpose. That path is the last
+    word on something a neighbour marked, and it used to double as this one by accident —
+    db.dispose matched no screening row, said nothing at all, and set deleted_at anyway, so
+    an owner could quietly remove anything and leave no trace. The power was never the
+    problem. Having no name and no record was.
+
+    Not the same as centralised moderation, which CLAUDE.md rules out for want of anybody
+    to do it: that is the platform judging content, this is the owner of one storyboard
+    tidying their own.
+    """
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    record = deps.db.entry(body.get("entry_id") or "")
+    if record is None or record["deleted_at"]:
+        return 404, _error("gone")
+    refusal = _owned_storyboard(record["storyboard_id"], user_id, deps)
+    if refusal:
+        return refusal
+    deps.db.remove_entry(record["id"], user_id)
+    return 200, {"entry_id": record["id"], "removed": True}
+
+
+def remove_post(body: dict, token: str, deps: Deps):
+    """The same for a post in the discussion on a storyboard you own."""
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    record = deps.db.post(body.get("post_id") or "")
+    if record is None or record["deleted_at"]:
+        return 404, _error("gone")
+    refusal = _owned_storyboard(deps.db.thread_storyboard(record["thread_id"]), user_id, deps)
+    if refusal:
+        return refusal
+    deps.db.remove_post(record["id"], user_id)
+    return 200, {"post_id": record["id"], "removed": True}
+
+
 def _forum_gate(storyboard_id: str, user_id: str, deps: Deps, writing: bool):
     """Forum access follows the storyboard: a grant to see it, contribute or above to write."""
     _settle(deps)

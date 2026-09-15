@@ -522,6 +522,20 @@ export async function deleteForumPost(postId) {
   return call("/api/forum/posts/delete", { body: { post_id: postId } });
 }
 
+// The owner clearing their own storyboard. A different endpoint from the two above, and
+// deliberately so: those are "mine, and I am withdrawing it", this is "not mine, and I own
+// the space it is in". The server records who did it; taking somebody else's words down
+// without a name on it is the arrangement this replaced.
+export async function removeEntry(entryId) {
+  if (!usesNetwork) return fixtures.removeEntry(entryId);
+  return call("/api/entries/remove", { body: { entry_id: entryId } });
+}
+
+export async function removeForumPost(postId) {
+  if (!usesNetwork) return fixtures.deleteForumPost(postId);
+  return call("/api/forum/posts/remove", { body: { post_id: postId } });
+}
+
 // ── Sharing and access ─────────────────
 export async function issueShareLink({ storyboardId, level, expiresInDays }) {
   if (!usesNetwork) return fixtures.issueShareLink({ storyboardId, level, expiresInDays });

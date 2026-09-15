@@ -450,6 +450,19 @@ export function readThread(threadId) {
   return { thread_id: threadId, posts: [] };
 }
 
+export function removeEntry(entryId) {
+  // Offline there is one person, so "the owner removed it" and "the author withdrew it"
+  // land in the same place. What matters here is that the screen behaves the same way.
+  for (const list of Object.values(TIMELINES)) {
+    const at = list.findIndex((e) => e.id === entryId);
+    if (at !== -1) {
+      list.splice(at, 1);
+      return { entry_id: entryId, removed: true };
+    }
+  }
+  return { entry_id: entryId, removed: false };
+}
+
 export function deleteForumPost(postId) {
   // Offline mirror of the server rule: the post goes, and a thread with nothing left in it
   // goes with it. A thread that still holds a reply stays, title and all, because that

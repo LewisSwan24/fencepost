@@ -34,7 +34,8 @@ CREATE TABLE entries (
   fun_fact       TEXT,
   story          TEXT,
   created_at     TIMESTAMP NOT NULL,
-  deleted_at     TIMESTAMP                -- soft delete; must be filtered out when assembling context
+  deleted_at     TIMESTAMP,               -- soft delete; must be filtered out when assembling context
+  removed_by     TEXT REFERENCES users(id) -- NULL when the author took it down; see below
 );
 
 CREATE TABLE access_grants (
@@ -109,7 +110,8 @@ CREATE TABLE forum_posts (
   author_id   TEXT NOT NULL REFERENCES users(id),
   body        TEXT NOT NULL,
   created_at  TIMESTAMP NOT NULL,
-  deleted_at  TIMESTAMP
+  deleted_at  TIMESTAMP,
+  removed_by  TEXT REFERENCES users(id)
 );
 
 CREATE TABLE rate_limits (          -- the three ceilings from operations §3

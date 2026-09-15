@@ -130,6 +130,17 @@ export const COPY = {
     "It comes off the thread straight away. Anything other people wrote stays.",
   deletePostConfirm: "Take it down",
 
+  // The owner clearing somebody else's writing off their own storyboard. Worded so that
+  // what it is cannot be mistaken: not "delete", which is what you do to your own, and not
+  // silent either — the database records who did it, and the person doing it should know
+  // that before they do it rather than afterwards.
+  removeIt: "Remove",
+  removeTitle: "Remove this from your storyboard?",
+  removeBody:
+    "It comes off straight away and Possum Help stops seeing it. You started this storyboard, so this is yours to do — and it is recorded as yours.",
+  removeConfirm: "Remove it",
+  removed: "Removed",
+
   // The owner closing it deliberately (ux-copy.md §5)
   closeStoryboard: "Close this storyboard",
   closeTitle: "Close this storyboard",
