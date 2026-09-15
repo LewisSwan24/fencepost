@@ -14,9 +14,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { dashboard, signOut, whoAmI } from "../../lib/api";
+import { dashboard, myRecord, signOut, whoAmI } from "../../lib/api";
 import { COPY } from "../../lib/copy";
-import { initials } from "../../lib/format";
+import { initials, relative } from "../../lib/format";
 import { BackButton, ui } from "../../components/ui";
 import styles from "./you.module.css";
 
@@ -24,6 +24,7 @@ export default function You() {
   const router = useRouter();
   const [who, setWho] = useState(null);
   const [boards, setBoards] = useState(null);
+  const [record, setRecord] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -34,6 +35,10 @@ export default function You() {
       (view) => setBoards([...(view.active || []), ...(view.past || [])]),
       () => setBoards([])
     );
+    // Only ever your own, and this is the only screen it appears on. No storyboard shows
+    // it, because the moment somebody else can read a count it has become a way of
+    // measuring a neighbour, which is what the decision table rules out.
+    myRecord().then(setRecord, () => {});
   }, []);
 
   function leave() {
@@ -66,6 +71,29 @@ export default function You() {
             <button type="button" className={ui.btn} onClick={() => router.push("/sign-in")}>
               {COPY.signInTitle}
             </button>
+          </>
+        ) : null}
+
+        {record ? (
+          <>
+            <h2 className={styles.section}>{COPY.recordTitle}</h2>
+            {record.entries === 0 ? (
+              <p className={styles.body}>{COPY.recordNone}</p>
+            ) : (
+              <div className={styles.record}>
+                <div className={styles.recordCount}>
+                  {record.entries}
+                  <span className={styles.recordUnit}>
+                    {record.entries === 1 ? "sighting" : "sightings"}
+                  </span>
+                </div>
+                <div className={styles.recordWhen}>
+                  {COPY.recordLatest}
+                  {" "}
+                  {record.latest_at ? relative(record.latest_at) : COPY.recordNever}
+                </div>
+              </div>
+            )}
           </>
         ) : null}
 

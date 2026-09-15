@@ -536,6 +536,15 @@ export async function removeForumPost(postId) {
   return call("/api/forum/posts/remove", { body: { post_id: postId } });
 }
 
+// Your own record of what you have written. There is deliberately no version of this that
+// takes somebody else's id: the reason it is allowed to exist at all is that it describes
+// nobody but you, and an endpoint that answered about a neighbour would be the thing the
+// decision table rules out under another name.
+export async function myRecord() {
+  if (!usesNetwork) return fixtures.myRecord();
+  return call("/api/record");
+}
+
 // ── Sharing and access ─────────────────
 export async function issueShareLink({ storyboardId, level, expiresInDays }) {
   if (!usesNetwork) return fixtures.issueShareLink({ storyboardId, level, expiresInDays });

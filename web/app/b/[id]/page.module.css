@@ -158,3 +158,5 @@
   display: block; margin-top: 8px; font-size: 12.5px; font-style: normal;
   color: var(--text-dim);
 }
+
+.since { color: var(--text-dim); }

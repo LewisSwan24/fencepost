@@ -342,6 +342,15 @@ export const BLOCKED_TRIGGER = "42 Example St";
 
 let entrySeq = 0;
 
+export function myRecord() {
+  // Offline "I" am mel_k, so this counts mel_k's entries across the fixture storyboards.
+  const mine = Object.values(TIMELINES).flat().filter((e) => e.handle === "mel_k");
+  const latest = mine.map((e) => e.created_at).sort().pop() || null;
+  return { entries: mine.length, latest_at: latest,
+           storyboards: Object.entries(TIMELINES)
+             .filter(([, list]) => list.some((e) => e.handle === "mel_k")).length };
+}
+
 export function dashboard() {
   const all = Object.values(STORYBOARDS).map((b) => ({ ...b }));
   return {

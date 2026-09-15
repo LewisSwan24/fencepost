@@ -44,6 +44,16 @@ export function stamp(iso) {
   return d.getDate() + " " + MONTHS[d.getMonth()] + " · " + h + ":" + m + ampm;
 }
 
+// "2 Sep", for the collective line under a storyboard's count. Date only: the hour a
+// street started keeping a storyboard is not the point, the fact that it has been going
+// since early September is.
+export function monthDay(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.getDate() + " " + MONTHS[d.getMonth()];
+}
+
 export function countLabel(n, one, many) {
   return n === 1 ? "1 " + one : n + " " + many;
 }

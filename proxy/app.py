@@ -371,6 +371,19 @@ def create_session(body: dict, deps: Deps):
     return 200, {"user_id": user_id, "handle": handle, "token": auth.issue(user_id)}
 
 
+def my_record(params: dict, token: str, deps: Deps):
+    """Your own record of what you have written. Yours alone, and about nobody else.
+
+    There is no equivalent for looking at somebody else's, and there should not be: the
+    decision this is allowed to exist under is that it characterises nobody, and an endpoint
+    that took a user id would be the thing CLAUDE.md rules out wearing a different name.
+    """
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    return 200, deps.db.my_record(user_id)
+
+
 def create_storyboard(body: dict, token: str, deps: Deps):
     try:
         user_id = auth.verify(token)

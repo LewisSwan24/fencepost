@@ -62,3 +62,19 @@
   cursor: pointer;
 }
 .leave:hover { color: var(--text); border-color: var(--text-dim); }
+
+/* Deliberately not a badge, a medal or a progress bar. A number and a date, the way a
+   photo library tells you how many photos it holds. */
+.record {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 16px 0 4px;
+}
+.recordCount {
+  font-size: 30px; line-height: 1; color: var(--text);
+}
+.recordUnit {
+  font-size: 14px; color: var(--text-dim); margin-left: 8px;
+}
+.recordWhen {
+  font-size: 13.5px; color: var(--text-dim);
+}

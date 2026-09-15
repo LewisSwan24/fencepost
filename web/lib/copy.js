@@ -141,6 +141,20 @@ export const COPY = {
   removeConfirm: "Remove it",
   removed: "Removed",
 
+  // Your own record, on your own page, and nobody else can see it. CLAUDE.md rules out
+  // points, streaks, badges and leaderboards because they characterise contributors, and
+  // that reason holds for a plain count too the moment somebody else can read it. This one
+  // nobody else can, it ranks nothing, and it rewards nothing — a possum turning up is not
+  // something anybody can schedule, so a mechanism that pushed for frequency would be
+  // pushing for invented sightings.
+  //
+  // What it is actually for is the last line: "your last one was three days ago" is what
+  // reminds somebody there is still footage on their phone.
+  recordTitle: "What you've kept",
+  recordNone: "Nothing yet. What you write turns up here, and only here — nobody else sees this.",
+  recordLatest: "Most recent",
+  recordNever: "none yet",
+
   // The owner closing it deliberately (ux-copy.md §5)
   closeStoryboard: "Close this storyboard",
   closeTitle: "Close this storyboard",

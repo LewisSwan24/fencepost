@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { storyboard, isArchived, castVote, me, editEntry, deleteEntry, removeEntry, isOwner } from "../../../lib/api";
 import { SPECIES_LABEL } from "../../../lib/fixtures";
 import { COPY, reasonSentence } from "../../../lib/copy";
-import { stamp, countLabel } from "../../../lib/format";
+import { stamp, countLabel, monthDay } from "../../../lib/format";
 import { BackButton, Sheet, ui } from "../../../components/ui";
 import Chat from "../../../components/Chat";
 import Shot from "../../../components/Shot";
@@ -179,6 +179,15 @@ export default function Storyboard({ params }) {
             <h1 className={styles.title}>{view.title}</h1>
             <div className={styles.meta}>
               <span>{countLabel(entries.length, "sighting", "sightings")}</span>
+              {/* The collective half: what this street has kept together, with nobody's
+                  name on it. A shared total characterises no individual, and it is the one
+                  number that points at what the product is actually about. Computed from
+                  the entries already on screen, so it costs no request. */}
+              {entries.length ? (
+                <span className={styles.since}>
+                  since {monthDay(entries.map((e) => e.created_at).sort()[0])}
+                </span>
+              ) : null}
             </div>
             {/* Participants are the deduplicated authors from the timeline.
                 /api/dashboard does not return participants, so following the prototype and

@@ -108,6 +108,11 @@ def main():
     # this twice inside an hour is certain to hit the quota — and that looks like a broken
     # service. It caused exactly one wrong diagnosis, on 2026-09-13.
     parser.add_argument("--handle", default=f"verify-{int(time.time()) % 1000000}")
+    # Off by default, and the reason is the note at the very bottom of this script: running
+    # it again a few minutes later and finding what the last run created still there is the
+    # acceptance test for the data not evaporating. Tidying every run takes that away.
+    parser.add_argument("--clean", action="store_true",
+                        help="remove what this run created, as far as the API allows")
     args = parser.parse_args()
 
     client = Client(args.url, args.bypass)
@@ -446,6 +451,48 @@ def main():
             break
     record("rate limit (submission)", hit is not None and hit.get("scope") == "submission",
            f"attempt {spent} → HTTP {status}" + (f" {hit.get('message', '')[:40]}" if hit else ""))
+
+    # Tidying goes before the close, because a closed storyboard takes neither a delete nor
+    # a removal — the server answers storyboard_closed, correctly.
+    #
+    # Every run of this script used to leave its whole walk behind: a user, a storyboard,
+    # entries, grants, forum threads and share links, none of it ever cleared. Counted on
+    # 2026-09-15, 35 of the 57 people in the production database were verify- handles from
+    # this script, along with most of the 22 storyboards.
+    #
+    # It cannot remove everything, and pretending otherwise would be worse than the mess.
+    # No endpoint deletes a storyboard or an account, and adding one so that a test script
+    # can tidy up would be the tail wagging the dog. What stays behind is one archived
+    # storyboard nobody holds a grant on, and three unused handles: invisible, but real.
+    # teardown_demo.py and seed_demo.py are the answer when it accumulates.
+    if args.clean:
+        removed = 0
+        status, _ = client.send("/api/entries/delete", token=token, body={"entry_id": mine})
+        removed += status == 200
+        status, threads = client.send(f"/api/forum?storyboard_id={storyboard}", token=token)
+        for thread in (threads.get("threads") or []):
+            status, view = client.send(f"/api/forum/thread?thread_id={thread['id']}",
+                                       token=token)
+            for post in (view.get("posts") or []):
+                status, _ = client.send("/api/forum/posts/remove", token=token,
+                                        body={"post_id": post["id"]})
+                removed += status == 200
+        status, listed = client.send(f"/api/share-links?storyboard_id={storyboard}",
+                                     token=token)
+        for link in (listed.get("links") or []):
+            if not link.get("revoked_at"):
+                status, _ = client.send("/api/share-links/revoke", token=token,
+                                        body={"share_link_id": link["id"]})
+                removed += status == 200
+        status, people = client.send(f"/api/grants?storyboard_id={storyboard}", token=token)
+        for person in (people.get("grants") or []):
+            if person.get("user_id") != people.get("owner_id"):
+                status, _ = client.send("/api/grants/revoke", token=token,
+                                        body={"storyboard_id": storyboard,
+                                              "user_id": person["user_id"]})
+                removed += status == 200
+        record("cleaned up after itself", removed > 0,
+               f"{removed} rows; the storyboard and the handles stay, nothing deletes those")
 
     # Closing goes after the rate limit, because it is the one action that changes what
     # every check above is allowed to do. Archived is not deleted: user-flow §9 says the

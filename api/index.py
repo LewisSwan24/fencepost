@@ -13,7 +13,7 @@ from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, ha
                        cast_review_vote, close_storyboard, create_post, create_thread,
                        dashboard, delete_entry, dispose_entry,
                        edit_entry, issue_share_link, list_grants, list_share_links, list_threads,
-                       delete_post, login, read_thread, register,
+                       delete_post, login, my_record, read_thread, register,
                        remove_entry, remove_post,
                        review_queue,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
@@ -33,6 +33,7 @@ POST_ROUTES = ("/api/session", "/api/register", "/api/login",
                "/api/review/vote",
                "/api/review/dispose", "/api/assistant")
 GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
+              "/api/record": my_record,
               "/api/forum": list_threads, "/api/forum/thread": read_thread,
               "/api/review": review_queue, "/api/grants": list_grants,
               "/api/share-links": list_share_links}
