@@ -27,7 +27,7 @@
   pointer-events: none;
 }
 
-/* Daytime photographs pushed towards night. Only one of the four is a real night shot, and
+/* Daytime photographs pushed towards night. Only one of the ten is a real night shot, and
    the whole product happens between dusk and the small hours — without this, one timeline
    would hold both midday and midnight.
    The values were found against the deployment rather than guessed: at 0.55, with the wash

@@ -11,5 +11,11 @@ tests/nonenglish_report_*.md
 # and it is a redeemable grant until somebody turns it off.
 joincode.txt
 
+# scripts/seed_demo.py --secrets-out defaults to this, and it holds every cast member's
+# password alongside the plaintext join code. joincode.txt was listed here from the start
+# and this one was missed, which is the more dangerous half of the same pair: a join code
+# can be revoked, while a password opens an account from anywhere until it is changed.
+demo-secrets.txt
+
 .agents/
 skills-lock.json

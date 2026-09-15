@@ -16,9 +16,14 @@ import styles from "../add.module.css";
 // empty one in the whole app — and it is precisely the screen where the picture is the
 // subject.
 //
-// The four images from lib/frames.js fill it, two scrub positions to each, so dragging
+// The images from lib/frames.js fill it, spread across the scrub positions so dragging
 // visibly changes something. They are **placeholders**, and the line underneath says so
 // outright — the same approach as the QR placeholder on the share screen.
+//
+// The mapping is proportional rather than `floor(index / 2)`, which is what it was when
+// there were four images and eight positions. That was arithmetic pinned to two counts with
+// no reason to stay in step: at ten images it would have reached frames 0 to 3 and no
+// others, quietly turning this screen ringtail-only with nothing on screen to notice.
 //
 // **The chosen frame is not carried anywhere, and that is the truth rather than an
 // omission.** frameIndex is read only on this screen: it is not sent on submit, and the
@@ -27,7 +32,8 @@ import styles from "../add.module.css";
 // table and a TTL job). So the copy changed too, and no longer says "this is the still
 // people see" — that was false.
 function stillFor(index) {
-  return FRAMES[Math.floor(index / 2) % FRAMES.length];
+  const positions = Math.max(1, CLIP.frames.length);
+  return FRAMES[Math.min(FRAMES.length - 1, Math.floor((index * FRAMES.length) / positions))];
 }
 
 export default function PickFrame({ params }) {

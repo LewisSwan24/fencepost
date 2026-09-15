@@ -146,7 +146,7 @@ def main():
     # wrong — because both come back as something other than JSON.
     if "protection" in payload or "_not_json" in payload:
         on = payload.get("protection") or {}
-        which = "、".join(name for name, flag in
+        which = " and ".join(name for name, flag in
                           (("Vercel Authentication", on.get("vercel_auth_enabled")),
                            ("Password", on.get("password_enabled"))) if flag)
         if not which and status == 404:

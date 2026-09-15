@@ -25,13 +25,14 @@ export default function Credits() {
       </p>
 
       <p className={styles.lede}>
-        All four are from Wikimedia Commons under{" "}
+        All ten are from Wikimedia Commons under{" "}
         <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license noreferrer"
            target="_blank">CC BY-SA 4.0</a>, which asks for attribution and for changes to be
-        noted. Three were taken in daylight and are darkened and desaturated here, because
+        noted. Nine were taken in daylight and are darkened and desaturated here, because
         Fencepost happens between dusk and late night. That darkening makes them modified
         works, and it is listed against each one below. Every file was resized and had its
-        camera metadata and location removed before use.
+        camera metadata and location removed before use, and one was cropped to fit a
+        landscape slot.
       </p>
 
       <ul className={styles.list}>
@@ -48,7 +49,13 @@ export default function Credits() {
                   {frame.licence}
                 </a>
                 {" · "}
-                {frame.night ? "used as taken" : "resized, metadata removed, darkened"}
+                {/* Built from the data rather than written out, because this is the part
+                    the licence actually asks for. It used to read "used as taken" for the
+                    night shot, which was never true — that one was resized and stripped
+                    like the rest, it just was not darkened. */}
+                {["resized", "metadata removed",
+                  frame.cropped ? "cropped" : null,
+                  frame.night ? null : "darkened"].filter(Boolean).join(", ")}
               </div>
             </div>
           </li>
