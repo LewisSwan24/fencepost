@@ -546,6 +546,30 @@ class Database:
         self.conn.commit()
         return tally
 
+    def my_record(self, user_id: str) -> dict:
+        """How much this person has written, and when they last did.
+
+        Only ever about you, only ever shown to you. CLAUDE.md rules out points, streaks,
+        badges and leaderboards, and the reason given is that they characterise
+        contributors — a reason that applies to a count as much as to a score the moment
+        anybody else can read it. This one nobody else can, and it ranks nothing.
+
+        What it is for is the thing a person actually wants: "your last one was three days
+        ago" is what reminds somebody there is still footage on their phone. A sighting is
+        not something they can schedule, so nothing here rewards frequency.
+
+        Entries they have taken down do not count; entries on a storyboard they can no
+        longer reach do, because they still wrote them.
+        """
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS entries, MAX(created_at) AS latest FROM entries "
+            "WHERE author_id = ? AND deleted_at IS NULL", (user_id,)).fetchone()
+        boards = self.conn.execute(
+            "SELECT COUNT(DISTINCT storyboard_id) AS c FROM entries "
+            "WHERE author_id = ? AND deleted_at IS NULL", (user_id,)).fetchone()["c"]
+        return {"entries": row["entries"] or 0, "latest_at": row["latest"],
+                "storyboards": boards or 0}
+
     def remove_entry(self, entry_id: str, by: str) -> None:
         """A storyboard owner taking somebody else's entry off their storyboard.
 

@@ -1696,5 +1696,81 @@ class TheOwnerClearingTheirOwnStoryboard(Fixture):
         self.assertEqual(owner["user_id"], row["removed_by"])
 
 
+class YourOwnRecord(Fixture):
+    """A count of what you have written, shown only to you.
+
+    CLAUDE.md rules out points, streaks, badges and leaderboards, and the reason it gives
+    is that they characterise contributors. That reason applies to a plain count as much as
+    to a score the moment somebody else can read it, so the whole design of this is that
+    nobody else can, and that it ranks nothing against anybody.
+
+    What it is for is the useful half: "your last one was three days ago" is what reminds a
+    person there is still footage on their phone. Nothing here rewards frequency, because a
+    possum turning up is not something anybody can schedule, and a mechanism pushing for
+    that would be pushing for invented sightings, which is a red line from the other end.
+    """
+
+    def record(self, token=None):
+        return self.get("/api/record", token=token)
+
+    def test_somebody_who_has_written_nothing_is_told_so(self):
+        who = self.session("newcomer")
+        status, out = self.record(who["token"])
+        self.assertEqual(200, status)
+        self.assertEqual(0, out["entries"])
+        self.assertIsNone(out["latest_at"])
+
+    def test_it_counts_what_you_wrote_and_when_you_last_did(self):
+        who, board = self.board("mine")
+        self.submit(who["token"], board, OK_JSON, story="on the fence at eleven")
+        self.submit(who["token"], board, OK_JSON, story="along the powerline")
+        status, out = self.record(who["token"])
+        self.assertEqual(200, status)
+        self.assertEqual(2, out["entries"])
+        self.assertTrue(out["latest_at"], "nothing to say about when the last one was")
+        self.assertEqual(1, out["storyboards"])
+
+    def test_it_is_only_ever_about_you(self):
+        """The line this feature lives on. A neighbour's writing must not reach it, or it
+        has become a way of measuring other people.
+        """
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        self.submit(owner["token"], board, OK_JSON, story="mine")
+        self.submit(neighbour["token"], board, OK_JSON, story="theirs")
+        self.submit(neighbour["token"], board, OK_JSON, story="theirs again")
+
+        self.assertEqual(1, self.record(owner["token"])[1]["entries"])
+        self.assertEqual(2, self.record(neighbour["token"])[1]["entries"])
+
+    def test_there_is_no_way_to_ask_about_somebody_else(self):
+        """An endpoint that took a user id would be the thing CLAUDE.md rules out wearing a
+        different name. It reads the token and nothing else, so a parameter changes nothing.
+        """
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        self.submit(neighbour["token"], board, OK_JSON, story="theirs")
+
+        _, asked = self.get(f"/api/record?user_id={neighbour['user_id']}",
+                            token=owner["token"])
+        self.assertEqual(0, asked["entries"], "it answered about somebody else")
+
+    def test_what_you_took_down_is_not_still_counted(self):
+        """Otherwise the number is a score you cannot lower, which is the shape of the very
+        thing that was ruled out.
+        """
+        who, board = self.board("mine")
+        _, first = self.submit(who["token"], board, OK_JSON, story="on the fence")
+        self.submit(who["token"], board, OK_JSON, story="and again")
+        self.post("/api/entries/delete", {"entry_id": first["entry_id"]}, token=who["token"])
+        self.assertEqual(1, self.record(who["token"])[1]["entries"])
+
+    def test_it_needs_a_token(self):
+        status, _ = self.record()
+        self.assertEqual(401, status)
+
+
 if __name__ == "__main__":
     unittest.main()
