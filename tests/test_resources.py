@@ -1073,6 +1073,87 @@ class Review(Fixture):
         self.assertEqual([], view["entries"])
         self.assertIsNotNone(self.db.entry(entry_id)["deleted_at"])   # still there, only soft-deleted
 
+    def test_a_stranger_learns_nothing_about_what_is_under_review(self):
+        """The order of the two checks is load-bearing, not tidiness.
+
+        operations §2.3: an author is never told their entry was marked. If disposal asked
+        "is this under review?" before "do you own this storyboard?", the error code would
+        answer that question for anybody holding an entry id — 409 not_in_review for an
+        unmarked one, 403 not_the_owner for a marked one. The author could read their own
+        status straight off it.
+
+        A mutation run found this: swapping the two checks broke nothing in the suite.
+        """
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        _, plain = self.submit(neighbour["token"], board, OK_JSON, story="never marked")
+        _, marked = self.submit(neighbour["token"], board, REVIEW_JSON,
+                                fun_fact="Ringtails live about 40 years.", story=None)
+
+        # The author is not the owner here, so both must answer the same way, and it must
+        # be the answer that says nothing about review.
+        for entry_id, what in ((plain["entry_id"], "unmarked"), (marked["entry_id"], "marked")):
+            status, out = self.post("/api/review/dispose",
+                                    {"entry_id": entry_id, "action": "removed"},
+                                    token=neighbour["token"])
+            self.assertEqual(403, status, f"the {what} entry answered something else")
+            self.assertEqual("not_the_owner", out["error"]["code"],
+                             f"the {what} entry gave its review status away")
+
+    def test_an_entry_nobody_marked_cannot_be_disposed_of(self):
+        """The owner's disposal is the end of a review, not a general delete.
+
+        dispose_entry checked three things: the entry exists, it is not already deleted, and
+        the caller owns the storyboard. It never checked that anybody had marked the entry,
+        and db.dispose removes it regardless: the UPDATE on screening_results matches no row
+        and says nothing, while the UPDATE that sets deleted_at runs anyway.
+
+        So an owner could quietly delete any entry on their storyboard, from anyone, at any
+        time, and leave no disposal record behind. Everything else in the product says that
+        is not the arrangement: deleting an entry belongs to its author, the queue holds
+        "entries awaiting a second look", and centralised moderation is on the list of
+        things CLAUDE.md rules out.
+        """
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        _, mine = self.submit(neighbour["token"], board, OK_JSON, story="on the fence at eleven")
+        entry_id = mine["entry_id"]
+
+        status, out = self.post("/api/review/dispose",
+                                {"entry_id": entry_id, "action": "removed"},
+                                token=owner["token"])
+        self.assertEqual(409, status, "the owner deleted an entry nobody had marked")
+        self.assertEqual("not_in_review", out["error"]["code"])
+
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=neighbour["token"])
+        self.assertEqual(["on the fence at eleven"], [e["story"] for e in view["entries"]],
+                         "the entry went anyway")
+
+    def test_a_marked_entry_can_still_be_disposed_of(self):
+        """The other half: the power itself is real and has to keep working."""
+        owner, guest, board, entry_id = self.flagged()
+        status, out = self.post("/api/review/dispose",
+                                {"entry_id": entry_id, "action": "removed"},
+                                token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual("removed", out["disposition"])
+
+    def test_an_entry_already_settled_cannot_be_disposed_of_twice(self):
+        """Once the review is closed there is nothing left to have the last word on, and a
+        second disposal would be the general delete arriving by another route.
+        """
+        owner, guest, board, entry_id = self.flagged()
+        self.assertEqual(200, self.post("/api/review/dispose",
+                                        {"entry_id": entry_id, "action": "kept"},
+                                        token=owner["token"])[0])
+        status, out = self.post("/api/review/dispose",
+                                {"entry_id": entry_id, "action": "removed"},
+                                token=owner["token"])
+        self.assertEqual(409, status)
+        self.assertEqual("not_in_review", out["error"]["code"])
+
     def test_only_the_owner_disposes(self):
         _, guest, _, entry_id = self.flagged()
         status, payload = self.post("/api/review/dispose",
@@ -1329,6 +1410,46 @@ class Accounts(Fixture):
         self.assertEqual(401, no_such_person[0])
         self.assertEqual(wrong_password[1], no_such_person[1])
 
+    def test_an_account_cannot_be_entered_through_the_session_door(self):
+        """The two endpoints have to agree about what a password is for.
+
+        /api/login refuses a wrong password with some care. /api/session, beside it, used
+        to hand out a token for the same person to anybody who typed their name, which made
+        the password decorative and the refusal pointless. Measured against the deployment
+        on 2026-09-15 before the fix: register, then ask /api/session for that handle, and
+        it answered 200 with a token for the same user_id.
+        """
+        _, made = self.signup()
+        status, out = self.post("/api/session", {"handle": "ada_l"})
+        self.assertEqual(403, status, "an account was opened without its password")
+        self.assertEqual("use_password", out["error"]["code"])
+        self.assertNotIn("token", out)
+
+    def test_an_identity_with_no_password_still_gets_a_token(self):
+        """Guests are the reason open sign-up is on at all. Their handles have no password,
+        so the check above must not touch them, or the site stops letting anybody in.
+        """
+        status, out = self.post("/api/session", {"handle": "guest_0123456789abcdef"})
+        self.assertEqual(200, status)
+        self.assertTrue(out["token"])
+
+    def test_the_owner_of_a_storyboard_can_be_protected_this_way(self):
+        """Why this matters beyond tidiness. An owner handle is printed beside every entry
+        they wrote, and an owner token closes the storyboard, revokes everybody's access and
+        disposes of other people's entries. Before this, reading the name off the screen was
+        the whole of the attack.
+        """
+        self.session("mel_k")
+        self.assertEqual(200, self.post("/api/session", {"handle": "mel_k"})[0],
+                         "no password yet, so the door is still open")
+        # Give that identity a password the way registering would, and the door shuts.
+        self.db.conn.execute("UPDATE users SET password_hash = ? WHERE handle = ?",
+                             ("scrypt$16384$8$1$c2FsdA==$aGFzaA==", "mel_k"))
+        self.db.conn.commit()
+        status, out = self.post("/api/session", {"handle": "mel_k"})
+        self.assertEqual(403, status)
+        self.assertEqual("use_password", out["error"]["code"])
+
     def test_registering_works_with_open_signup_closed(self):
         """The point of the whole change: this is what lets that flag go."""
         os.environ.pop("FENCEPOST_OPEN_SIGNUP", None)
@@ -1358,6 +1479,113 @@ class Accounts(Fixture):
         for _ in range(11):
             self.post("/api/login", {"handle": "ada_l", "password": "wrong-one-x"})
         self.assertEqual(200, self.signin("grace_h")[0], "the ceiling was counted globally")
+
+
+class TakingDownYourOwnWords(Fixture):
+    """Deleting a forum post, which nobody could do until 2026-09-15.
+
+    An entry could always be deleted by whoever wrote it. A forum post could be deleted by
+    nobody at all, including its author, while an owner could quietly remove anybody's entry
+    through the disposal path. Neither half of that was a decision; the rule the product
+    actually wants is the plain one: your own things are yours to take down, and nobody
+    else's are.
+
+    The data model was ready the whole time. deleted_at has been on both forum tables from
+    the start and every read already filtered on it; only the endpoint was missing.
+    """
+
+    def thread_with_a_reply(self):
+        """A thread started by the owner, with a neighbour's reply under it."""
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        self.client.replies = [OK_JSON]
+        _, thread = self.post("/api/forum/threads",
+                              {"storyboard_id": board, "title": "Mango tree",
+                               "body": "Stripped again overnight."}, token=owner["token"])
+        self.client.replies = [OK_JSON]
+        _, reply = self.post("/api/forum/posts",
+                             {"thread_id": thread["thread_id"], "body": "Mine too, all week."},
+                             token=neighbour["token"])
+        return owner, neighbour, board, thread, reply
+
+    def read(self, thread_id, token):
+        return self.get(f"/api/forum/thread?thread_id={thread_id}", token=token)[1]
+
+    def test_you_can_take_down_your_own_post(self):
+        owner, neighbour, board, thread, reply = self.thread_with_a_reply()
+        status, out = self.post("/api/forum/posts/delete",
+                                {"post_id": reply["post_id"]}, token=neighbour["token"])
+        self.assertEqual(200, status)
+        self.assertTrue(out["deleted"])
+        bodies = [p["body"] for p in self.read(thread["thread_id"], owner["token"])["posts"]]
+        self.assertNotIn("Mine too, all week.", bodies)
+
+    def test_you_cannot_take_down_somebody_elses(self):
+        """The whole point of the rule, and the half that was already wrong in the other
+        direction through the review disposal path.
+        """
+        owner, neighbour, board, thread, reply = self.thread_with_a_reply()
+        status, out = self.post("/api/forum/posts/delete",
+                                {"post_id": reply["post_id"]}, token=owner["token"])
+        self.assertEqual(403, status, "the storyboard owner deleted a neighbour's post")
+        self.assertEqual("not_your_post", out["error"]["code"])
+        bodies = [p["body"] for p in self.read(thread["thread_id"], owner["token"])["posts"]]
+        self.assertIn("Mine too, all week.", bodies, "it went anyway")
+
+    def test_withdrawing_the_opening_post_leaves_the_replies_standing(self):
+        """The title is what somebody else's reply hangs on. Taking the thread away with the
+        opening post would delete their words along with mine, which is the same mistake
+        seen from the other side.
+        """
+        owner, neighbour, board, thread, reply = self.thread_with_a_reply()
+        opening = self.read(thread["thread_id"], owner["token"])["posts"][0]
+        self.assertEqual(200, self.post("/api/forum/posts/delete",
+                                        {"post_id": opening["id"]}, token=owner["token"])[0])
+
+        view = self.read(thread["thread_id"], neighbour["token"])
+        self.assertEqual(["Mine too, all week."], [p["body"] for p in view["posts"]])
+        self.assertEqual("Mango tree", view["title"], "the reply lost the thread it was in")
+
+    def test_a_thread_with_nothing_left_in_it_goes(self):
+        """Otherwise the discussion list fills with titles that open onto nothing."""
+        owner, board = self.board("owner")
+        self.client.replies = [OK_JSON]
+        _, thread = self.post("/api/forum/threads",
+                              {"storyboard_id": board, "title": "Never mind",
+                               "body": "Asked and answered."}, token=owner["token"])
+        opening = self.read(thread["thread_id"], owner["token"])["posts"][0]
+        self.post("/api/forum/posts/delete", {"post_id": opening["id"]}, token=owner["token"])
+
+        _, listed = self.get(f"/api/forum?storyboard_id={board}", token=owner["token"])
+        self.assertEqual([], [t["title"] for t in listed["threads"]])
+
+    def test_taking_it_down_twice_is_gone(self):
+        owner, neighbour, board, thread, reply = self.thread_with_a_reply()
+        self.post("/api/forum/posts/delete", {"post_id": reply["post_id"]},
+                  token=neighbour["token"])
+        status, out = self.post("/api/forum/posts/delete", {"post_id": reply["post_id"]},
+                                token=neighbour["token"])
+        self.assertEqual(404, status)
+        self.assertEqual("gone", out["error"]["code"])
+
+    def test_an_archived_storyboard_takes_no_more_changes(self):
+        """The same line delete_entry draws. A closed storyboard is a record, not a draft."""
+        owner, neighbour, board, thread, reply = self.thread_with_a_reply()
+        self.post("/api/storyboards/close", {"storyboard_id": board}, token=owner["token"])
+        status, out = self.post("/api/forum/posts/delete",
+                                {"post_id": reply["post_id"]}, token=neighbour["token"])
+        self.assertEqual(409, status)
+        self.assertEqual("storyboard_closed", out["error"]["code"])
+
+    def test_the_interface_is_told_whose_post_it_is(self):
+        """It has to draw the control on your own posts and not on anybody else's, and it
+        compares author_id the way the timeline does rather than matching on the handle.
+        """
+        owner, neighbour, board, thread, reply = self.thread_with_a_reply()
+        posts = self.read(thread["thread_id"], owner["token"])["posts"]
+        self.assertEqual([owner["user_id"], neighbour["user_id"]],
+                         [p["author_id"] for p in posts])
 
 
 if __name__ == "__main__":

@@ -71,6 +71,9 @@ COPY = {
     # somebody whether that name exists, which is the first thing worth knowing to an
     # attacker and of no use at all to the person who mistyped their own password.
     "bad_credentials": "That name and password do not match.",
+    "use_password": "That name has an account. Sign in with its password.",
+    "not_in_review": "That post is not waiting on a second look.",
+    "not_your_post": "You can only take down your own posts.",
     "rate_limited_login": "Too many sign-in attempts. Try again in a few minutes.",
 }
 
@@ -350,6 +353,20 @@ def create_session(body: dict, deps: Deps):
     handle = (body.get("handle") or "").strip()
     if not handle or len(handle) > 40:
         return 400, _error("bad_request")
+    # An identity that has a password is an account, and an account is entered through
+    # /api/login. Without this line the two endpoints contradict each other: /api/login
+    # refuses a wrong password with some care, and the door beside it hands out a token for
+    # the same person to anybody who types their name. Measured on the deployment on
+    # 2026-09-15 — register, then ask /api/session for that handle, and it answers 200 with
+    # a token for the same user_id. The password was decorative.
+    #
+    # It does admit that a given handle is registered, which open sign-up otherwise hides.
+    # That is the smaller of the two: handles are printed beside everything their owner
+    # writes, so they were never secret, while a password that can be walked around is not
+    # a password at all.
+    existing = deps.db.user_by_handle(handle)
+    if existing is not None and existing["password_hash"]:
+        return 403, _error("use_password")
     user_id = deps.db.ensure_user(handle)
     return 200, {"user_id": user_id, "handle": handle, "token": auth.issue(user_id)}
 
@@ -740,6 +757,35 @@ def close_storyboard(body: dict, token: str, deps: Deps):
 
 # ---------- forum ----------
 
+def delete_post(body: dict, token: str, deps: Deps):
+    """Take down your own words in the discussion.
+
+    Entries could always be deleted by whoever wrote them, and forum posts could be deleted
+    by nobody at all, including their author. That asymmetry was never a decision; it is
+    simply an endpoint that was never written, and the data model has carried deleted_at on
+    both forum tables from the start with every read already filtering on it.
+
+    The same shape as delete_entry, deliberately: yours, still there, on a storyboard that
+    still takes changes. No grant is required, for the same reason it is not there — what
+    you wrote stays yours to withdraw even after somebody has revoked your access.
+    """
+    user_id, refusal = _identify(token)
+    if refusal:
+        return refusal
+    record = deps.db.post(body.get("post_id") or "")
+    if record is None or record["deleted_at"]:
+        return 404, _error("gone")
+    if record["author_id"] != user_id:
+        return 403, _error("not_your_post")
+    storyboard_id = deps.db.thread_storyboard(record["thread_id"])
+    if storyboard_id is None:
+        return 404, _error("gone")
+    if deps.db.storyboard_status(storyboard_id) != "active":
+        return 409, _error("storyboard_closed")
+    deps.db.soft_delete_post(record["id"])
+    return 200, {"post_id": record["id"], "deleted": True}
+
+
 def _forum_gate(storyboard_id: str, user_id: str, deps: Deps, writing: bool):
     """Forum access follows the storyboard: a grant to see it, contribute or above to write."""
     _settle(deps)
@@ -926,6 +972,23 @@ def dispose_entry(body: dict, token: str, deps: Deps):
         return 404, _error("gone")
     if deps.db.storyboard_owner(record["storyboard_id"]) != user_id:
         return 403, _error("not_the_owner")
+    # Settle first, so a mark nobody touched for seven days is already closed and this
+    # answers the same way the queue would (operations §2.2).
+    deps.db.settle_review()
+    # An owner's disposal is the last word on something a neighbour marked. Without this
+    # it was a delete button for anything on the storyboard: db.dispose updates the
+    # screening row "WHERE disposition IS NULL", which matches nothing and says nothing
+    # when there is no mark, while the UPDATE that sets deleted_at runs regardless. So an
+    # owner could quietly remove anybody's entry, at any time, leaving no disposal record.
+    #
+    # Deleting an entry is the author's (delete_entry answers not_your_entry to everyone
+    # else), and CLAUDE.md rules out centralised moderation outright. This endpoint is the
+    # end of a review, not a way around either of those.
+    #
+    # Checked after the owner test on purpose: somebody who does not own the storyboard
+    # learns nothing here about what is or is not under review.
+    if not deps.db.awaiting_review(entry_id):
+        return 409, _error("not_in_review")
     _purge(deps)
     deps.db.dispose(entry_id, action)
     return 200, {"entry_id": entry_id, "disposition": action}

@@ -38,6 +38,55 @@ def _schema_table_names() -> list[str]:
     return re.findall(r"CREATE TABLE\s+(\w+)", schema_sql(), re.I)
 
 
+def _statements() -> list[str]:
+    """schema.sql split into statements, with line comments stripped first.
+
+    The split is on ";", so a semicolon inside a "--" comment cuts a CREATE TABLE in half
+    and every table after it fails with "incomplete input". The comments this schema used
+    to carry were Chinese and ended their clauses with a full-width one, so the naive split
+    survived by luck; the first ordinary ";" in an English comment took out every test at
+    setUp. Nothing in the generated schema has "--" inside a string literal.
+    """
+    body = " ".join(line.split("--")[0] for line in schema_sql().splitlines())
+    return [s.strip() for s in body.split(";") if s.strip()]
+
+
+def _schema_columns(table: str) -> list[tuple[str, str]]:
+    """(name, full definition) for each column schema.sql gives `table`.
+
+    Constraint lines are not columns, so PRIMARY KEY, FOREIGN KEY, UNIQUE and CHECK
+    entries are dropped. Commas are split at bracket depth zero, or a
+    CHECK (scope IN ('chat','vision')) would be read as two more columns.
+    """
+    for statement in _statements():
+        match = re.match(r"CREATE TABLE\s+" + table + r"\s*\((.*)\)\s*$", statement,
+                         re.I | re.S)
+        if not match:
+            continue
+        columns, depth, current = [], 0, ""
+        for character in match.group(1):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+            if character == "," and depth == 0:
+                columns.append(current)
+                current = ""
+            else:
+                current += character
+        columns.append(current)
+        out = []
+        for column in (c.strip() for c in columns):
+            if not column:
+                continue
+            first = column.split()[0].upper()
+            if first in {"PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"}:
+                continue
+            out.append((column.split()[0], column))
+        return out
+    return []
+
+
 class Database:
     def __init__(self, path: str = ":memory:"):
         self.path = path
@@ -57,9 +106,9 @@ class Database:
         the second statement, the database held one table, and the application went on
         insisting all was well.
 
-        One at a time heals itself. The cost is that it only guarantees a table is there,
-        not that it is right — a changed column would not show up here. That drift is caught
-        by tests/test_data_layer.py comparing against the document.
+        One at a time heals itself. It only guarantees a table is there, though, not that
+        it is right, so the two repairs below finish the job: a column the document has
+        gained since, and the one CHECK constraint that has gained a value.
         """
         # Compare by name, not by count. A count gets padded by sqlite_autoindex_* and by
         # any table somebody else left behind, so a genuinely missing table goes unseen —
@@ -67,21 +116,82 @@ class Database:
         wanted = set(_schema_table_names())
         existing = {row["name"] for row in self.conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
-        if wanted <= existing:
+        if not wanted <= existing:
+            for statement in _statements():
+                try:
+                    self.conn.execute(statement)
+                except Exception as exc:
+                    if "already exists" not in str(exc).lower():
+                        raise
+            self.conn.commit()
+        self._add_missing_columns()
+        self._refresh_rate_limit_scopes()
+
+    def _add_missing_columns(self) -> None:
+        """Add columns the document has gained since this database was made.
+
+        Without this, the check above returns early on any database that already has all
+        twelve tables, which is every deployed one, and a new column is simply never
+        created. Measured consequence, from adding users.password_hash on 2026-09-15:
+        every INSERT INTO users fails with "no such column", and that insert is what every
+        visitor's first request does. The whole site answers 500, rather than one corner of
+        it degrading.
+
+        Only additive repairs happen here, because those are the ones SQLite can do in
+        place and the ones that cannot lose anything. A column that is NOT NULL without a
+        default, or UNIQUE, or part of a primary key, cannot be added to a populated table
+        at all; rather than skip it quietly and let the failure surface later as a broken
+        insert, this stops and says what needs writing by hand.
+        """
+        for table in _schema_table_names():
+            present = {row["name"] for row in
+                       self.conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if not present:
+                continue                      # not there at all; creation above handles it
+            for name, definition in _schema_columns(table):
+                if name in present:
+                    continue
+                upper = definition.upper()
+                if ("NOT NULL" in upper and "DEFAULT" not in upper) or "UNIQUE" in upper \
+                        or "PRIMARY KEY" in upper:
+                    raise RuntimeError(
+                        f"{table}.{name} cannot be added to an existing table in place "
+                        f"({definition.strip()}). This one needs a migration written by "
+                        "hand: build the new table, copy the rows, swap the names.")
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+        self.conn.commit()
+
+    def _refresh_rate_limit_scopes(self) -> None:
+        """Rebuild rate_limits when its CHECK is missing a scope the document now lists.
+
+        SQLite cannot alter a CHECK constraint, and this is the only one in the schema that
+        enumerates values. Adding the login ceiling on 2026-09-15 means a database made
+        before it refuses that insert, so every sign-in attempt answers 500 — and a bucket
+        that errors is not a bucket that limits.
+
+        Dropping the table is the repair rather than a last resort: every row is a counting
+        row inside a window, nothing references it, and the entire cost is that somebody
+        close to a cap gets their count reset. One window of being too permissive, once.
+
+        The trigger is deliberately narrow, a scope value the stored definition does not
+        mention, rather than a comparison of the two definitions. Comparing text across
+        whitespace and comments would eventually disagree with itself, and a rebuild that
+        fires on every open is a rate limiter that never counts to anything.
+        """
+        stored = self.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rate_limits'"
+        ).fetchone()
+        if stored is None or not stored["sql"]:
             return
-        # Strip line comments before splitting. The split is on ";", so a semicolon inside
-        # a "--" comment cuts a CREATE TABLE in half and every table after it fails with
-        # "incomplete input". The comments this schema used to carry were Chinese and ended
-        # their clauses with a full-width "；", so the naive split survived by luck; the
-        # first ordinary ";" in an English comment took out every test at setUp. Nothing in
-        # the generated schema has "--" inside a string literal, so this is safe.
-        body = " ".join(line.split("--")[0] for line in schema_sql().splitlines())
-        for statement in filter(None, (s.strip() for s in body.split(";"))):
-            try:
+        wanted = next((s for s in _statements()
+                       if re.match(r"CREATE TABLE\s+rate_limits\b", s, re.I)), "")
+        scopes = re.findall(r"'(\w+)'", wanted)
+        if not scopes or all(f"'{scope}'" in stored["sql"] for scope in scopes):
+            return
+        self.conn.execute("DROP TABLE rate_limits")
+        for statement in _statements():
+            if re.search(r"\brate_limits\b", statement):
                 self.conn.execute(statement)
-            except Exception as exc:
-                if "already exists" not in str(exc).lower():
-                    raise
         self.conn.commit()
 
     @property
@@ -436,6 +546,19 @@ class Database:
         self.conn.commit()
         return tally
 
+    def awaiting_review(self, entry_id: str) -> bool:
+        """Is there an open mark on this entry, i.e. is it actually in somebody's queue?
+
+        The same three conditions review_queue() selects on. Disposal is the end of that
+        process, so it has to ask the same question the queue asks, or "the owner's final
+        say" becomes a delete button for anything on the storyboard.
+        """
+        row = self.conn.execute(
+            "SELECT 1 AS present FROM screening_results "
+            "WHERE subject_type = 'entry' AND subject_id = ? AND verdict = 'review' "
+            "AND disposition IS NULL LIMIT 1", (entry_id,)).fetchone()
+        return row is not None
+
     def dispose(self, entry_id: str, action: str) -> None:
         """Disposal: keep, label publicly, or remove. Removal is a soft delete, not an erasure."""
         self.conn.execute(
@@ -497,11 +620,44 @@ class Database:
 
     def posts(self, thread_id: str) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT p.id, u.handle, p.body, p.created_at FROM forum_posts p "
+            "SELECT p.id, p.author_id, u.handle, p.body, p.created_at FROM forum_posts p "
             "JOIN users u ON u.id = p.author_id "
             "WHERE p.thread_id = ? AND p.deleted_at IS NULL "
             "ORDER BY p.created_at, p.rowid", (thread_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    def post(self, post_id: str):
+        row = self.conn.execute(
+            "SELECT id, thread_id, author_id, deleted_at FROM forum_posts WHERE id = ?",
+            (post_id,)).fetchone()
+        return dict(row) if row else None
+
+    def soft_delete_post(self, post_id: str) -> str:
+        """Withdraw one post. Soft, the way entries are: every forum read already filters
+        deleted_at, so nothing else has to change for it to disappear.
+
+        A thread with nothing visible left in it goes too, or the discussion list fills up
+        with titles that open onto nothing. A thread that still holds somebody else's reply
+        stays, title and all, even when the opening post was the one withdrawn: the title is
+        what those replies hang on, and taking it would delete their words along with mine.
+        That is the same line delete_account already draws, where a thread survives as long
+        as posts remain in it.
+        """
+        row = self.conn.execute(
+            "SELECT thread_id FROM forum_posts WHERE id = ?", (post_id,)).fetchone()
+        if row is None:
+            return None
+        thread_id = row["thread_id"]
+        self.conn.execute("UPDATE forum_posts SET deleted_at = ? WHERE id = ?",
+                          (now(), post_id))
+        left = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM forum_posts WHERE thread_id = ? AND deleted_at IS NULL",
+            (thread_id,)).fetchone()["c"]
+        if left == 0:
+            self.conn.execute("UPDATE forum_threads SET deleted_at = ? WHERE id = ?",
+                              (now(), thread_id))
+        self.conn.commit()
+        return thread_id
 
     # ---------- retention and deletion (data-model.md §4) ----------
 

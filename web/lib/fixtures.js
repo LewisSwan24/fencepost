@@ -450,6 +450,25 @@ export function readThread(threadId) {
   return { thread_id: threadId, posts: [] };
 }
 
+export function deleteForumPost(postId) {
+  // Offline mirror of the server rule: the post goes, and a thread with nothing left in it
+  // goes with it. A thread that still holds a reply stays, title and all, because that
+  // title is what the reply hangs on.
+  for (const [boardId, list] of Object.entries(FORUM)) {
+    for (const thread of list) {
+      const at = thread.posts.findIndex((p) => p.id === postId);
+      if (at === -1) continue;
+      thread.posts.splice(at, 1);
+      thread.post_count = thread.posts.length;
+      if (thread.posts.length === 0) {
+        FORUM[boardId] = list.filter((t) => t.id !== thread.id);
+      }
+      return { post_id: postId, deleted: true };
+    }
+  }
+  return { post_id: postId, deleted: false };
+}
+
 export function createThread({ storyboardId, title, body }) {
   // A title has to be refusable too — the server now screens the title joined to the body,
   // so a clean body cannot rescue a title carrying an address. An offline demo that cannot

@@ -136,6 +136,74 @@ class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
                      "screening_results", "review_votes", "forum_threads", "rate_limits"):
             self.assertIn(name, tables)
 
+    def _pretend_it_predates_the_accounts_change(self):
+        """Put this database back to the shape it had before 2026-09-15: users without
+        password_hash, and rate_limits with a CHECK that has never heard of login.
+
+        That is what every deployed database actually looks like. _apply_schema returns
+        early once all twelve tables exist, so neither change reached an existing database
+        on its own.
+        """
+        self.db.conn.execute("DROP TABLE users")
+        self.db.conn.execute(
+            "CREATE TABLE users (id TEXT PRIMARY KEY, handle TEXT NOT NULL UNIQUE, "
+            "created_at TIMESTAMP NOT NULL)")
+        self.db.conn.execute("DROP TABLE rate_limits")
+        self.db.conn.execute(
+            "CREATE TABLE rate_limits (id TEXT PRIMARY KEY, "
+            "user_id TEXT NOT NULL REFERENCES users(id), "
+            "scope TEXT NOT NULL CHECK (scope IN ('chat','vision','submission')), "
+            "used_at TIMESTAMP NOT NULL)")
+        self.db.conn.execute(
+            "INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
+            ("u_old", "mel_k", "2026-09-01T10:00:00+00:00"))
+        self.db.conn.commit()
+
+    def test_the_repairs_run_on_the_driver_production_uses(self):
+        """ALTER TABLE ADD COLUMN and PRAGMA table_info on the real engine, not sqlite3.
+
+        The sqlite3 tests prove the logic; this proves the two statements it leans on are
+        answered the same way by libSQL. Getting that wrong is not a failing test, it is a
+        deploy where every INSERT INTO users says "no such column" — and that insert is
+        every visitor's first request, so the whole site answers 500.
+        """
+        self._pretend_it_predates_the_accounts_change()
+        before = {row["name"] for row in
+                  self.db.conn.execute("PRAGMA table_info(users)").fetchall()}
+        self.assertNotIn("password_hash", before)
+
+        self.db._apply_schema()
+
+        after = {row["name"] for row in
+                 self.db.conn.execute("PRAGMA table_info(users)").fetchall()}
+        self.assertIn("password_hash", after, "the column never reached the database")
+        kept = self.db.conn.execute("SELECT handle FROM users WHERE id = 'u_old'").fetchone()
+        self.assertEqual("mel_k", kept["handle"], "the repair lost the people already there")
+        # The same failure from the far side: the insert works now.
+        self.assertTrue(self.db.add_user("ada_l", "scrypt$16384$8$1$c2FsdA==$aGFzaA=="))
+
+    def test_the_widened_check_holds_on_the_real_engine(self):
+        """A CHECK cannot be altered, so rate_limits is rebuilt. Worth doing here because
+        DROP TABLE and CREATE INDEX both go through the wrapper, and because a rebuild that
+        fired on every open would be a rate limiter that never counts to anything.
+        """
+        self._pretend_it_predates_the_accounts_change()
+        self.db._apply_schema()
+
+        user = self.db.add_user("ada_l")
+        self.db.conn.execute(
+            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
+            ("r_1", user, "login", "2026-09-15T10:00:00+00:00"))
+        self.db.conn.commit()
+        self.assertEqual("login",
+                         self.db.conn.execute("SELECT scope FROM rate_limits")
+                         .fetchone()["scope"])
+
+        self.db._apply_schema()
+        left = self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM rate_limits").fetchone()["c"]
+        self.assertEqual(1, left, "a second open wiped the counters with nothing to repair")
+
     def test_a_storyboard_with_an_entry_reads_back(self):
         owner = self.db.ensure_user("mel_k")
         self.assertEqual(owner, self.db.ensure_user("mel_k"))     # idempotent, not a new row

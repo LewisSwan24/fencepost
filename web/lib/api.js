@@ -161,6 +161,16 @@ async function ensureSession() {
   const saved = readSession();
   if (saved) {
     session = saved;
+    // The restored path has to offer the join code too, not only the path that exchanges a
+    // fresh one. A code is replaced when it expires or when the level it grants changes, and
+    // a signed-in person only ever comes back through here — so without this they keep
+    // whatever the code gave them on the day they registered, for good, while every guest
+    // around them is upgraded. Measured on 2026-09-15 against the deployment: a restored
+    // session made one request, /api/dashboard, and left a stale mark exactly as it was.
+    //
+    // It costs nothing when there is nothing to do: joinDemo compares the mark first and
+    // returns without a request.
+    await joinDemo(saved.token, saved.user_id);
     return session;
   }
   if (!pending) {
@@ -505,6 +515,11 @@ export async function createThread({ storyboardId, title, body }) {
 export async function createPost({ threadId, body }) {
   if (!usesNetwork) return fixtures.createPost({ threadId, body });
   return call("/api/forum/posts", { body: { thread_id: threadId, body } });
+}
+
+export async function deleteForumPost(postId) {
+  if (!usesNetwork) return fixtures.deleteForumPost(postId);
+  return call("/api/forum/posts/delete", { body: { post_id: postId } });
 }
 
 // ── Sharing and access ─────────────────

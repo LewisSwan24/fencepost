@@ -13,7 +13,7 @@ from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, ha
                        cast_review_vote, close_storyboard, create_post, create_thread,
                        dashboard, delete_entry, dispose_entry,
                        edit_entry, issue_share_link, list_grants, list_share_links, list_threads,
-                       login, read_thread, register,
+                       delete_post, login, read_thread, register,
                        review_queue,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        submit_entry, timeline)
@@ -27,7 +27,8 @@ POST_ROUTES = ("/api/session", "/api/register", "/api/login",
                "/api/videos", "/api/entries",
                "/api/entries/edit", "/api/entries/delete", "/api/share-links",
                "/api/share-links/redeem", "/api/share-links/revoke", "/api/grants/revoke",
-               "/api/forum/threads", "/api/forum/posts", "/api/review/vote",
+               "/api/forum/threads", "/api/forum/posts", "/api/forum/posts/delete",
+               "/api/review/vote",
                "/api/review/dispose", "/api/assistant")
 GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
               "/api/forum": list_threads, "/api/forum/thread": read_thread,
@@ -148,6 +149,8 @@ class handler(BaseHTTPRequestHandler):
             return self._json(*revoke_grant(body, token, deps))
         if path == "/api/forum/threads":
             return self._json(*create_thread(body, token, deps))
+        if path == "/api/forum/posts/delete":
+            return self._json(*delete_post(body, token, deps))
         if path == "/api/forum/posts":
             return self._json(*create_post(body, token, deps))
         if path == "/api/review/vote":

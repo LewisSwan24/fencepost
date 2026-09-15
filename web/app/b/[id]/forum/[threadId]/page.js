@@ -7,10 +7,11 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { readThread, createPost, boardAccess, isArchived } from "../../../../../lib/api";
+import { readThread, createPost, deleteForumPost, boardAccess, isArchived, me }
+  from "../../../../../lib/api";
 import { COPY, reasonSentence } from "../../../../../lib/copy";
 import { stamp } from "../../../../../lib/format";
-import { BackButton, ui } from "../../../../../components/ui";
+import { BackButton, Sheet, ui } from "../../../../../components/ui";
 import styles from "../forum.module.css";
 
 export default function Thread({ params }) {
@@ -22,6 +23,8 @@ export default function Thread({ params }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [access, setAccess] = useState(null);
+  const [who, setWho] = useState(null);
+  const [confirming, setConfirming] = useState(null);   // the post being taken down
 
   function load() {
     readThread(threadId).then(setView, (e) => setError(e.message));
@@ -30,6 +33,10 @@ export default function Thread({ params }) {
   useEffect(load, [threadId]);
   // As above: the server takes no reply for a view grant or an archived storyboard.
   useEffect(() => { boardAccess(id).then(setAccess, () => {}); }, [id]);
+  // Needed to tell which posts are mine. Same comparison the timeline makes: author_id
+  // when the server sends one, falling back to the handle, which is what the offline
+  // fixtures carry.
+  useEffect(() => { me().then(setWho, () => {}); }, []);
 
   const canReply = (access?.level === "contribute" || access?.level === "reshare")
     && !isArchived(access?.status);
@@ -49,6 +56,23 @@ export default function Thread({ params }) {
       setError(e.message);
     }
     setBusy(false);
+  }
+
+  const mine = (post) => !!who && (post.author_id ? post.author_id === who.user_id
+                                                  : post.handle === who.handle);
+
+  async function takeDown(postId) {
+    setConfirming(null);
+    try {
+      await deleteForumPost(postId);
+      // Reload rather than splice it out locally: when the last post goes the thread goes
+      // with it, and the server is the one that decides that.
+      const left = await readThread(threadId);
+      if ((left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
+      else setView(left);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   const posts = view?.posts || [];
@@ -72,6 +96,13 @@ export default function Thread({ params }) {
               <span className={styles.handle}>@{p.handle}</span>
               <span className={styles.dot} />
               <span className={styles.when}>{stamp(p.created_at)}</span>
+              {/* Your own words, and only your own. The server answers not_your_post to
+                  anybody else, so this is the interface narrowing to that rather than
+                  being the thing that holds the rule up. */}
+              {mine(p) && canReply ? (
+                <button type="button" className={styles.takeDown}
+                        onClick={() => setConfirming(p.id)}>{COPY.deletePost}</button>
+              ) : null}
             </div>
             <p className={styles.body}>{p.body}</p>
           </article>
@@ -92,6 +123,22 @@ export default function Thread({ params }) {
           </>
         ) : null}
       </div>
+
+      {confirming ? (
+        <Sheet onClose={() => setConfirming(null)} labelledBy="take-down-title">
+          <h2 id="take-down-title" className={ui.sheetTitle}>{COPY.deletePostTitle}</h2>
+          <p style={{ fontSize: 14.5, lineHeight: 1.6, color: "var(--text-body)",
+                      margin: "0 0 20px" }}>
+            {COPY.deletePostBody}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button type="button" className={ui.btn}
+                    onClick={() => takeDown(confirming)}>{COPY.deletePostConfirm}</button>
+            <button type="button" className={ui.btnQuiet}
+                    onClick={() => setConfirming(null)}>{COPY.cancel}</button>
+          </div>
+        </Sheet>
+      ) : null}
 
       {canReply ? (
         <div className={ui.footer}>
