@@ -1588,5 +1588,113 @@ class TakingDownYourOwnWords(Fixture):
                          [p["author_id"] for p in posts])
 
 
+class TheOwnerClearingTheirOwnStoryboard(Fixture):
+    """The deliberate exception to "only your own things are yours to remove".
+
+    The rule the product wants is the plain one, and it holds everywhere else: an author
+    deletes their own entries and posts, and delete_entry answers not_your_entry to anybody
+    else. The exception is the person who made the space and invited people into it.
+
+    What was wrong before was never that an owner could remove things. It was that the
+    power had no name and left no trace: it arrived through the review disposal path, where
+    db.dispose matched no screening row, said nothing, and set deleted_at regardless. So it
+    is a named endpoint now, and the database records who did it.
+    """
+
+    def board_with_a_neighbours_entry(self):
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        _, theirs = self.submit(neighbour["token"], board, OK_JSON, story="on the fence")
+        return owner, neighbour, board, theirs["entry_id"]
+
+    def stored(self, entry_id):
+        return self.db.conn.execute(
+            "SELECT deleted_at, removed_by FROM entries WHERE id = ?", (entry_id,)).fetchone()
+
+    def test_the_owner_can_clear_somebody_elses_entry(self):
+        owner, neighbour, board, entry_id = self.board_with_a_neighbours_entry()
+        status, out = self.post("/api/entries/remove", {"entry_id": entry_id},
+                                token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertTrue(out["removed"])
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=neighbour["token"])
+        self.assertEqual([], view["entries"])
+
+    def test_who_removed_it_is_written_down(self):
+        """The whole difference between this and the hole it replaces. Without the record
+        an owner can empty a storyboard and nothing anywhere says it happened.
+        """
+        owner, neighbour, board, entry_id = self.board_with_a_neighbours_entry()
+        self.post("/api/entries/remove", {"entry_id": entry_id}, token=owner["token"])
+        row = self.stored(entry_id)
+        self.assertTrue(row["deleted_at"])
+        self.assertEqual(owner["user_id"], row["removed_by"])
+
+    def test_an_author_withdrawing_their_own_leaves_no_such_mark(self):
+        """NULL means the author took it down themselves, which needs no explaining. The
+        two have to be told apart, or the record says nothing.
+        """
+        owner, neighbour, board, entry_id = self.board_with_a_neighbours_entry()
+        self.post("/api/entries/delete", {"entry_id": entry_id}, token=neighbour["token"])
+        row = self.stored(entry_id)
+        self.assertTrue(row["deleted_at"])
+        self.assertIsNone(row["removed_by"],
+                          "an author's own withdrawal was blamed on somebody")
+
+    def test_a_neighbour_cannot_clear_anybody(self):
+        """Contribute is not a moderator. Only the owner of the space gets this."""
+        owner, neighbour, board, entry_id = self.board_with_a_neighbours_entry()
+        _, mine = self.submit(owner["token"], board, OK_JSON, story="the owner wrote this")
+        status, out = self.post("/api/entries/remove", {"entry_id": mine["entry_id"]},
+                                token=neighbour["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("not_the_owner", out["error"]["code"])
+        self.assertIsNone(self.stored(mine["entry_id"])["deleted_at"], "it went anyway")
+
+    def test_a_closed_storyboard_is_a_record_not_a_draft(self):
+        owner, neighbour, board, entry_id = self.board_with_a_neighbours_entry()
+        self.post("/api/storyboards/close", {"storyboard_id": board}, token=owner["token"])
+        status, out = self.post("/api/entries/remove", {"entry_id": entry_id},
+                                token=owner["token"])
+        self.assertEqual(409, status)
+        self.assertEqual("storyboard_closed", out["error"]["code"])
+
+    def test_the_review_path_is_still_only_for_what_was_marked(self):
+        """The two must not collapse back into one. Disposal is the last word on something
+        a neighbour marked; this is the owner tidying. If disposal starts accepting unmarked
+        entries again, the named endpoint was pointless.
+        """
+        owner, neighbour, board, entry_id = self.board_with_a_neighbours_entry()
+        status, out = self.post("/api/review/dispose",
+                                {"entry_id": entry_id, "action": "removed"},
+                                token=owner["token"])
+        self.assertEqual(409, status)
+        self.assertEqual("not_in_review", out["error"]["code"])
+
+    def test_the_owner_can_clear_a_post_in_the_discussion(self):
+        owner, board = self.board("owner")
+        neighbour = self.session("neighbour")
+        self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+        self.client.replies = [OK_JSON]
+        _, thread = self.post("/api/forum/threads",
+                              {"storyboard_id": board, "title": "Mango tree",
+                               "body": "Stripped again."}, token=owner["token"])
+        self.client.replies = [OK_JSON]
+        _, reply = self.post("/api/forum/posts",
+                             {"thread_id": thread["thread_id"], "body": "buy my thing"},
+                             token=neighbour["token"])
+
+        status, _ = self.post("/api/forum/posts/remove", {"post_id": reply["post_id"]},
+                              token=owner["token"])
+        self.assertEqual(200, status)
+        _, view = self.get(f"/api/forum/thread?thread_id={thread['thread_id']}",
+                           token=owner["token"])
+        self.assertEqual(["Stripped again."], [p["body"] for p in view["posts"]])
+        row = self.db.conn.execute("SELECT removed_by FROM forum_posts WHERE id = ?",
+                                   (reply["post_id"],)).fetchone()
+        self.assertEqual(owner["user_id"], row["removed_by"])
+
+
 if __name__ == "__main__":
     unittest.main()

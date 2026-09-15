@@ -36,6 +36,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 
 def send(base, path, token=None, body=None):
@@ -74,15 +75,45 @@ def main():
     parser.add_argument("--days", type=int, default=90, help="1 to 90; the server enforces it")
     parser.add_argument("--out", default="joincode.txt",
                         help="where the token is written; it is never printed")
+    parser.add_argument("--secrets", default=None,
+                        help="a file of handle<tab>password lines, when the owner has one")
     parser.add_argument("--list", action="store_true",
                         help="show that handle's storyboards and stop, writing nothing")
     args = parser.parse_args()
 
-    status, session = send(args.url, "/api/session", body={"handle": args.owner})
-    if status != 200 or not session.get("token"):
-        fail(f"Could not get a token for {args.owner}: HTTP {status} {session}. "
-             "If that is a 403, FENCEPOST_OPEN_SIGNUP is off in the deployment, and a code "
-             "has to be issued from the interface instead, signed in as the owner.")
+    # Two ways in, because the owner may or may not have a password. A demo identity that
+    # never registered is handed a token by /api/session under open sign-up; one that has a
+    # password is refused there on purpose, since otherwise the password would be
+    # decorative, and has to come through /api/login instead.
+    #
+    # The password is read from a file rather than taken on the command line: an argument
+    # ends up in shell history and in the process list, where a password issued for the
+    # owner of the demo storyboard is exactly as useful to somebody else as it is to you.
+    if args.secrets:
+        try:
+            rows = dict(line.split("\t", 1) for line in
+                        Path(args.secrets).read_text(encoding="utf-8").splitlines()
+                        if "\t" in line)
+        except OSError as exc:
+            fail(f"Could not read {args.secrets}: {exc}")
+        if args.owner not in rows:
+            fail(f"{args.secrets} has no line for {args.owner}. It wants the handle, a tab, "
+                 "then the password.")
+        status, session = send(args.url, "/api/login",
+                               body={"handle": args.owner,
+                                     "password": rows[args.owner].strip()})
+        if status != 200 or not session.get("token"):
+            fail(f"Signing in as {args.owner} failed: HTTP {status} {session}")
+    else:
+        status, session = send(args.url, "/api/session", body={"handle": args.owner})
+        if status == 403 and (session.get("error") or {}).get("code") == "use_password":
+            fail(f"{args.owner} has a password, so /api/session will not hand out a token "
+                 "for it — which is the point of having one. Pass --secrets <file>, where "
+                 "the file holds a line of: the handle, a tab, then the password.")
+        if status != 200 or not session.get("token"):
+            fail(f"Could not get a token for {args.owner}: HTTP {status} {session}. "
+                 "If that is a 403 signup_closed, FENCEPOST_OPEN_SIGNUP is off in the "
+                 "deployment and a code has to be issued from the interface instead.")
     token = session["token"]
 
     status, home = send(args.url, "/api/dashboard", token=token)
@@ -148,17 +179,26 @@ def main():
     print(f"The token is in {args.out} and is not printed here. Two commands follow; "
           "delete that file afterwards.")
     print("")
+    # --cwd web on the env command, and not on the deploy. Both halves have been got wrong
+    # once each, on 2026-09-15. Without --cwd web, `vercel env add` uses whatever project
+    # the repository root is linked to, which is the API, and the variable lands somewhere
+    # nothing reads it while the front end carries on with the old code. With --cwd web on
+    # the deploy, the CLI uploads web/ as the root and the project's own Root Directory
+    # setting then looks for web/web, which does not exist. The front end is deployed from
+    # git, so a push is what rebuilds it.
     print("PowerShell:")
-    print("  vercel env add NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN production --force "
+    print("  vercel env add NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN production --force --cwd web "
           f"--value ((Get-Content {args.out} -Raw).Trim())")
-    print("  vercel --cwd web --prod")
     print("")
     print("bash:")
-    print("  vercel env add NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN production --force "
+    print("  vercel env add NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN production --force --cwd web "
           f'--value "$(cat {args.out})"')
-    print("  vercel --cwd web --prod")
     print("")
-    print("The redeploy is not optional: NEXT_PUBLIC_ variables are compiled into the "
+    print("Then rebuild the front end by pushing to git, which is what deploys it. "
+          "`vercel --cwd web --prod` does not work: the project's Root Directory is already "
+          "web, so uploading web/ as the root makes it look for web/web.")
+    print("")
+    print("The rebuild is not optional: NEXT_PUBLIC_ variables are compiled into the "
           "bundle, so the old code stays live until the front end is built again.")
     print("Visitors already carrying the previous code pick this one up by themselves on "
           "their next visit. lib/api.js remembers which code it redeemed, not merely that "

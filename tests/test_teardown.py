@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import teardown_demo                                                         # noqa: E402
+import seed_demo                                                             # noqa: E402
 from proxy.db import (Database, SqliteHistory, SqliteRateLimiter,            # noqa: E402
                       SqliteScreeningLog, _schema_table_names, schema_sql)
 
@@ -138,6 +139,91 @@ class ClearingReallyEmptiesItOnTheRealDriver(unittest.TestCase):
         teardown_demo.clear(self.db)
         again = teardown_demo.clear(self.db)
         self.assertEqual({name: 0 for name in teardown_demo.TABLES}, again)
+
+
+class SeedingIsTheInverseOfClearing(unittest.TestCase):
+    """teardown could empty the database and nothing could fill it again.
+
+    That asymmetry is why the live site showed whatever development had left behind rather
+    than a dataset somebody designed: an entry whose story was the word "nothing", a thread
+    called "First thread on the hosted database". The designed one sat in
+    web/lib/fixtures.js the whole time, shown only by the offline mode, so the offline demo
+    and the live one told two different stories.
+
+    These run on the real libSQL driver for the same reason the clearing tests do:
+    settle_review answered 500 on Turso for weeks while a suite full of stand-ins stayed
+    green.
+    """
+
+    def setUp(self):
+        self.path = Path(tempfile.gettempdir()) / f"fencepost_seed_{id(self)}.db"
+        self._clean()
+        self.db = Database("file:" + str(self.path).replace(chr(92), "/"))
+        self.data = seed_demo.load_fixture_data()
+
+    def tearDown(self):
+        self.db.close()
+        self._clean()
+
+    def _clean(self):
+        for suffix in ("", "-shm", "-wal"):
+            Path(str(self.path) + suffix).unlink(missing_ok=True)
+
+    def count(self, table):
+        return self.db.conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
+
+    def user(self, handle):
+        return self.db.conn.execute("SELECT id FROM users WHERE handle = ?",
+                                    (handle,)).fetchone()["id"]
+
+    def test_the_dataset_comes_out_of_the_front_end_fixtures(self):
+        """Read through that module's exported functions rather than copied into Python.
+
+        A second copy would drift, which is the mistake this project already made once with
+        the Screener's refusal sentence: two definitions, one of them never read.
+        """
+        titles = [b["title"] for b in self.data["boards"]]
+        self.assertIn("The one in the jacaranda", titles)
+        self.assertIn("Roof thumper", titles)
+        self.assertTrue(any(b["status"] == "archived" for b in self.data["boards"]),
+                        "nothing archived, so the dashboard's Past section stays empty")
+
+    def test_it_builds_a_storyboard_somebody_can_actually_read(self):
+        made = seed_demo.seed(self.db, self.data)
+        self.assertEqual(len(self.data["boards"]), self.count("storyboards"))
+        self.assertEqual(sum(len(b["entries"]) for b in self.data["boards"]),
+                         self.count("entries"))
+        self.assertTrue(self.count("forum_posts") > 0)
+        self.assertEqual([], self.db.foreign_key_violations())
+        self.assertTrue(made["join_token"])
+
+    def test_everybody_in_the_dataset_can_reach_what_they_wrote_in(self):
+        """A discussion between people who cannot open the storyboard reads as a fake."""
+        seed_demo.seed(self.db, self.data)
+        rows = self.db.conn.execute(
+            "SELECT DISTINCT u.handle AS handle, e.storyboard_id AS board FROM entries e "
+            "JOIN users u ON u.id = e.author_id").fetchall()
+        self.assertTrue(rows)
+        for row in rows:
+            level = self.db.grant_level(row["board"], self.user(row["handle"]))
+            self.assertIsNotNone(level, f"@{row['handle']} wrote somewhere they cannot open")
+
+    def test_the_demo_identities_cannot_be_signed_into_without_their_password(self):
+        """Every seeded handle is printed beside what it wrote, and an owner token closes
+        the storyboard and revokes everybody's access. A passwordless cast would hand that
+        to anybody who read a name off the screen.
+        """
+        seed_demo.seed(self.db, self.data)
+        for row in self.db.conn.execute("SELECT handle, password_hash FROM users").fetchall():
+            self.assertTrue(row["password_hash"], f"@{row['handle']} has no password")
+
+    def test_seed_then_clear_leaves_nothing(self):
+        """The round trip, which is the point of having both."""
+        seed_demo.seed(self.db, self.data)
+        self.assertTrue(self.count("entries") > 0)
+        teardown_demo.clear(self.db)
+        for table in teardown_demo.TABLES:
+            self.assertEqual(0, self.count(table), f"{table} survived the clear")
 
 
 if __name__ == "__main__":

@@ -7,8 +7,8 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { readThread, createPost, deleteForumPost, boardAccess, isArchived, me }
-  from "../../../../../lib/api";
+import { readThread, createPost, deleteForumPost, removeForumPost, boardAccess,
+         isArchived, isOwner, me } from "../../../../../lib/api";
 import { COPY, reasonSentence } from "../../../../../lib/copy";
 import { stamp } from "../../../../../lib/format";
 import { BackButton, Sheet, ui } from "../../../../../components/ui";
@@ -24,7 +24,9 @@ export default function Thread({ params }) {
   const [busy, setBusy] = useState(false);
   const [access, setAccess] = useState(null);
   const [who, setWho] = useState(null);
-  const [confirming, setConfirming] = useState(null);   // the post being taken down
+  const [confirming, setConfirming] = useState(null);   // my own, being taken down
+  const [clearing, setClearing] = useState(null);       // somebody else's, on a board I own
+  const [owner, setOwner] = useState(false);
 
   function load() {
     readThread(threadId).then(setView, (e) => setError(e.message));
@@ -37,6 +39,12 @@ export default function Thread({ params }) {
   // when the server sends one, falling back to the handle, which is what the offline
   // fixtures carry.
   useEffect(() => { me().then(setWho, () => {}); }, []);
+  // An owner can clear their own storyboard, which includes the discussion on it. The
+  // server answers not_the_owner to anybody else, so this only decides what is drawn.
+  useEffect(() => {
+    if (!access?.level) return;
+    isOwner(id, access.level).then(setOwner, () => {});
+  }, [id, access?.level]);
 
   const canReply = (access?.level === "contribute" || access?.level === "reshare")
     && !isArchived(access?.status);
@@ -75,6 +83,18 @@ export default function Thread({ params }) {
     }
   }
 
+  async function clear(postId) {
+    setClearing(null);
+    try {
+      await removeForumPost(postId);
+      const left = await readThread(threadId);
+      if ((left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
+      else setView(left);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   const posts = view?.posts || [];
 
   return (
@@ -103,6 +123,11 @@ export default function Thread({ params }) {
                 <button type="button" className={styles.takeDown}
                         onClick={() => setConfirming(p.id)}>{COPY.deletePost}</button>
               ) : null}
+              {/* Not yours, but the storyboard is. Recorded against you, not silent. */}
+              {!mine(p) && owner && canReply ? (
+                <button type="button" className={styles.takeDown}
+                        onClick={() => setClearing(p.id)}>{COPY.removeIt}</button>
+              ) : null}
             </div>
             <p className={styles.body}>{p.body}</p>
           </article>
@@ -123,6 +148,22 @@ export default function Thread({ params }) {
           </>
         ) : null}
       </div>
+
+      {clearing ? (
+        <Sheet onClose={() => setClearing(null)} labelledBy="clear-title">
+          <h2 id="clear-title" className={ui.sheetTitle}>{COPY.removeTitle}</h2>
+          <p style={{ fontSize: 14.5, lineHeight: 1.6, color: "var(--text-body)",
+                      margin: "0 0 20px" }}>
+            {COPY.removeBody}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button type="button" className={ui.btn}
+                    onClick={() => clear(clearing)}>{COPY.removeConfirm}</button>
+            <button type="button" className={ui.btnQuiet}
+                    onClick={() => setClearing(null)}>{COPY.cancel}</button>
+          </div>
+        </Sheet>
+      ) : null}
 
       {confirming ? (
         <Sheet onClose={() => setConfirming(null)} labelledBy="take-down-title">

@@ -546,6 +546,40 @@ class Database:
         self.conn.commit()
         return tally
 
+    def remove_entry(self, entry_id: str, by: str) -> None:
+        """A storyboard owner taking somebody else's entry off their storyboard.
+
+        The same soft delete the author's own withdrawal performs, plus a note of who did
+        it. That note is the whole difference between this and the hole it replaces: an
+        owner used to be able to remove anybody's entry through the review path, where
+        db.dispose matched no screening row, said nothing, and set deleted_at anyway.
+        """
+        self.conn.execute(
+            "UPDATE entries SET deleted_at = ?, removed_by = ? WHERE id = ? "
+            "AND deleted_at IS NULL", (now(), by, entry_id))
+        self.conn.commit()
+
+    def remove_post(self, post_id: str, by: str) -> str:
+        """The same for a forum post, including the rule that empties the thread with it."""
+        row = self.conn.execute(
+            "SELECT thread_id FROM forum_posts WHERE id = ?", (post_id,)).fetchone()
+        if row is None:
+            return None
+        self.conn.execute(
+            "UPDATE forum_posts SET deleted_at = ?, removed_by = ? WHERE id = ?",
+            (now(), by, post_id))
+        left = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM forum_posts WHERE thread_id = ? AND deleted_at IS NULL",
+            (row["thread_id"],)).fetchone()["c"]
+        if left == 0:
+            # Only deleted_at here. The thread emptying out is a consequence of the post
+            # going, not a second removal, and forum_threads carries no removed_by for the
+            # same reason: nobody removed the thread, it ran out of posts.
+            self.conn.execute("UPDATE forum_threads SET deleted_at = ? WHERE id = ?",
+                              (now(), row["thread_id"]))
+        self.conn.commit()
+        return row["thread_id"]
+
     def awaiting_review(self, entry_id: str) -> bool:
         """Is there an open mark on this entry, i.e. is it actually in somebody's queue?
 
