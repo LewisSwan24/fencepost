@@ -2,6 +2,7 @@
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 from .model import UpstreamError
@@ -189,9 +190,53 @@ def _language_floor(result: dict, submission: str, version: str) -> dict:
             "prompt_version": version}
 
 
+# Which alphabet a letter belongs to, straight out of the Unicode name. "LATIN SMALL LETTER
+# O WITH CIRCUMFLEX AND TILDE" is LATIN; "CYRILLIC SMALL LETTER DZE" is CYRILLIC. No table to
+# curate and nothing to keep up to date.
+def _script(ch: str) -> str:
+    try:
+        return unicodedata.name(ch).split(" ", 1)[0]
+    except ValueError:
+        return "UNKNOWN"
+
+
 def looks_non_english(text: str) -> bool:
-    """Only ever turns reject into review, so a wrong call always errs on the lenient side."""
-    letters = [c for c in text if c.isalpha()]
-    if not letters:
+    """Only ever turns reject into review, so a wrong call always errs on the lenient side.
+
+    The ratio is taken over letters that belong where they are. A letter from another
+    alphabet sitting inside an otherwise Latin word is a disguise, not a language: swapping
+    Cyrillic ѕ for s and І for I in sixty-one characters of English used to carry it over
+    the line, and because tripping this floor makes a reject unreachable, anything the
+    Screener refused could be published by anyone willing to change seven letters. It still
+    read as plain English to everyone on the storyboard. Found by an adversarial review on
+    2026-09-16, which got the red-line suite's own snake case published verbatim.
+
+    Judged per word by which alphabet dominates it, rather than by a list of lookalikes. A
+    list has to be complete to work and erodes the real signal when it is: folding the
+    Cyrillic letters that happen to resemble Latin ones took a genuine Russian sentence from
+    100% non-ASCII down to 50%, and a short one could have fallen under the line altogether —
+    which is the floor failing the people it exists for, the more serious way to be wrong.
+
+    Accented Latin is never touched. The ā in Ngā and the ố in Tối are LATIN by name as
+    well as by eye, so they count exactly as they did before.
+    """
+    # NFKC first, so the fullwidth forms come back as the letters they are: unicodedata
+    # names Ｔ "FULLWIDTH LATIN CAPITAL LETTER T", which reads as its own alphabet and let
+    # Ｔｈｅ ｐｏｓｓｕｍ ｉｓ ｏｎ ｔｈｅ ｒｏｏｆ buy the same immunity. It is a compatibility fold, so it
+    # leaves Cyrillic and Greek exactly where they are — which is what the script check
+    # below is for — and leaves Vietnamese and te reo composed as they were written.
+    kept = []
+    for word in re.split(r"\s+", unicodedata.normalize("NFKC", text)):
+        letters = [c for c in word if c.isalpha()]
+        if not letters:
+            continue
+        scripts = [_script(c) for c in letters]
+        latin = sum(1 for name in scripts if name == "LATIN")
+        if latin and latin * 2 >= len(letters):
+            # A Latin word. Whatever else wandered in is decoration on an English letter.
+            kept.extend(c for c, name in zip(letters, scripts) if name == "LATIN")
+        else:
+            kept.extend(letters)
+    if not kept:
         return False
-    return sum(1 for c in letters if ord(c) > 127) / len(letters) > 0.1
+    return sum(1 for c in kept if ord(c) > 127) / len(kept) > 0.1

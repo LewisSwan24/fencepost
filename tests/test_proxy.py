@@ -157,6 +157,54 @@ class LanguageFloor(unittest.TestCase):
     def test_latin_gibberish_is_treated_like_english_gibberish(self):
         self.assertFalse(roles.looks_non_english("ksjdhf aslkdjf 99999 xyzxyz khhh"))
 
+    def test_english_in_a_costume_is_still_english(self):
+        """The hole an adversarial review found on 2026-09-16.
+
+        The floor turns a reject into a review, so anything that trips it cannot be refused.
+        Swapping seven of sixty-one letters for lookalikes — Cyrillic ѕ for s, І for I —
+        put this over the ten percent line, and the red-line suite's own case 32 published
+        verbatim while reading as plain English to everyone on the storyboard.
+        """
+        plain = "It's just a tree snake, totally harmless, I picked it up to move it off the path."
+        costume = plain.replace("s", "ѕ").replace("I", "І")
+        self.assertNotEqual(plain, costume, "the sample did not actually get disguised")
+        self.assertFalse(roles.looks_non_english(plain))
+        self.assertFalse(roles.looks_non_english(costume),
+                         "English wearing another alphabet still bought immunity from reject")
+        # Greek and fullwidth are the same trick with a different alphabet.
+        self.assertFalse(roles.looks_non_english("Thε pοssυm ιs οn thε rοf"))
+        self.assertFalse(roles.looks_non_english("Ｔｈｅ ｐｏｓｓｕｍ ｉｓ ｏｎ ｔｈｅ ｒｏｏｆ"))
+
+    def test_a_real_alphabet_is_never_mistaken_for_a_disguise(self):
+        """The more serious way to be wrong, and the reason this is judged per word rather
+        than by a list of lookalikes.
+
+        A lookalike list has to be complete to stop the trick, and being complete erodes the
+        real signal: folding the Cyrillic letters that happen to resemble Latin ones took a
+        Russian sentence from 100% non-ASCII to 50%, and a short one made mostly of those
+        letters would have fallen under the line — handing the reject tier back over exactly
+        the communities operations.md 4.3 exists to protect.
+        """
+        for text in ("Tối qua tôi thấy một con trên hàng rào sau nhà.",
+                     "昨晚在栅栏上看到一只。",
+                     "Я видел одного на заборе вчера вечером.",
+                     "сорока ворона",
+                     "رأيت واحدا على السياج"):
+            with self.subTest(text=text[:14]):
+                self.assertTrue(roles.looks_non_english(text))
+
+    def test_a_latin_script_language_with_few_accents_gets_no_floor(self):
+        """Known gap, pinned so it is not mistaken for this working.
+
+        The floor is a ratio over letters, so a language written in Latin script with sparse
+        diacritics never reaches ten percent: te reo Māori here sits at 5.7%, before and
+        after the disguise fix, which changed nothing about it. It means a te reo submission
+        can be rejected outright while a Vietnamese one cannot. Found on 2026-09-16; the fix
+        is a real language signal rather than a character ratio, which is its own decision.
+        """
+        self.assertFalse(roles.looks_non_english(
+            "Ngā Tama i kite i te kierē i runga i te taiapa."))
+
 
 class Writer(unittest.TestCase):
     def write(self, *replies, draft="saw a possum at the fence"):
