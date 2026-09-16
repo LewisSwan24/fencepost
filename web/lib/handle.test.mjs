@@ -17,21 +17,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { toHandle, SUFFIX } from "./handle.js";
 
-const FIXED = "4f2a";                    // passed in, so the tests are not random
+const FIXED = "4f2a9b1c";                // passed in, so the tests are not random
 
 test("a plain name becomes a readable handle", () => {
-  assert.equal(toHandle("Sam", FIXED), "sam-4f2a");
+  assert.equal(toHandle("Sam", FIXED), "sam-4f2a9b1c");
 });
 
 test("spaces and punctuation become single underscores", () => {
-  assert.equal(toHandle("Sam from #14", FIXED), "sam_from_14-4f2a");
-  assert.equal(toHandle("mel   k", FIXED), "mel_k-4f2a");
-  assert.equal(toHandle("O'Brien-Smith", FIXED), "o_brien_smith-4f2a");
+  assert.equal(toHandle("Sam from #14", FIXED), "sam_from_14-4f2a9b1c");
+  assert.equal(toHandle("mel   k", FIXED), "mel_k-4f2a9b1c");
+  assert.equal(toHandle("O'Brien-Smith", FIXED), "o_brien_smith-4f2a9b1c");
 });
 
 test("separators at either end are not left dangling", () => {
-  assert.equal(toHandle("  Sam!  ", FIXED), "sam-4f2a");
-  assert.equal(toHandle("...Sam...", FIXED), "sam-4f2a");
+  assert.equal(toHandle("  Sam!  ", FIXED), "sam-4f2a9b1c");
+  assert.equal(toHandle("...Sam...", FIXED), "sam-4f2a9b1c");
 });
 
 test("a name not written in Latin letters survives", () => {
@@ -39,9 +39,9 @@ test("a name not written in Latin letters survives", () => {
   // rejection — non-English submissions can be flagged but never auto-rejected. Throwing
   // the name away and handing back guest_xxxx is that same decision wearing a hat. The
   // server allows 40 characters and does not care which script they are in.
-  assert.equal(toHandle("小明", FIXED), "小明-4f2a");
-  assert.equal(toHandle("Ngā Tama", FIXED), "ngā_tama-4f2a");
-  assert.equal(toHandle("Зоя", FIXED), "зоя-4f2a");
+  assert.equal(toHandle("小明", FIXED), "小明-4f2a9b1c");
+  assert.equal(toHandle("Ngā Tama", FIXED), "ngā_tama-4f2a9b1c");
+  assert.equal(toHandle("Зоя", FIXED), "зоя-4f2a9b1c");
 });
 
 test("two people who type the same name do not become the same person", () => {
@@ -53,11 +53,21 @@ test("two people who type the same name do not become the same person", () => {
   assert.ok(a.startsWith("sam-") && b.startsWith("sam-"));
 });
 
-test("the suffix is short, lowercase and always there", () => {
+test("the suffix is long enough that a name cannot be guessed", () => {
+  // Four hex characters was 16 bits, and /api/session trades any handle for that user's
+  // token with no password and no rate limit (docs/operations.md: 「`/api/session` 本身不限流」).
+  // So a visitor called Sam was reachable in 65,536 probes: walk sam-0000..sam-ffff, ask
+  // for a token for each, and the one whose dashboard is not empty is the real person —
+  // along with their grants, their private timelines, and their entries. Found by an
+  // adversarial review on 2026-09-16, which measured it: victim hit at probe 244.
+  //
+  // Eight characters is 32 bits, so the same walk costs billions of requests rather than
+  // thousands. That is a bar, not a proof: the real fix is that /api/session should not
+  // hand out a token for a name alone, which is a server change and a separate decision.
   for (const name of ["Sam", "小明", "a"]) {
-    assert.match(toHandle(name), /-[0-9a-f]{4}$/);
+    assert.match(toHandle(name), /-[0-9a-f]{8}$/);
   }
-  assert.equal(SUFFIX, 4);
+  assert.equal(SUFFIX, 8);
 });
 
 test("a long name is clamped so the server still accepts the handle", () => {
@@ -83,6 +93,6 @@ test("a name is never turned into somebody else's", () => {
   // The seeded neighbours hold passwords, so /api/session refuses their handles outright
   // and typing "mel_k" cannot take that account over. The suffix means it is not even
   // asked: what reaches the server is mel_k-4f2a, a different person.
-  assert.equal(toHandle("mel_k", FIXED), "mel_k-4f2a");
+  assert.equal(toHandle("mel_k", FIXED), "mel_k-4f2a9b1c");
   assert.notEqual(toHandle("mel_k", FIXED), "mel_k");
 });

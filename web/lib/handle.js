@@ -17,9 +17,23 @@
 // be unique on their own; here the name carries the meaning and the suffix only has to tell
 // two Sams apart.
 
-export const SUFFIX = 4;
+// Eight, not four. Four was enough to tell two Sams apart and nothing like enough to stop
+// somebody guessing which Sam you are: /api/session trades any handle for that user's token,
+// with no password and — docs/operations.md is explicit — no rate limit. So sixteen bits
+// meant a named visitor could be walked in 65,536 probes, and the one whose dashboard is not
+// empty is the real person, along with their grants and their private timelines. An
+// adversarial review measured it on 2026-09-16 and hit the victim at probe 244.
+//
+// Before names, a visitor was guest_ plus sixteen hex characters, and the documented position
+// — that open sign-up widens what you can write, not what you can see — rested on handles
+// being unguessable. Letting people choose a name is what broke that, so the suffix carries
+// the weight instead: thirty-two bits puts the same walk in the billions.
+//
+// It is a bar, not a proof. The real answer is that a name alone should not buy a token,
+// which is a server change and its own decision.
+export const SUFFIX = 8;
 
-// 24 + "-" + 4 = 29. proxy/app.py refuses a handle over 40 characters, and being refused at
+// 24 + "-" + 8 = 33. proxy/app.py refuses a handle over 40 characters, and being refused at
 // the door is a blank dashboard for somebody whose only mistake was a long name.
 const MAX_NAME = 24;
 

@@ -24,7 +24,7 @@
 
 import { useEffect, useState } from "react";
 import { chooseHandle, hasHandle, usesNetwork, visitorHandle } from "../lib/api";
-import { toHandle } from "../lib/handle";
+import { SUFFIX, toHandle } from "../lib/handle";
 import { COPY } from "../lib/copy";
 import { ui } from "./ui";
 import styles from "./NameGate.module.css";
@@ -64,7 +64,12 @@ export default function NameGate({ children }) {
   // what they typed and the suffix is the part that would otherwise look like a mistake.
   // A fixed placeholder suffix here: the real one is drawn when the name is kept, and a
   // preview that reshuffled on every keystroke would read as instability.
-  const preview = toHandle(name, "xxxx");
+  //
+  // Its length comes from SUFFIX rather than being written out, so the preview cannot show
+  // a shorter name than the one actually handed over. It was four x's against an
+  // eight-character suffix for about an hour on 2026-09-16 — a small lie, but this screen's
+  // whole job is to tell somebody what they are about to be called.
+  const preview = toHandle(name, "x".repeat(SUFFIX));
   const ready = !!preview;
 
   return (
