@@ -67,7 +67,11 @@ export function initials(handle) {
   // two parts and the avatar reads "l9" — while the share screen, which takes the first two
   // characters of the handle instead, reads "le" for the same person on the same evening.
   // Both derivations predate the suffix; a handle with one is what made them disagree.
-  const named = String(handle || "").replace(/-[0-9a-f]{4}$/, "");
+  // {4,} rather than a fixed length: the suffix grew from four characters to eight on
+  // 2026-09-16 and a handle issued before that is still somebody who might come back. The
+  // only hyphen in a generated handle is the one before the suffix — slug() turns every
+  // other non-alphanumeric into an underscore — so widening this cannot eat a name.
+  const named = String(handle || "").replace(/-[0-9a-f]{4,}$/, "");
   const parts = named.split(/[_.\-\s]+/).filter(Boolean);
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toLowerCase();

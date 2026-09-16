@@ -38,6 +38,10 @@ test("relative() really does collapse a future time to today, so expiry cannot u
 // name they agreed. "lewis-9ffe" is where they stopped: split on the dash, this read "l9"
 // while the share screen read "le" for the same person.
 test("the random tail of a chosen name is not part of the name", () => {
+  // Eight characters since 2026-09-16, four before it. Both are still out there: a handle
+  // issued yesterday belongs to somebody who might open the site again tomorrow.
+  assert.equal(initials("lewis-4f2a9b1c"), "le");
+  assert.equal(initials("sam_from_14-4f2a9b1c"), "sf");
   assert.equal(initials("lewis-9ffe"), "le");
   assert.equal(initials("sam-4f2a"), "sa");
   assert.equal(initials("lewis_from_14-4f2a"), "lf");
