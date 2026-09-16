@@ -679,6 +679,54 @@ class Sharing(Fixture):
         self.assertEqual(403, status)
         self.assertEqual("no_access", payload["error"]["code"])
 
+    def test_a_revoked_person_cannot_re_redeem_their_way_back(self):
+        """The hole an adversarial review found on 2026-09-16.
+
+        grant_level() reports None both for a stranger and for somebody who was thrown off,
+        so redeeming treated the two alike and the upsert put them straight back — with the
+        QR code still in their camera roll, one request, nobody with authority involved, for
+        as long as the code lived. The owner's only remedy was to guess which code they used
+        and turn that off too, which also shuts out everyone yet to redeem it.
+        """
+        owner, board = self.board()
+        guest = self.session("guest")
+        _, issued = self.link(owner["token"], board, level="contribute")
+        status, _ = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                              token=guest["token"])
+        self.assertEqual(200, status)
+
+        self.post("/api/grants/revoke", {"storyboard_id": board, "user_id": guest["user_id"]},
+                  token=owner["token"])
+        before = self.db.share_link(issued["share_link_id"])["used_count"]
+
+        status, payload = self.post("/api/share-links/redeem", {"token": issued["token"]},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("access_revoked", payload["error"]["code"])
+        self.assertIsNone(self.db.grant_level(board, guest["user_id"]),
+                          "re-redeeming resurrected a revoked grant")
+        seen, _ = self.get(f"/api/timeline?storyboard_id={board}", token=guest["token"])
+        self.assertEqual(403, seen)
+        # A redemption that grants nothing must not spend one of the link's uses, or being
+        # refused would quietly burn a code the owner is still handing out.
+        self.assertEqual(before, self.db.share_link(issued["share_link_id"])["used_count"])
+
+    def test_the_owner_can_still_let_a_revoked_person_back_on(self):
+        # Revocation sticks against the person it was applied to, not against the owner's
+        # ability to change their mind. grant() is the path that clears it, and it is called
+        # by somebody entitled to make that call.
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        self.post("/api/grants/revoke", {"storyboard_id": board, "user_id": guest["user_id"]},
+                  token=owner["token"])
+        self.assertIsNone(self.db.grant_level(board, guest["user_id"]))
+
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        self.assertEqual("contribute", self.db.grant_level(board, guest["user_id"]))
+        seen, _ = self.get(f"/api/timeline?storyboard_id={board}", token=guest["token"])
+        self.assertEqual(200, seen)
+
     def test_only_the_owner_revokes(self):
         owner, board = self.board()
         guest = self.session("guest")
@@ -1012,6 +1060,45 @@ class Review(Fixture):
         self.assertEqual([entry_id], [i["entry_id"] for i in theirs["items"]])
         _, mine = self.queue(owner["token"], board)
         self.assertEqual([], mine["items"])
+
+    def test_two_votes_cannot_publicly_mark_an_entry_nobody_screened(self):
+        """The hole an adversarial review found on 2026-09-16.
+
+        dispose() updated every undisposed screening row for the entry, and every entry has
+        one per field including the ones the Screener passed. So two `worth_checking` votes
+        reached past the queue and stamped an `ok` row `labelled`, which is exactly what the
+        timeline reads to show "being checked". Worse, awaiting_review() does filter on the
+        verdict, so the owner had no button to undo it: a clean entry could be marked in
+        public, permanently, by two neighbours.
+        """
+        owner, board = self.board("owner")
+        clean = self.submit(owner["token"], board, OK_JSON,
+                            fun_fact="Brushtails are nocturnal.", story=None)[1]["entry_id"]
+        for who in ("first", "second"):
+            neighbour = self.session(who)
+            self.db.grant(board, neighbour["user_id"], "contribute", owner["user_id"])
+            status, _ = self.vote(neighbour["token"], clean, "worth_checking")
+            self.assertEqual(200, status)
+
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        marked = [e for e in view["entries"] if e["id"] == clean]
+        self.assertEqual(1, len(marked), "the entry vanished from the timeline")
+        self.assertFalse(marked[0]["being_checked"],
+                         "two votes publicly marked an entry the screener had passed")
+
+    def test_two_votes_still_settle_an_entry_that_is_really_in_review(self):
+        # The designed path, unchanged: the Screener marked this one, so the queue has it
+        # and two marks settle it.
+        owner, guest, board, entry_id = self.flagged()
+        second = self.session("second")
+        self.db.grant(board, second["user_id"], "contribute", owner["user_id"])
+        self.vote(guest["token"], entry_id, "worth_checking")
+        self.vote(second["token"], entry_id, "worth_checking")
+
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=guest["token"])
+        marked = [e for e in view["entries"] if e["id"] == entry_id]
+        self.assertTrue(marked[0]["being_checked"],
+                        "an entry really in review stopped being settled by two votes")
 
     def test_the_author_cannot_vote_on_their_own(self):
         owner, _, _, entry_id = self.flagged()

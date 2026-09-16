@@ -19,6 +19,10 @@ SCOPE = {"neighbour": "chat", "writer": "chat", "screener": "submission"}
 
 FIELDS = {"fun_fact", "story", "forum_post"}
 SUBJECTS = {"entry", "forum_post", "submission"}
+# What a request from outside may screen. The other two subject kinds are real rows that
+# belong to somebody, and they are only ever written by the server about its own work —
+# see the note in _screener.
+CALLER_SUBJECTS = {"submission"}
 SPECIES = {"brushtail", "ringtail", "other", "unknown"}
 WRITE_LEVELS = {"contribute", "reshare"}          # view can only look
 LEVEL_RANK = {"view": 0, "contribute": 1, "reshare": 2}
@@ -54,6 +58,10 @@ COPY = {
     "gone": "That entry is no longer there.",
     "invalid_link": "That link does not work.",
     "link_revoked": "That link has been turned off.",
+    # Said plainly rather than as "invalid link". Somebody who was removed and scans the
+    # old code again should learn that the code still works and they do not, which is the
+    # truth and is what tells them to ask the owner rather than hunt for a fresher QR.
+    "access_revoked": "Your access to this storyboard was turned off. The owner can add you back.",
     "link_expired": "That link has expired.",
     "link_used_up": "That link has been used as many times as it allows.",
     "cannot_share": "You cannot hand out access to this storyboard.",
@@ -210,8 +218,22 @@ def _screener(body: dict, user_id: str, deps: Deps):
         return 400, _error("bad_request")
     subject_type = body.get("subject_type", "submission")
     subject_id = body.get("subject_id")
-    if subject_type not in SUBJECTS or (subject_type != "submission" and not subject_id):
+    # A caller may screen loose text and nothing else. This used to accept "entry" and
+    # "forum_post" with an id of the caller's choosing, and _admit is only token, role and
+    # quota — so anybody with a token, holding `view` or holding no grant at all, could file
+    # a review verdict against somebody else's entry with reason codes of their choosing.
+    # That put the victim's entry in the storyboard's review queue, made awaiting_review
+    # true, and so handed the owner a working remove button for an entry nobody had
+    # flagged. The audit row also recorded the attacker as the author of text they never
+    # wrote. Found by an adversarial review on 2026-09-16 and reproduced end to end.
+    #
+    # Nothing legitimate is lost. The places a screening is recorded against a real subject
+    # — submit_entry, create_post and the forum edit — call _record_screening directly,
+    # server-side, with an author and an id the server itself established. No client has
+    # ever sent subject_type at all.
+    if subject_type not in CALLER_SUBJECTS:
         return 400, _error("bad_request")
+    subject_id = None
     internal = roles.screener(deps.client, body.get("species_selected", "unknown"),
                               body["field"], submission)
     _record_screening(deps, internal, body["field"], submission, subject_type, subject_id,
@@ -655,6 +677,18 @@ def redeem_share_link(body: dict, token: str, deps: Deps):
         return 403, _error("link_expired")
     if link["max_uses"] is not None and link["used_count"] >= link["max_uses"]:
         return 403, _error("link_used_up")
+    # Being thrown off is not undone by the person who was thrown off. grant_level() reports
+    # None both for a stranger and for somebody who was removed, so redeeming treated the two
+    # alike and the upsert below put them straight back — one request, no consent from
+    # anybody, for as long as the code they already held remained valid. The owner's only
+    # remedy was to guess which code it was and turn that off too, which also shuts out
+    # everyone who has not redeemed it yet; the project deliberately keeps those two controls
+    # apart. Found by an adversarial review on 2026-09-16.
+    #
+    # Refused before the use is counted: a redemption that grants nothing should not spend
+    # one. Letting them back on is a grant, which somebody entitled to decide has to make.
+    if deps.db.revoked_grant(link["storyboard_id"], user_id):
+        return 403, _error("access_revoked")
 
     existing = deps.db.grant_level(link["storyboard_id"], user_id)
     # Upgrade only, never downgrade: a view link must not demote the owner
