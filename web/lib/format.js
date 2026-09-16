@@ -63,7 +63,12 @@ export function countLabel(n, one, many) {
 // "mk / mel_k" hard-coded in the markup, so signing in with a different handle left the
 // header still saying you were mel_k.
 export function initials(handle) {
-  const parts = String(handle || "").split(/[_.\-\s]+/).filter(Boolean);
+  // The random tail on a chosen name is not part of the name. Without this, "lewis-9ffe" is
+  // two parts and the avatar reads "l9" — while the share screen, which takes the first two
+  // characters of the handle instead, reads "le" for the same person on the same evening.
+  // Both derivations predate the suffix; a handle with one is what made them disagree.
+  const named = String(handle || "").replace(/-[0-9a-f]{4}$/, "");
+  const parts = named.split(/[_.\-\s]+/).filter(Boolean);
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toLowerCase();
   return (parts[0][0] + parts[1][0]).toLowerCase();
