@@ -20,7 +20,8 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 from proxy import auth                                               # noqa: E402
 from proxy import db as db_module                                   # noqa: E402
-from proxy.app import Deps, handle                                   # noqa: E402
+from proxy.app import Deps, handle, _record_screening               # noqa: E402
+from proxy import roles                                             # noqa: E402
 from proxy.db import (Database, SqliteContext, SqliteHistory,        # noqa: E402
                       SqliteRateLimiter, SqliteScreeningLog)
 from proxy.model import UpstreamError                                # noqa: E402
@@ -228,26 +229,68 @@ class Screening(Fixture):
         self.assertEqual("review", row["verdict"])
         self.assertEqual("Ringtails live about 40 years.", row["original_text"])
 
+    def record(self, text, reply, field="fun_fact", **kw):
+        """Screen and store the way the server does it: submit_entry, create_post and the
+        forum edit all call _record_screening directly, with a subject the server itself
+        established. Going through /api/assistant instead is what let anybody file a verdict
+        against somebody else's entry, so these tests no longer take that route either."""
+        deps = Deps(client=FakeClient(reply), screening=SqliteScreeningLog(self.db))
+        internal = roles.screener(deps.client, "brushtail", field, text)
+        _record_screening(deps, internal, field, text, kw["subject_type"],
+                          kw["subject_id"], author_id=self.owner)
+        return self.db.conn.execute(
+            "SELECT * FROM screening_results ORDER BY rowid DESC LIMIT 1").fetchone()
+
     def test_a_screened_entry_points_at_that_entry(self):
         entry = self.db.add_entry(self.storyboard, self.owner, "brushtail", story="mine")
-        _, _, row = self.screen("Ringtails live about 40 years.", REVIEW_JSON,
-                                subject_type="entry", subject_id=entry)
+        row = self.record("Ringtails live about 40 years.", REVIEW_JSON,
+                          subject_type="entry", subject_id=entry)
         self.assertEqual("entry", row["subject_type"])
         self.assertEqual(entry, row["subject_id"])
 
     def test_a_forum_post_fits_before_the_forum_table_exists(self):
-        _, _, row = self.screen("possums carry rabies", REJECT_JSON, field="forum_post",
-                                subject_type="forum_post", subject_id="post-1")
+        row = self.record("possums carry rabies", REJECT_JSON, field="forum_post",
+                          subject_type="forum_post", subject_id="post-1")
         self.assertEqual("forum_post", row["subject_type"])
         self.assertEqual("post-1", row["subject_id"])
 
-    def test_a_subject_type_without_an_id_is_refused(self):
-        deps = Deps(client=FakeClient(OK_JSON), screening=SqliteScreeningLog(self.db))
-        status, _ = handle({"role": "screener", "field": "fun_fact", "submission": "x",
-                            "subject_type": "entry"}, auth.issue(self.owner), deps)
-        self.assertEqual(400, status)
+    def test_a_caller_cannot_screen_anything_but_loose_text(self):
+        """The hole an adversarial review found on 2026-09-16.
+
+        _admit is token, role and quota — no grant, no authorship. So role=screener with
+        subject_type="entry" let anybody stamp a review verdict on any entry id: the
+        victim's entry appeared in the storyboard's review queue with reason codes the
+        attacker chose, awaiting_review turned true, and the owner's remove button — which
+        answers 409 for an unflagged entry — started working on it. The audit row named the
+        attacker as the author of text they never wrote.
+        """
+        victim_entry = self.db.add_entry(self.storyboard, self.owner, "brushtail",
+                                         story="written by somebody else")
+        stranger = self.db.add_user("passing-stranger")
+        deps = Deps(client=FakeClient(REJECT_JSON), screening=SqliteScreeningLog(self.db))
+        for subject_type, subject_id in (("entry", victim_entry),
+                                         ("forum_post", "post-1"),
+                                         ("entry", None)):
+            status, _ = handle({"role": "screener", "field": "fun_fact", "submission": "x",
+                                "subject_type": subject_type, "subject_id": subject_id},
+                               auth.issue(stranger), deps)
+            self.assertEqual(400, status, f"{subject_type} was accepted from a caller")
         self.assertIsNone(self.db.conn.execute(
             "SELECT 1 FROM screening_results").fetchone())
+
+    def test_loose_text_is_still_screened_and_points_at_nothing(self):
+        # The legitimate use of the endpoint, unchanged: check text before posting it. It
+        # records no subject, so it cannot reach anybody else's row.
+        deps = Deps(client=FakeClient(OK_JSON), screening=SqliteScreeningLog(self.db))
+        status, payload = handle({"role": "screener", "field": "fun_fact",
+                                  "submission": "Brushtails are nocturnal."},
+                                 auth.issue(self.owner), deps)
+        self.assertEqual(200, status)
+        self.assertTrue(payload["published"])
+        row = self.db.conn.execute(
+            "SELECT * FROM screening_results ORDER BY rowid DESC LIMIT 1").fetchone()
+        self.assertEqual("submission", row["subject_type"])
+        self.assertIsNone(row["subject_id"])
 
     def test_fail_open_is_recorded(self):
         _, payload, row = self.screen("anything", UpstreamError("boom"))

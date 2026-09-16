@@ -323,6 +323,20 @@ class Database:
             (storyboard_id, user_id)).fetchone()
         return row["level"] if row else None
 
+    def revoked_grant(self, storyboard_id: str, user_id: str) -> bool:
+        """Whether this person was thrown off this storyboard and has not been let back on.
+
+        grant_level() cannot answer this: it reports None both for somebody who was never
+        here and for somebody who was removed, and redeeming treated those two the same —
+        so a revoked person re-scanning the QR code they still had resurrected their own
+        access. Letting them back on is grant(), which somebody with authority calls.
+        """
+        row = self.conn.execute(
+            "SELECT 1 FROM access_grants "
+            "WHERE storyboard_id = ? AND user_id = ? AND revoked_at IS NOT NULL",
+            (storyboard_id, user_id)).fetchone()
+        return row is not None
+
     def grants(self, storyboard_id: str) -> list[dict]:
         """Who has access right now and at what level. Revoked people are not in here
         — revocation is immediate and leaves no trace in the interface.
@@ -426,11 +440,23 @@ class Database:
         too many is worse than one too few.
         """
         if upgrade:
+            # No `revoked_at = NULL` here, unlike grant(). Redeeming is self-service: the
+            # person scanning decides, and nobody with authority is involved. Clearing it
+            # meant somebody the owner had thrown off could re-scan the QR code still in
+            # their camera roll and put themselves back — one request, no consent, for as
+            # long as the code lived, which the server allows up to ninety days. Revocation
+            # is supposed to take effect immediately and stay in effect; it took effect and
+            # then came undone. Found by an adversarial review on 2026-09-16.
+            #
+            # Letting somebody back on is grant(), which still clears it, because that is
+            # called by somebody entitled to make the decision. app.py refuses the redeem
+            # before reaching here, so this clause only ever sees an unrevoked row — where
+            # revoked_at is already NULL and dropping it changes nothing.
             self.conn.execute(
                 "INSERT INTO access_grants (id, storyboard_id, user_id, level, granted_by, granted_at) "
                 "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT (storyboard_id, user_id) DO UPDATE SET "
-                "level = excluded.level, granted_at = excluded.granted_at, revoked_at = NULL",
+                "level = excluded.level, granted_at = excluded.granted_at",
                 (new_id(), storyboard_id, user_id, level, granted_by, now()))
         self.conn.execute("UPDATE share_links SET used_count = used_count + 1 WHERE id = ?",
                           (link_id,))
@@ -618,10 +644,28 @@ class Database:
         return row is not None
 
     def dispose(self, entry_id: str, action: str) -> None:
-        """Disposal: keep, label publicly, or remove. Removal is a soft delete, not an erasure."""
+        """Disposal: keep, label publicly, or remove. Removal is a soft delete, not an erasure.
+
+        `verdict = 'review'` matters, and leaving it out was a defect. Every entry gets a
+        screening row per field, including the ones the Screener passed, so without it two
+        `worth_checking` votes from cast_vote reached straight past the queue and stamped an
+        `ok` row as `labelled` — which is what the timeline reads to show "being checked".
+        A clean entry could be publicly marked by two people, and because awaiting_review()
+        does filter on the verdict, the owner could not then undo it: the label was permanent
+        and nobody had the button. Found by an adversarial review on 2026-09-16.
+
+        This now asks the same question awaiting_review() and review_queue() ask, which is
+        what the docstring below them already said disposal had to do.
+
+        What it does not do is open a review. prototype-user-flow.md §96 says two marks
+        should put an entry *into* the queue; nothing implements that, and the vote path was
+        reaching for the owner's final say instead of the start of the process. That gap is
+        still open — deliberately left rather than built the night before the exhibit.
+        """
         self.conn.execute(
             "UPDATE screening_results SET disposition = ?, disposed_at = ? "
-            "WHERE subject_type = 'entry' AND subject_id = ? AND disposition IS NULL",
+            "WHERE subject_type = 'entry' AND subject_id = ? AND verdict = 'review' "
+            "AND disposition IS NULL",
             (action, now(), entry_id))
         if action == "removed":
             self.conn.execute("UPDATE entries SET deleted_at = ? WHERE id = ?", (now(), entry_id))
