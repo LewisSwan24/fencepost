@@ -17,11 +17,25 @@ import styles from "./Shot.module.css";
 // Stripping EXIF has to happen before the file gets here; a browser will not do it for you.
 // radius takes md | lg | none. "none" is for the list card: the card is already rounded
 // with overflow:hidden, and rounding the image again nests a second curve inside the card.
-export default function Shot({ src, alt, height = 170, radius = "md", graded = false, children }) {
+// `aspect` (width / height) replaces the fixed height with the picture's own shape. Without
+// it a portrait frame is cropped to whatever height was asked for: measured on 2026-09-16, a
+// 360x640 still in the 206px-tall frame picker showed 35% of itself, and the missing 65%
+// included the top of the frame — so somebody chose a still without seeing the part most
+// likely to need masking, and the very next screen then showed them the whole thing.
+//
+// The *width* is what gets bounded, not the height. Bounding the height would leave the
+// element full width and silently distort the picture, which is the same mistake wearing a
+// different hat.
+export default function Shot({ src, alt, height = 170, radius = "md", graded = false,
+                              aspect = null, maxHeight = "42vh", children }) {
+  const shape = aspect
+    ? { aspectRatio: String(aspect), height: "auto", width: "100%",
+        maxWidth: `calc(${maxHeight} * ${aspect})`, margin: "0 auto" }
+    : { height };
   return (
     <div
       className={[styles.shot, styles[radius] || styles.md].join(" ")}
-      style={{ height }}
+      style={shape}
     >
       {src ? (
         // With no alt it counts as decorative and a screen reader skips it, which beats
