@@ -165,7 +165,14 @@ export function extractStills(file, count = 8) {
           if (settled) return;
           await seek(video, t);
           ctx.drawImage(video, 0, 0, size.width, size.height);
-          out.push({ t, label: clockLabel(t), src: canvas.toDataURL("image/jpeg", JPEG_QUALITY) });
+          // w and h travel with the still because the masking screen has to display it at
+          // exactly its own shape. Boxes are stored as percentages of what was on screen and
+          // redact() applies them as percentages of the image, so if the screen letterboxes
+          // or crops a portrait clip into a fixed-height box, the black rectangle lands
+          // somewhere other than where the person drew it — which is the one thing that
+          // screen cannot get wrong.
+          out.push({ t, label: clockLabel(t), w: size.width, h: size.height,
+                     src: canvas.toDataURL("image/jpeg", JPEG_QUALITY) });
         }
         finish(out.slice());
       } catch {

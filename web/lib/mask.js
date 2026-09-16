@@ -1,14 +1,14 @@
-// The masking gate: whether a face or a number plate is covered enough to send the frame.
+// Boxes: what counts as one, and where it lands in the pixels.
 //
-// This lived inside the mask screen, which meant the one place a CLAUDE.md safety line is
-// enforced in code had no test and could not have one — the screen is a client component
-// and the suite runs without a DOM. The numbers and the comparison are unchanged; they
-// have only moved somewhere they can be checked.
-
-// Carried over from the screen unchanged. Not 1: a box drawn with a thumb never lands
-// exactly on a target, and a gate that demanded perfection would be answered by scribbling
-// over the whole frame, which hides the sighting along with the face.
-export const COVERED_ENOUGH = 0.78;
+// This file used to answer a different question — how much of an invented FACE or NUMBER
+// PLATE rectangle a box covered — because the masking screen's gate was "cover these two".
+// Those rectangles came from the fixture and bore no relation to anybody's own footage, so
+// the gate could be satisfied exactly while a real face stayed in shot. The screen now shows
+// the frame and asks the person what needs covering, and the coverage arithmetic went with
+// the question it answered (2026-09-16).
+//
+// What is left is the part that decides the outcome: whether a drag was deliberate, and the
+// rectangle redact() paints. The CLAUDE.md safety line is enforced there now.
 
 // A twitchy tap is not a box. Below this, a stray touch could tick a target off without
 // anybody meaning to draw anything.
@@ -18,25 +18,6 @@ export function isDeliberate(box) {
   return Boolean(box) && box.w >= SMALLEST_BOX && box.h >= SMALLEST_BOX;
 }
 
-// How much of `target` the best single box covers, from 0 to 1. Everything is in percent
-// of the frame, which is how the boxes are drawn and stored.
-//
-// Best single box, not the union of all of them: two boxes that between them cover a
-// target do not count as covering it. That is the direction to be wrong in, since it asks
-// for more than it needs to rather than less, and it is what the screen has always done.
-export function coverage(target, boxes) {
-  let best = 0;
-  for (const b of boxes) {
-    const ix = Math.max(0, Math.min(b.x + b.w, target.x + target.w) - Math.max(b.x, target.x));
-    const iy = Math.max(0, Math.min(b.y + b.h, target.y + target.h) - Math.max(b.y, target.y));
-    best = Math.max(best, (ix * iy) / (target.w * target.h));
-  }
-  return best;
-}
-
-export function covered(target, boxes) {
-  return coverage(target, boxes) >= COVERED_ENOUGH;
-}
 
 // The rectangle to actually paint, in pixels of the frame.
 //

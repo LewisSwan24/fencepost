@@ -3,16 +3,24 @@
 // 4 · Mask, plus the 5 · Send frame? consent sheet.
 //
 // Two things are hard requirements:
-//   the masking gate really measures coverage rather than letting a single tap through;
+//   what is covered on screen is covered in the pixels that leave — the boxes are burned in
+//   by redact() before the frame goes anywhere, and the canvas is the same shape as the
+//   still so the rectangle lands where the person drew it;
 //   the two buttons in the sheet carry equal visual weight — they share one class rather
 //   than having a style each, so nobody can later make one lighter without the other.
+//
+// What this screen does NOT do is claim to know what is in the picture. It used to draw a
+// FACE and a NUMBER PLATE marker from the fixture, in fixed positions, over a canvas with no
+// image under it at all, and the gate was "cover those two". Somebody could satisfy it
+// exactly and leave a real face in shot. Automatic detection is the right answer and this
+// prototype has none, so it falls back to what prompts.md §2.5.1 specifies: you say what
+// needs covering, and "nothing does" is a tick rather than the default.
 
 import { use, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CLIP } from "../../../../../lib/fixtures";
 import { COPY } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
-import { covered, isDeliberate } from "../../../../../lib/mask";
+import { isDeliberate } from "../../../../../lib/mask";
 import { base64Of, redact } from "../../../../../lib/stills";
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
@@ -27,11 +35,23 @@ export default function Mask({ params }) {
   const [live, setLive] = useState(null);   // the box currently being dragged
   const [consent, setConsent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [nothing, setNothing] = useState(false);   // "there is nothing here to cover"
 
   const boxes = draft.boxes;
   const drawn = live ? [...boxes, live] : boxes;
-  const targets = CLIP.mask_targets.map((t) => ({ ...t, done: covered(t, drawn) }));
-  const blocked = targets.some((t) => !t.done);
+
+  // The frame they picked, shown at its own shape. Boxes are stored as percentages of what
+  // is on screen and redact() applies them as percentages of the image, so the canvas has to
+  // be the same shape as the still or the black rectangle lands somewhere other than where
+  // the person drew it. A portrait phone clip in a fixed-height box is exactly that case.
+  const still = draft.stills[draft.frameIndex] || null;
+  const shape = still && still.w && still.h ? still.w / still.h : null;
+
+  // Either you covered something, or you said there is nothing to cover. There is no third
+  // answer, and "nothing to cover" is a tick rather than the default — this used to be
+  // "cover the two rectangles we invented", which somebody could satisfy exactly while
+  // leaving a real face in shot.
+  const blocked = drawn.length === 0 && !nothing;
 
   const pos = (e) => {
     const box = canvas.current.getBoundingClientRect();
@@ -111,7 +131,6 @@ export default function Mask({ params }) {
       // redact answers null on anything going wrong, and null here means the frame is not
       // sent rather than sent unmasked. Losing the suggestion costs a sentence this
       // interface already treats as optional; the other way costs somebody their face.
-      const still = draft.stills[draft.frameIndex];
       const masked = still ? await redact(still.src, draft.boxes) : null;
       const answer = await identifyFrame({
         storyboardId: id,
@@ -138,17 +157,19 @@ export default function Mask({ params }) {
         </p>
 
         <div ref={canvas} className={styles.canvas}
+             style={shape ? {
+               // The still's own shape, with the *width* bounded so the height cannot run
+               // past the viewport: a 9:16 clip at full width is 667px tall on a phone and
+               // pushes the tick and the button off the screen. Bounding the width keeps the
+               // ratio exact, which is what the boxes depend on; bounding the height would
+               // leave the element full-width and silently distort it.
+               aspectRatio: String(shape), height: "auto", width: "100%",
+               maxWidth: `calc(52vh * ${shape})`, margin: "0 auto",
+             } : undefined}
              onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-          {targets.map((t) => (
-            <span key={t.id} className={styles.target}
-                  style={{
-                    left: t.x + "%", top: t.y + "%", width: t.w + "%", height: t.h + "%",
-                    border: "1px dashed " + (t.done ? "transparent" : "rgba(246,160,107,0.7)"),
-                  }}>
-              {t.done ? null : <span className={styles.targetLabel}
-                                     style={{ color: "var(--accent-hover)" }}>{t.label}</span>}
-            </span>
-          ))}
+          {/* The frame itself, underneath everything. Drawing over a gradient and calling it
+              masking was the old version of this screen. */}
+          {still ? <img className={styles.canvasShot} src={still.src} alt="" draggable="false" /> : null}
           {drawn.map((b, i) => (
             <span key={i} className={styles.box}
                   style={{ left: b.x + "%", top: b.y + "%", width: b.w + "%", height: b.h + "%" }}>
@@ -167,25 +188,21 @@ export default function Mask({ params }) {
           ))}
           {drawn.length === 0 ? <span className={styles.hint}>{COPY.maskHint}</span> : null}
         </div>
-        <p className={styles.footnote} style={{ marginTop: 10 }}>{COPY.maskNote}</p>
+        <p className={styles.footnote} style={{ marginTop: 10 }}>
+          {still ? COPY.maskNote : COPY.maskNoFrame}
+        </p>
 
-        <div className={styles.checklist}>
-          {targets.map((t) => (
-            <div key={t.id} className={styles.checkRow}>
-              <span className={styles.pip}
-                    style={{ background: t.done ? "var(--leaf)" : "var(--accent-hover)" }} />
-              <span style={{ color: "var(--text-muted)" }}>{t.label}</span>
-              <span className={styles.state}
-                    style={{ color: t.done ? "var(--leaf)" : "var(--text-dim)" }}>
-                {t.done ? "Covered" : "Showing"}
-              </span>
-            </div>
-          ))}
-        </div>
+        {/* Saying "there is nothing to cover" is an act, not the default. Ticking it while
+            boxes are drawn would be a contradiction, so drawing one clears it. */}
+        <label className={styles.nothing}>
+          <input type="checkbox" checked={nothing} disabled={drawn.length > 0}
+                 onChange={(e) => setNothing(e.target.checked)} />
+          <span>{COPY.maskNothing}</span>
+        </label>
       </div>
 
       <div className={ui.footer}>
-        {blocked ? <p className={styles.blockedNote}>{COPY.maskBlocked}</p> : null}
+        {blocked ? <p className={styles.blockedNote}>{COPY.maskBlockedNow}</p> : null}
         <button type="button" className={ui.btn} disabled={blocked}
                 onClick={() => setConsent(true)}>Next</button>
       </div>
