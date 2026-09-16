@@ -17,6 +17,8 @@ import { COPY, LEVELS, EXPIRY } from "../../../../lib/copy";
 import { until } from "../../../../lib/format";
 import { BackButton, ui } from "../../../../components/ui";
 import QrPlaceholder from "../../../../components/QrPlaceholder";
+import QrCode from "../../../../components/QrCode";
+import { shareUrl } from "../../../../lib/qr";
 import styles from "./share.module.css";
 
 export default function Share({ params }) {
@@ -30,6 +32,14 @@ export default function Share({ params }) {
   const [who, setWho] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // The address a scan lands on. Null until a code exists, which is also what keeps the
+  // placeholder in place. window is read here rather than at module scope because this file
+  // is prerendered on the server, where there is no origin — and because issued is null on
+  // the first render, the branch that reads it cannot run before hydration.
+  const live = issued && typeof window !== "undefined"
+    ? shareUrl(window.location.origin, issued.token)
+    : null;
 
   // The server answers cannot_share to anybody below reshare, so this whole screen should
   // not be offered to them. The Share button on the storyboard page is already gated on
@@ -112,14 +122,16 @@ export default function Share({ params }) {
         <h1 className={styles.title}>{COPY.shareTitle}</h1>
         <p className={styles.lede}>{COPY.shareLede}</p>
 
+        {/* The placeholder holds this spot until there is something to encode, and the real
+            code takes over the moment there is. Drawing a scannable square before then would
+            put one on screen pointing either somewhere invented or somewhere real, and the
+            reason a placeholder was chosen in the first place is that both are wrong.
+            QrCode returns null when it cannot encode a value, so the same fallback covers a
+            token the library refuses. */}
         <div className={styles.qrWrap}>
-          <QrPlaceholder />
-          <p className={styles.qrNote}>{COPY.qrNote}</p>
-          {issued ? (
-            <div className={styles.link}>
-              {typeof window === "undefined" ? "" : window.location.origin}/s/{issued.token}
-            </div>
-          ) : null}
+          {live ? <QrCode value={live} /> : <QrPlaceholder />}
+          <p className={styles.qrNote}>{live ? COPY.qrLive : COPY.qrNote}</p>
+          {live ? <div className={styles.link}>{live}</div> : null}
         </div>
 
         <div className={ui.kicker}>{COPY.whatTheyCanDo}</div>

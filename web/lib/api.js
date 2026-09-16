@@ -56,18 +56,33 @@ const SESSION_KEY = "fencepost.session";
 // down in this file. It was contribute at first, and that quietly took the share screen out
 // of the product: the Share button needs reshare, so every visitor arrived one level below
 // the thing Fencepost is actually about. scripts/issue_join_code.py is how a code is made.
-const JOIN_TOKEN = process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN || "";
+// Comma-separated, because one code reaches one storyboard. A code carries a level for a
+// single board by design, so a visitor arriving on a link only ever lands on the board that
+// code was made for — which is why the archived storyboard, the one demonstrating that a
+// board closes and turns read-only, was invisible to everybody who arrived after it was
+// seeded. A second code fixes that without weakening anything: each is still redeemed on its
+// own, at its own level, and can be turned off on its own.
+//
+// One value splits to one code, so an unchanged setting behaves exactly as before.
+const JOIN_TOKENS = (process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN || "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
 
 const FIXTURES_HANDLE = "mel_k";     // who "I" am offline, matching the fixtures owner
-
-let ephemeralHandle = null;          // fallback when localStorage is unusable, this session only
 
 function readStore(key) {
   try { return window.localStorage.getItem(key); } catch { return null; }
 }
 
+// Returns whether the value is really there afterwards, which is a different question from
+// whether setItem threw. A full quota, a locked-down embedded webview and some privacy
+// settings all accept the write and drop it, so the only reliable check is to read it back.
 function writeStore(key, value) {
-  try { window.localStorage.setItem(key, value); } catch { /* private mode and the like, ignore */ }
+  try {
+    window.localStorage.setItem(key, value);
+    return window.localStorage.getItem(key) === String(value);
+  } catch {
+    return false;
+  }
 }
 
 function clearStore(key) {
@@ -125,19 +140,27 @@ function randomSuffix() {
 // Why it has to be this way: when every visitor shared one handle, `author_id` was equal
 // between them, so visitor A could edit and delete what visitor B wrote — the owner layer
 // stopped that, but nothing stood between two visitors.
+// Null when this browser cannot keep a handle. There used to be a fallback here that
+// invented one for the page load, on the reasoning that being the same person for a while
+// beats changing on every request. Measured on the deployment on 2026-09-16, that reasoning
+// was worth less than it cost. The fallback lasted one page load, not a session — a refresh
+// was a different person — while every one of those people was a permanent row in `users`
+// and a permanent row in `access_grants`, because arriving redeems the join code. Anything
+// that does not keep storage, which in practice means crawlers and link-preview fetchers
+// rather than people, minted one per view. They collected on the share screen, which is the
+// screen listing who has access to a storyboard.
+//
+// So the identity model's requirement is stated instead of worked around: Fencepost needs
+// somewhere to remember who you are on this device. A browser that cannot do that is told,
+// which is also more use to somebody in that position than silently becoming a stranger
+// every time they reload.
 export function visitorHandle() {
   if (HANDLE) return HANDLE;                     // an explicit setting wins (local dev, tests)
-  if (ephemeralHandle) return ephemeralHandle;
   const saved = readStore(HANDLE_KEY);
   if (saved) return saved;
   // The server checks the handle is 1..40 characters; this is 22.
   const made = "guest_" + randomSuffix();
-  writeStore(HANDLE_KEY, made);
-  // If it cannot be stored (private mode), fall back to a session-only identity: within
-  // this browsing session you are at least still the same person, and a refresh makes you
-  // somebody else — better than changing on every request.
-  ephemeralHandle = made;
-  return made;
+  return writeStore(HANDLE_KEY, made) ? made : null;
 }
 
 export const usesNetwork = MODE !== "fixtures";
@@ -173,8 +196,13 @@ async function ensureSession() {
     await joinDemo(saved.token, saved.user_id);
     return session;
   }
+  const handle = visitorHandle();
+  // No handle means this browser cannot keep one, and asking the server for a token anyway
+  // would write a person into the database who can never come back as themselves. Said in
+  // words instead — see visitorHandle.
+  if (!handle) throw new Error(COPY.needsStorage);
   if (!pending) {
-    pending = request("/api/session", { body: { handle: visitorHandle() } })
+    pending = request("/api/session", { body: { handle } })
       .then(async (got) => {
         session = { ...got, account: false };
         await joinDemo(got.token, got.user_id);
@@ -204,18 +232,37 @@ async function ensureSession() {
 // A failed redemption does not block anybody. The code may have expired or been turned off,
 // and then the interface carries on and simply shows no demo storyboard — better than the
 // whole site collapsing.
-async function joinDemo(token, userId) {
-  // The mark is the code **and** who redeemed it. Keyed on the code alone it was one
-  // answer per browser, which was right while a browser was one person; registering an
-  // account makes a second person in the same browser, and that person holds a grant to
-  // nothing. They would sign up and land on an empty dashboard.
-  const mark = JOIN_TOKEN + "|" + userId;
-  if (!JOIN_TOKEN || !userId || readStore(JOINED_KEY) === mark) return;
+// The marks already redeemed in this browser, as a list. The old shape was a single string
+// and is still read: a visitor who has one keeps it rather than redeeming again on the next
+// page open, which would be invisible to them and one more use counted on the code.
+function redeemedMarks() {
+  const raw = readStore(JOINED_KEY);
+  if (!raw) return [];
   try {
-    await request("/api/share-links/redeem", { body: { token: JOIN_TOKEN }, auth: token });
-    writeStore(JOINED_KEY, mark);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [raw];
   } catch {
-    /* no redemption this time; try again on the next page open */
+    return [raw];
+  }
+}
+
+async function joinDemo(token, userId) {
+  if (!userId || JOIN_TOKENS.length === 0) return;
+  const done = redeemedMarks();
+  for (const code of JOIN_TOKENS) {
+    // The mark is the code **and** who redeemed it. Keyed on the code alone it was one
+    // answer per browser, which was right while a browser was one person; registering an
+    // account makes a second person in the same browser, and that person holds a grant to
+    // nothing. They would sign up and land on an empty dashboard.
+    const mark = code + "|" + userId;
+    if (done.includes(mark)) continue;
+    try {
+      await request("/api/share-links/redeem", { body: { token: code }, auth: token });
+      done.push(mark);
+      writeStore(JOINED_KEY, JSON.stringify(done));
+    } catch {
+      /* this one did not take; the others still should, and it retries on the next open */
+    }
   }
 }
 

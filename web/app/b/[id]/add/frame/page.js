@@ -12,26 +12,19 @@ import Shot from "../../../../../components/Shot";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
 
-// This screen used to be four brown blocks. Once real material went in, it was the last
-// empty one in the whole app — and it is precisely the screen where the picture is the
-// subject.
+// This screen used to be four brown blocks, then ten placeholder photographs, and now it is
+// the clip itself when there is one. The placeholders did not go away: a browser that will
+// not decode what the phone recorded still lands here, and an empty stills list is a
+// perfectly ordinary outcome rather than an error to report.
 //
-// The images from lib/frames.js fill it, spread across the scrub positions so dragging
-// visibly changes something. They are **placeholders**, and the line underneath says so
-// outright — the same approach as the QR placeholder on the share screen.
+// So both paths stay, and the line underneath says which one you are looking at. What
+// changed is which one is the default.
 //
-// The mapping is proportional rather than `floor(index / 2)`, which is what it was when
-// there were four images and eight positions. That was arithmetic pinned to two counts with
-// no reason to stay in step: at ten images it would have reached frames 0 to 3 and no
+// The mapping below is proportional rather than `floor(index / 2)`, which is what it was
+// when there were four images and eight positions. That was arithmetic pinned to two counts
+// with no reason to stay in step: at ten images it would have reached frames 0 to 3 and no
 // others, quietly turning this screen ringtail-only with nothing on screen to notice.
-//
-// **The chosen frame is not carried anywhere, and that is the truth rather than an
-// omission.** frameIndex is read only on this screen: it is not sent on submit, and the
-// server has nowhere to put a frame (`videos` records only a storage_key, and whether
-// frames are persisted is still open in CLAUDE.md; persisting them would need a frames
-// table and a TTL job). So the copy changed too, and no longer says "this is the still
-// people see" — that was false.
-function stillFor(index) {
+function placeholderFor(index) {
   const positions = Math.max(1, CLIP.frames.length);
   return FRAMES[Math.min(FRAMES.length - 1, Math.floor((index * FRAMES.length) / positions))];
 }
@@ -43,12 +36,33 @@ export default function PickFrame({ params }) {
   const track = useRef(null);
   const dragging = useRef(false);
 
-  const frames = CLIP.frames;
+  // One list of positions either way, so everything below — the scrubber, the strip, the
+  // timestamps — is written once and does not know which it is showing.
+  const real = draft.stills;
+  const live = real.length > 0;
+  const frames = live ? real : CLIP.frames;
+  // A clip that yielded fewer stills than the fixture has positions would otherwise leave a
+  // stale index pointing past the end. DraftContext clamps on the way in; this covers
+  // arriving here by the back button with the list already changed underneath.
+  const index = Math.min(Math.max(0, draft.frameIndex), frames.length - 1);
+  const span = Math.max(1, frames.length - 1);
+
+  // A real still is the user's own footage and is shown as it came out of the camera. The
+  // placeholders are graded, because they are daytime stock standing in for a night clip
+  // and ungraded they look nothing like the thing they represent.
+  function shotFor(i) {
+    if (live) return { src: real[i].src, alt: "A frame from your clip", graded: false };
+    const frame = placeholderFor(i);
+    return { src: frame.file, alt: frame.alt, graded: !frame.night };
+  }
+
   const at = (e) => {
     const box = track.current.getBoundingClientRect();
     const frac = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
-    return Math.round(frac * (frames.length - 1));
+    return Math.round(frac * span);
   };
+
+  const chosen = shotFor(index);
 
   return (
     <div className={ui.screen}>
@@ -61,13 +75,10 @@ export default function PickFrame({ params }) {
         <h1 className={ui.h1}>Pick a frame</h1>
         <p className={ui.lede} style={{ marginBottom: 18 }}>{COPY.frameLede}</p>
 
-        <Shot src={stillFor(draft.frameIndex).file}
-              alt={stillFor(draft.frameIndex).alt}
-              graded={!stillFor(draft.frameIndex).night}
-              height={206}>
-          <span className={styles.stampChip}>{frames[draft.frameIndex].label}</span>
+        <Shot src={chosen.src} alt={chosen.alt} graded={chosen.graded} height={206}>
+          <span className={styles.stampChip}>{frames[index].label}</span>
         </Shot>
-        <p className={styles.footnote}>{COPY.frameNote}</p>
+        <p className={styles.footnote}>{live ? COPY.frameNoteLive : COPY.frameNote}</p>
 
         <div style={{ marginTop: 20 }}
              onPointerDown={(e) => {
@@ -82,13 +93,13 @@ export default function PickFrame({ params }) {
             <div className={styles.strip}>
               {frames.map((f, i) => (
                 <span key={f.t} className={styles.cell}
-                      style={{ backgroundImage: `url(${stillFor(i).file})`,
+                      style={{ backgroundImage: `url(${shotFor(i).src})`,
                                backgroundSize: "cover", backgroundPosition: "center",
-                               opacity: i === draft.frameIndex ? 1 : 0.45 }} />
+                               opacity: i === index ? 1 : 0.45 }} />
               ))}
             </div>
             <div className={styles.scrub}
-                 style={{ left: `calc(${(draft.frameIndex / (frames.length - 1)) * 100}% - 9px)` }}>
+                 style={{ left: `calc(${(index / span) * 100}% - 9px)` }}>
               <span className={styles.knob} />
               <span className={styles.stem} />
             </div>

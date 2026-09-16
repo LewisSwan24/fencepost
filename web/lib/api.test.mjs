@@ -20,22 +20,33 @@ import assert from "node:assert/strict";
 let seq = 0;
 
 // Install the window and crypto stubs, then take a clean copy of api.js
-async function freshApi({ store = {}, crypto, brokenStorage = false, joinToken } = {}) {
+async function freshApi({ store = {}, crypto, brokenStorage = false, joinToken,
+                          silentlyDroppingStorage = false, fetch } = {}) {
   // Read at module load, so it has to be set before the import rather than after.
   if (joinToken === undefined) delete process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN;
   else process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN = joinToken;
+
+  // Three storages, because they fail in three different ways and only the first one is the
+  // one people picture. Throwing is the loud kind. Accepting a write and keeping nothing is
+  // the quiet kind, and it is the one that used to slip through: setItem returns, nothing
+  // raises, and the value is simply not there on the next read.
+  const throwing = { getItem() { throw new Error("SecurityError"); },
+                     setItem() { throw new Error("SecurityError"); },
+                     removeItem() { throw new Error("SecurityError"); } };
+  const dropping = { getItem: (k) => (k in store ? store[k] : null),
+                     setItem: () => {},
+                     removeItem: (k) => { delete store[k]; } };
+  // removeItem belongs in the working one for the same reason the other two do: leaving it
+  // off makes every clear a silent no-op, and a test for "the dead session is dropped" then
+  // fails against a product that drops it perfectly well in a browser.
+  const working = { getItem: (k) => (k in store ? store[k] : null),
+                    setItem: (k, v) => { store[k] = String(v); },
+                    removeItem: (k) => { delete store[k]; } };
+
   globalThis.window = {
-    localStorage: brokenStorage
-      ? { getItem() { throw new Error("SecurityError"); },
-          setItem() { throw new Error("SecurityError"); },
-          removeItem() { throw new Error("SecurityError"); } }
-      // removeItem belongs here for the same reason the other two do: leaving it off makes
-      // every clear a silent no-op, and a test for "the dead session is dropped" then fails
-      // against a product that drops it perfectly well in a browser.
-      : { getItem: (k) => (k in store ? store[k] : null),
-          setItem: (k, v) => { store[k] = String(v); },
-          removeItem: (k) => { delete store[k]; } },
+    localStorage: brokenStorage ? throwing : silentlyDroppingStorage ? dropping : working,
   };
+  if (fetch) globalThis.fetch = fetch;
   // Node's globalThis.crypto is a read-only getter; assigning does nothing, so defineProperty.
   if (crypto !== undefined) {
     Object.defineProperty(globalThis, "crypto", { value: crypto, configurable: true, writable: true });
@@ -99,15 +110,41 @@ test("the handle fits the length the server accepts", async () => {
   assert.ok(h.length <= 40);
 });
 
-test("an unusable localStorage must not crash, or change who you are each time", async () => {
-  // In private mode getItem and setItem throw. Within one browsing session you still have
-  // to be the same identity, or every request is a new user who does not recognise what
-  // they just posted.
+test("a browser that cannot keep a handle is given none", async () => {
+  // This used to invent one for the page load, reasoning that being the same person for a
+  // while beat changing on every request. Measured on the deployment, that reasoning was
+  // worth less than it cost: the fallback lasted one page load rather than a session, and
+  // every one of those people was a permanent row in users and another in access_grants,
+  // because arriving redeems the join code. Anything that does not keep storage — crawlers
+  // and link-preview fetchers rather than people — minted one per view, and they collected
+  // on the share screen, which is the screen listing who has access to a storyboard.
   const api = await freshApi({ brokenStorage: true });
-  const a = api.visitorHandle();
-  const b = api.visitorHandle();
-  assert.match(a, /^guest_/);
-  assert.equal(a, b, "the identity changed inside one session");
+  assert.equal(api.visitorHandle(), null);
+  assert.equal(api.visitorHandle(), null, "asking twice started inventing one");
+});
+
+test("a write that is silently dropped counts as no storage", async () => {
+  // setItem does not always throw when it fails. A full quota and some embedded webviews
+  // take the call and keep nothing, so the check has to be reading the value back rather
+  // than trusting that no exception means success.
+  const api = await freshApi({ silentlyDroppingStorage: true });
+  assert.equal(api.visitorHandle(), null);
+});
+
+test("no handle means nothing is asked of the server", async () => {
+  // The point of all of the above. This path used to ask /api/session for a token and get
+  // one, which wrote a person into the database who could never come back as themselves.
+  const calls = [];
+  const api = await freshApi({
+    brokenStorage: true,
+    fetch: async (url) => { calls.push(String(url)); throw new Error("must not be called"); },
+  });
+  await assert.rejects(
+    () => api.dashboard(),
+    (e) => e.message.includes("remember who you are"),
+    "the visitor was not told why, or was told in the browser's words"
+  );
+  assert.deepEqual(calls, [], "a request went out for a browser that cannot hold a session");
 });
 
 test("a server that cannot be reached says so in words, not in the browser's", async () => {
@@ -161,6 +198,22 @@ const HAPPY = {
 };
 const redeems = (calls) => calls.filter((c) => c.path === "/api/share-links/redeem");
 
+// What this browser has redeemed, read the way the product reads it. Asserting on the raw
+// string instead pinned the encoding rather than the intent, and these cases are about
+// which codes were taken and by whom — not about whether that is stored as one string or a
+// list. The old single-string shape is still accepted here because it is still accepted
+// there: browsers already carrying one must not redeem again.
+function marks(store) {
+  const raw = store["fencepost.joined"];
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [raw];
+  } catch {
+    return [raw];
+  }
+}
+
 test("a new visitor redeems the join code, once", async () => {
   const store = {};
   const api = await freshApi({ store, joinToken: "jt-one" });
@@ -169,7 +222,7 @@ test("a new visitor redeems the join code, once", async () => {
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "the code was not redeemed");
   assert.equal(redeems(calls)[0].body.token, "jt-one");
-  assert.equal(store["fencepost.joined"], "jt-one|u_guest",
+  assert.deepEqual(marks(store), ["jt-one|u_guest"],
     "what was redeemed, and by whom, was not remembered");
 });
 
@@ -194,7 +247,8 @@ test("a replacement code is picked up by somebody who already joined", async () 
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "the replacement code was skipped");
   assert.equal(redeems(calls)[0].body.token, "jt-two");
-  assert.equal(store["fencepost.joined"], "jt-two|u_guest");
+  assert.deepEqual(marks(store), ["jt-one|u_guest", "jt-two|u_guest"],
+    "the replacement was not recorded alongside the code it replaces");
 });
 
 test("somebody carrying the old flag picks up the code too", async () => {
@@ -207,7 +261,8 @@ test("somebody carrying the old flag picks up the code too", async () => {
 
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "a visitor from before the change never joins again");
-  assert.equal(store["fencepost.joined"], "jt-two|u_guest");
+  assert.deepEqual(marks(store), ["1", "jt-two|u_guest"],
+    "the old flag was dropped or the new code was not recorded");
 });
 
 test("a code that no longer works leaves the rest of the site standing", async () => {
@@ -220,6 +275,53 @@ test("a code that no longer works leaves the rest of the site standing", async (
   const view = await api.dashboard();
   assert.deepEqual(view, { active: [], past: [] }, "a dead join code took the dashboard down with it");
   assert.equal(store["fencepost.joined"], undefined, "a failed join was recorded as done");
+});
+
+test("two codes are both redeemed, each once", async () => {
+  // A code reaches one storyboard, so one code reaches one. The archived storyboard — the
+  // one demonstrating that a board closes and turns read-only — was invisible to everybody
+  // who arrived after it was seeded, because no code pointed at it.
+  const store = {};
+  const api = await freshApi({ store, joinToken: "jt-active, jt-archived" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.deepEqual(redeems(calls).map((c) => c.body.token), ["jt-active", "jt-archived"]);
+  assert.deepEqual(marks(store), ["jt-active|u_guest", "jt-archived|u_guest"]);
+});
+
+test("adding a second code does not redeem the first one again", async () => {
+  // What happens to everybody already here when the setting gains a code: the one they have
+  // is left alone, and only the new one is taken. Redeeming the old one again would count
+  // another use against it and, on a code with a limit, could use it up.
+  const store = { "fencepost.joined": JSON.stringify(["jt-active|u_guest"]) };
+  const api = await freshApi({ store, joinToken: "jt-active,jt-archived" });
+  const calls = stubFetch(HAPPY);
+
+  await api.dashboard();
+  assert.deepEqual(redeems(calls).map((c) => c.body.token), ["jt-archived"]);
+});
+
+test("one code that fails does not stop the other", async () => {
+  // Two codes expire on their own timetables. If the first is turned off, the second still
+  // has to be taken, or turning off one code quietly costs access to the other board.
+  const store = {};
+  const api = await freshApi({ store, joinToken: "jt-dead,jt-live" });
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+    const body = init && init.body ? JSON.parse(init.body) : {};
+    calls.push({ path, body });
+    if (path === "/api/share-links/redeem" && body.token === "jt-dead") {
+      return { ok: false, status: 403,
+               json: async () => ({ error: { code: "link_revoked", message: "no" } }) };
+    }
+    return { ok: true, status: 200, json: async () => HAPPY[path] ?? {} };
+  };
+
+  await api.dashboard();
+  assert.deepEqual(redeems(calls).map((c) => c.body.token), ["jt-dead", "jt-live"]);
+  assert.deepEqual(marks(store), ["jt-live|u_guest"], "a failed code was recorded as done");
 });
 
 test("with no code configured nothing is redeemed", async () => {
@@ -243,7 +345,8 @@ test("a second identity in the same browser joins on its own account", async () 
   const made = await api.registerAccount("ada_l", "correct horse battery staple");
   assert.equal(made.user_id, "u_ada");
   assert.equal(redeems(calls).length, 1, "the new account was left with access to nothing");
-  assert.equal(store["fencepost.joined"], "jt-one|u_ada");
+  assert.deepEqual(marks(store), ["jt-one|u_guest", "jt-one|u_ada"],
+    "the new account's mark replaced the guest's instead of joining it");
 });
 
 test("signing in is remembered across a reload, and signing out is too", async () => {
@@ -300,7 +403,8 @@ test("a code replaced while somebody is signed in still reaches them", async () 
   await api.dashboard();
   assert.equal(redeems(calls).length, 1, "a signed-in account never heard about the new code");
   assert.equal(redeems(calls)[0].body.token, "jt-two");
-  assert.equal(store["fencepost.joined"], "jt-two|u_ada");
+  assert.deepEqual(marks(store), ["jt-one|u_ada", "jt-two|u_ada"],
+    "the replacement was not recorded alongside the code it replaces");
 });
 
 test("a restored session with nothing to redeem asks for nothing", async () => {

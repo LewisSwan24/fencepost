@@ -11,6 +11,16 @@
 }
 .bigQuiet:hover { background: rgba(244, 235, 220, 0.06); }
 .footnote { font-size: 13px; line-height: 1.6; color: var(--text-dim); margin: 22px 2px 0; }
+/* The way out for somebody with no clip to hand. Quiet on purpose — it is the fallback,
+   not the offer — but it has to be reachable, because a cancelled file picker is silent. */
+.skip {
+  display: block; width: 100%; margin-top: 14px; padding: 6px 2px;
+  background: none; border: 0; text-align: left; cursor: pointer;
+  font: inherit; font-size: 13px; line-height: 1.6;
+  color: var(--text-dim); text-decoration: underline; text-underline-offset: 3px;
+}
+.skip:hover { color: var(--text); }
+.reading { font-size: 13px; line-height: 1.6; color: var(--text-dim); margin: 14px 2px 0; }
 
 /* Choosing a frame */
 .strip { display: flex; gap: 3px; }

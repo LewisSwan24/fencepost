@@ -9,7 +9,12 @@ tests/redline_report_*.md
 tests/nonenglish_report_*.md
 # scripts/issue_join_code.py writes the plaintext share token here by default,
 # and it is a redeemable grant until somebody turns it off.
-joincode.txt
+#
+# The glob rather than the one name: a second code was issued on 2026-09-16 (for the
+# archived storyboard, so the Past section is not empty for a new visitor) and its file was
+# joincode-archived.txt, which this list did not cover. It sat untracked in the repository
+# root, one `git add -A` away from being published. Any joincode*.txt is the same thing.
+joincode*.txt
 
 # scripts/seed_demo.py --secrets-out defaults to this, and it holds every cast member's
 # password alongside the plaintext join code. joincode.txt was listed here from the start

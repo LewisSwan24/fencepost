@@ -13,6 +13,7 @@ import { CLIP } from "../../../../../lib/fixtures";
 import { COPY } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
 import { covered, isDeliberate } from "../../../../../lib/mask";
+import { base64Of } from "../../../../../lib/stills";
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
@@ -89,7 +90,23 @@ export default function Mask({ params }) {
     try {
       // The real endpoint is a neighbour call carrying the frame and this confirmation.
       // Without frame_consent it comes back refused.
-      const answer = await identifyFrame({ storyboardId: id, imageBase64: null });
+      //
+      // This used to send null, which made the consent sheet ask permission to send
+      // something that was never sent. With a real clip it now carries the frame the user
+      // actually chose — null only where there is no clip, which is the placeholder path,
+      // and sending a stock photograph of somebody else's possum would be worse than
+      // sending nothing. proxy/roles.py wraps the value in the data:image prefix itself, so
+      // what goes over the wire is the base64 alone.
+      //
+      // In `hybrid` — the mode this is delivered in — assistantIsLive is false and
+      // identifyFrame answers from the fixture without reaching the network at all. So
+      // nothing leaves the device tonight either way. What changed is that the path is
+      // now true when the assistant is switched on, instead of hard-wired to null.
+      const still = draft.stills[draft.frameIndex];
+      const answer = await identifyFrame({
+        storyboardId: id,
+        imageBase64: still ? base64Of(still.src) : null,
+      });
       draft.setSuggestion(answer.reply);
     } catch {
       draft.setSuggestion(null);   // not recognising it does not block anybody; carry on
