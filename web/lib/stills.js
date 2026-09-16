@@ -13,6 +13,8 @@
 // Drawing through a canvas settles the other safety line for free: a re-encoded bitmap
 // carries no EXIF and no GPS, because none of that survives the pixels.
 
+import { boxPixels } from "./mask.js";
+
 // Wide enough to read on a phone, small enough that eight of them in memory are not a
 // problem. The picker shows them about 200px tall.
 const TARGET_WIDTH = 720;
@@ -184,6 +186,60 @@ export function extractStills(file, count = 8) {
  * data URL would produce `data:image/jpeg;base64,data:image/jpeg;base64,…` and the model
  * would be handed something that is not a picture.
  */
+/**
+ * The still with the drawn boxes painted over it, or null.
+ *
+ * The masking screen measured coverage, opened its gate, and then the untouched still was
+ * what got sent — draft.boxes was read by nothing at all. The screen said "Covered" and
+ * meant nothing by it, against a CLAUDE.md line that is not negotiable.
+ *
+ * **Null on every failure, and null is not a fallback to the original.** A frame that could
+ * not be redacted is not sent. Sending the unmasked one because the canvas threw is the
+ * exact outcome the gate exists to prevent; no picture beats the wrong picture here.
+ *
+ * Painted opaque, not blurred: a blur can be undone well enough to matter, and the subject
+ * is a neighbour's face or a number plate on somebody's street.
+ */
+export function redact(src, boxes) {
+  return new Promise((resolve) => {
+    const drawn = Array.isArray(boxes) ? boxes : [];
+    if (!src || !drawn.length || typeof document === "undefined") {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.onerror = () => resolve(null);
+    img.onload = () => {
+      try {
+        const width = img.naturalWidth;
+        const height = img.naturalHeight;
+        const rects = drawn.map((b) => boxPixels(b, width, height)).filter(Boolean);
+        // Boxes that all fell outside the frame cover nothing. Sending the original because
+        // the arithmetic came back empty would be the same bug wearing a different hat.
+        if (!rects.length) {
+          resolve(null);
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        ctx.fillStyle = "#000";
+        for (const r of rects) ctx.fillRect(r.x, r.y, r.w, r.h);
+        resolve(canvas.toDataURL("image/jpeg", JPEG_QUALITY));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.src = src;
+  });
+}
+
 export function base64Of(src) {
   const at = String(src || "").indexOf(";base64,");
   if (at < 0) return null;

@@ -37,3 +37,27 @@ export function coverage(target, boxes) {
 export function covered(target, boxes) {
   return coverage(target, boxes) >= COVERED_ENOUGH;
 }
+
+// The rectangle to actually paint, in pixels of the frame.
+//
+// Until 2026-09-16 nothing converted these: the boxes were measured, the gate opened, and
+// the untouched still was what got sent. The screen said "Covered" and meant nothing by it.
+//
+// Rounding goes outward, never to the nearest. A face is not covered by a rectangle one
+// pixel short of it, and the cost of being generous is a few pixels of tree.
+export function boxPixels(box, width, height) {
+  if (!box || !width || !height) return null;
+  const sides = [box.x, box.y, box.w, box.h];
+  if (sides.some((n) => typeof n !== "number" || !Number.isFinite(n))) return null;
+  if (box.w <= 0 || box.h <= 0) return null;
+
+  const left = Math.max(0, Math.floor((box.x / 100) * width));
+  const top = Math.max(0, Math.floor((box.y / 100) * height));
+  const right = Math.min(width, Math.ceil(((box.x + box.w) / 100) * width));
+  const bottom = Math.min(height, Math.ceil(((box.y + box.h) / 100) * height));
+  // A box dragged entirely off the frame has nothing left inside it. Null rather than a
+  // zero-sized rectangle, so the caller can tell "nothing to paint" from "paint nothing".
+  if (right <= left || bottom <= top) return null;
+
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}

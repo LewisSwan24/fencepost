@@ -13,7 +13,7 @@ import { CLIP } from "../../../../../lib/fixtures";
 import { COPY } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
 import { covered, isDeliberate } from "../../../../../lib/mask";
-import { base64Of } from "../../../../../lib/stills";
+import { base64Of, redact } from "../../../../../lib/stills";
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
@@ -102,10 +102,20 @@ export default function Mask({ params }) {
       // identifyFrame answers from the fixture without reaching the network at all. So
       // nothing leaves the device tonight either way. What changed is that the path is
       // now true when the assistant is switched on, instead of hard-wired to null.
+      //
+      // The boxes are painted on before it goes. For a day this screen measured coverage,
+      // opened its gate, and then sent the untouched still — draft.boxes was read by
+      // nothing at all, so "Covered" was a word on a screen while the original face went
+      // out. An adversarial review found it on 2026-09-16; in hybrid it had never run.
+      //
+      // redact answers null on anything going wrong, and null here means the frame is not
+      // sent rather than sent unmasked. Losing the suggestion costs a sentence this
+      // interface already treats as optional; the other way costs somebody their face.
       const still = draft.stills[draft.frameIndex];
+      const masked = still ? await redact(still.src, draft.boxes) : null;
       const answer = await identifyFrame({
         storyboardId: id,
-        imageBase64: still ? base64Of(still.src) : null,
+        imageBase64: masked ? base64Of(masked) : null,
       });
       draft.setSuggestion(answer.reply);
     } catch {
