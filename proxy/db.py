@@ -291,13 +291,17 @@ class Database:
         self.conn.commit()
 
     def add_entry(self, storyboard_id: str, author_id: str, species: str,
-                  fun_fact: str = None, story: str = None, video_id: str = None) -> str:
+                  fun_fact: str = None, story: str = None, video_id: str = None,
+                  still: str = None) -> str:
+        """`still` is the frame after the author's own masking, base64 JPEG without the
+        data: prefix. None is an ordinary answer: the placeholder path has no clip behind
+        it, and a browser that could not decode one arrives here the same way."""
         entry_id = new_id()
         stamp = now()
         self.conn.execute(
             "INSERT INTO entries (id, storyboard_id, author_id, species, fun_fact, story, "
-            "video_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (entry_id, storyboard_id, author_id, species, fun_fact, story, video_id, stamp))
+            "video_id, still, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (entry_id, storyboard_id, author_id, species, fun_fact, story, video_id, still, stamp))
         self.conn.execute("UPDATE storyboards SET last_entry_at = ? WHERE id = ?", (stamp, storyboard_id))
         self.conn.commit()
         return entry_id
@@ -395,7 +399,7 @@ class Database:
         """
         rows = self.conn.execute(
             "SELECT e.id, e.author_id, u.handle, e.species, e.fun_fact, e.story, e.video_id, "
-            "e.created_at, EXISTS (SELECT 1 FROM screening_results s "
+            "e.still, e.created_at, EXISTS (SELECT 1 FROM screening_results s "
             "  WHERE s.subject_type = 'entry' AND s.subject_id = e.id "
             "  AND s.disposition = 'labelled') AS being_checked "
             "FROM entries e JOIN users u ON u.id = e.author_id "

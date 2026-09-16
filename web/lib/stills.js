@@ -4,11 +4,15 @@
 // frame picker offered photographs of somebody else's possum. This is the part that makes
 // the clip real: chosen on the phone, decoded in the page, never sent anywhere.
 //
-// Nothing here uploads. There is no storage behind this product, and CLAUDE.md leaves
-// "whether frames are kept" explicitly undecided with "frames are not retained" as the
-// safety line beside it. So the stills live in memory for the length of the posting flow and
-// go when the tab does. That is a smaller product than one with a media library, and it is
-// the one the decisions taken so far actually describe.
+// The clip itself never leaves the browser: there is no object storage behind this product,
+// so a sighting has no watchable video and the eight stills live in memory for the length of
+// the posting flow and go when the tab does.
+//
+// One of them does not. The frame the author picked and then masked is saved with the entry
+// (data-model.md §1 entries.still), because a storyboard showing a stock photograph of
+// somebody else's possum beside somebody's own account of their own evening is the concept
+// failing quietly. What is kept is the redacted copy, at card size, and it dies with the
+// entry — a different thing from retaining the raw frames this file produces.
 //
 // Drawing through a canvas settles the other safety line for free: a re-encoded bitmap
 // carries no EXIF and no GPS, because none of that survives the pixels.
@@ -207,7 +211,7 @@ export function extractStills(file, count = 8) {
  * Painted opaque, not blurred: a blur can be undone well enough to matter, and the subject
  * is a neighbour's face or a number plate on somebody's street.
  */
-export function redact(src, boxes) {
+export function redact(src, boxes, maxWidth = 0) {
   return new Promise((resolve) => {
     const drawn = Array.isArray(boxes) ? boxes : [];
     if (!src || !drawn.length || typeof document === "undefined") {
@@ -218,8 +222,15 @@ export function redact(src, boxes) {
     img.onerror = () => resolve(null);
     img.onload = () => {
       try {
-        const width = img.naturalWidth;
-        const height = img.naturalHeight;
+        // maxWidth 0 keeps the frame's own size, which is what the model is sent. The copy
+        // kept on the entry is drawn smaller: every sighting on a timeline carries one, and
+        // a storyboard opened on a phone at the fence pays for all of them at once.
+        //
+        // The boxes are percentages, so they are converted against the size actually being
+        // drawn. Converting against the original and then scaling would move them.
+        const scaled = maxWidth ? drawSize(img.naturalWidth, img.naturalHeight, maxWidth) : null;
+        const width = scaled ? scaled.width : img.naturalWidth;
+        const height = scaled ? scaled.height : img.naturalHeight;
         const rects = drawn.map((b) => boxPixels(b, width, height)).filter(Boolean);
         // Boxes that all fell outside the frame cover nothing. Sending the original because
         // the arithmetic came back empty would be the same bug wearing a different hat.
@@ -235,7 +246,7 @@ export function redact(src, boxes) {
           resolve(null);
           return;
         }
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, width, height);
         ctx.fillStyle = "#000";
         for (const r of rects) ctx.fillRect(r.x, r.y, r.w, r.h);
         resolve(canvas.toDataURL("image/jpeg", JPEG_QUALITY));

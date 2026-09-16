@@ -275,8 +275,15 @@ export default function Storyboard({ params }) {
                         {SPECIES_LABEL[e.species] || "Not sure"}
                       </span>
                     </div>
-                    <Shot src={frame?.file} alt={frame?.alt}
-                          graded={frame ? !frame.night : false} height={170} />
+                    {/* The author's own frame when there is one. The placeholder is what a
+                        sighting posted before this existed still shows, and what the
+                        placeholder path still produces — lib/frames.js says outright that
+                        those are somebody else's photographs. */}
+                    {e.still
+                      ? <Shot src={`data:image/jpeg;base64,${e.still}`}
+                              alt="A frame from this sighting" height={170} />
+                      : <Shot src={frame?.file} alt={frame?.alt}
+                              graded={frame ? !frame.night : false} height={170} />}
 
                     {e.being_checked ? (
                       <div className={styles.checked}>

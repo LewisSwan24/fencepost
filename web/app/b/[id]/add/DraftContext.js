@@ -12,6 +12,7 @@ const DraftContext = createContext(null);
 export function DraftProvider({ storyboardId, children }) {
   const [frameIndex, setFrameIndex] = useState(CLIP.default_index);
   const [stills, setStillsRaw] = useState([]);       // real frames out of the user's clip, empty until one is picked
+  const [cover, setCover] = useState(null);          // the masked frame that goes with the entry
   const [boxes, setBoxes] = useState([]);
   const [suggestion, setSuggestion] = useState(null); // the frame-identification sentence, null until sent
   const [species, setSpecies] = useState(null);       // always chosen by the user, never preselected
@@ -33,13 +34,14 @@ export function DraftProvider({ storyboardId, children }) {
       storyboardId,
       frameIndex, setFrameIndex,
       stills, setStills,
+      cover, setCover,
       boxes, setBoxes,
       suggestion, setSuggestion,
       species, setSpecies,
       funFact, setFunFact,
       story, setStory,
     }),
-    [storyboardId, frameIndex, stills, boxes, suggestion, species, funFact, story]
+    [storyboardId, frameIndex, stills, cover, boxes, suggestion, species, funFact, story]
   );
 
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;

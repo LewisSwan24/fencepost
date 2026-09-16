@@ -47,6 +47,7 @@ export default function WriteItUp({ params }) {
         species: draft.species,
         funFact: draft.funFact.trim(),
         story: draft.story.trim(),
+        still: draft.cover,        // the masked frame; undefined on the placeholder path
       });
       if (result.published) {
         router.push(`/b/${id}?posted=${encodeURIComponent(result.entry_id)}`);

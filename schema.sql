@@ -33,6 +33,7 @@ CREATE TABLE entries (
   species        TEXT NOT NULL CHECK (species IN ('brushtail','ringtail','other','unknown')),
   fun_fact       TEXT,
   story          TEXT,
+  still          TEXT,                    -- the masked frame, base64 JPEG; see §1.1
   created_at     TIMESTAMP NOT NULL,
   deleted_at     TIMESTAMP,               -- soft delete; must be filtered out when assembling context
   removed_by     TEXT REFERENCES users(id) -- NULL when the author took it down; see below
