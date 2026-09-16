@@ -35,6 +35,13 @@ SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
 FUN_FACT_LIMIT = 500
 STORY_LIMIT = 4000
 
+# The masked frame an entry carries, as base64. The client draws it at card width and about
+# 25 kB, so 120,000 characters is roughly five times what it should ever send — a ceiling on
+# a client gone wrong, not a size anybody will meet. It is deliberately not generous: every
+# entry on a timeline carries one, and a storyboard opened on a phone at the fence pays for
+# all of them at once.
+STILL_LIMIT = 120_000
+
 # Accounts. A handle is one word that sits next to what somebody wrote, so 24 is generous
 # and 3 stops a single letter. The password floor is 8; the ceiling is not a rule about
 # passwords but about scrypt, which is deliberately expensive and should not be pointed at
@@ -538,7 +545,16 @@ def submit_entry(body: dict, token: str, deps: Deps):
         codes = sorted({code for result in rejected for code in result["codes"]})
         return 200, {"published": False, "reason_codes": codes, "prompt_version": version}
 
-    entry_id = deps.db.add_entry(storyboard_id, user_id, species, fun_fact, story, video_id)
+    # The frame the author masked, if their browser could produce one. A still that is
+    # missing, the wrong type or too big is stored as nothing rather than refused: the
+    # sighting is the point, and losing a picture should not lose somebody's account of
+    # their own evening. The client sends a card-sized JPEG, so anything over the cap is a
+    # fault in the client rather than a reason to fail a submission.
+    still = body.get("still")
+    if not isinstance(still, str) or not 0 < len(still) <= STILL_LIMIT:
+        still = None
+    entry_id = deps.db.add_entry(storyboard_id, user_id, species, fun_fact, story, video_id,
+                                 still=still)
     for field, value, result in screened:
         _record_screening(deps, result, field, value, "entry", entry_id, user_id)
     return 200, {"entry_id": entry_id, "published": True, "prompt_version": version}

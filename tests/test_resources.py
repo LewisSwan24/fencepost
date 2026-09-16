@@ -280,6 +280,60 @@ class Entries(Fixture):
         self.assertEqual("no_access", payload["error"]["code"])
 
 
+class TheMaskedFrameOnAnEntry(Fixture):
+    """An entry carries the frame its author masked, so a storyboard shows the street's own
+    footage rather than a stock photograph. data-model.md §1 entries.still.
+
+    The still is the masked one by construction: the interface redacts before it submits,
+    and the boxes are burned into the pixels rather than recorded alongside them.
+    """
+
+    JPEG = "/9j/4AAQSkZJRgABAQ" + "A" * 200        # shaped like base64, not a real image
+
+    def entry(self, **over):
+        owner, board = self.board("owner")
+        body = {"storyboard_id": board, "species": "brushtail", "story": "along the fence"}
+        body.update(over)
+        status, made = self.post("/api/entries", body, token=owner["token"])
+        return owner, board, status, made
+
+    def test_the_frame_comes_back_on_the_timeline(self):
+        owner, board, status, made = self.entry(still=self.JPEG)
+        self.assertEqual(200, status)
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
+        self.assertEqual(self.JPEG, mine["still"])
+
+    def test_an_entry_without_one_is_ordinary(self):
+        # The placeholder path, and any browser that could not decode the clip.
+        owner, board, status, made = self.entry()
+        self.assertEqual(200, status)
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
+        self.assertIsNone(mine["still"])
+
+    def test_a_bad_still_costs_the_picture_and_not_the_sighting(self):
+        """Somebody's account of their own evening does not get refused because the image
+        beside it was the wrong shape. The client sends about 25 kB; anything over the cap
+        is a fault in the client, not a reason to lose what they wrote."""
+        from proxy.app import STILL_LIMIT
+        for bad in ("x" * (STILL_LIMIT + 1), 12345, ["not", "a", "string"], "", None):
+            with self.subTest(kind=type(bad).__name__):
+                owner, board, status, made = self.entry(still=bad, story="it came back")
+                self.assertEqual(200, status, "a bad still refused the whole sighting")
+                self.assertTrue(made["published"])
+                _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+                mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
+                self.assertIsNone(mine["still"])
+                self.assertEqual("it came back", mine["story"])
+
+    def test_deleting_the_entry_takes_the_frame_with_it(self):
+        owner, board, _, made = self.entry(still=self.JPEG)
+        self.post("/api/entries/delete", {"entry_id": made["entry_id"]}, token=owner["token"])
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual([], [e for e in view["entries"] if e["id"] == made["entry_id"]])
+
+
 class TheShapeOfAnEntry(Fixture):
     """fun_fact and story are free text that reaches a model and then the database.
 

@@ -469,12 +469,16 @@ export async function storyboard(id) {
 }
 
 // ── Posting ────────────────────────────
-export async function submitEntry({ storyboardId, species, funFact, story }) {
+export async function submitEntry({ storyboardId, species, funFact, story, still }) {
   const body = {
     storyboard_id: storyboardId,
     species,                        // brushtail | ringtail | other | unknown
     fun_fact: funFact || undefined,
     story,
+    // The frame the author masked, base64 without the data: prefix. Undefined where there
+    // was no clip, which is the placeholder path and every browser that could not decode
+    // one — the server stores nothing and the entry shows a placeholder, as before.
+    still: still || undefined,
   };
   if (!usesNetwork) return fixtures.submitEntry(body);
   return call("/api/entries", { body });

@@ -22,9 +22,14 @@ import { COPY } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
 import { isDeliberate } from "../../../../../lib/mask";
 import { base64Of, redact } from "../../../../../lib/stills";
+
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
 import styles from "../add.module.css";
+
+// Card width for the copy kept on the entry. The frame sent to the model stays full size;
+// this one is read at about 170px tall in a list, and a timeline carries one per sighting.
+const CARD_WIDTH = 480;
 
 export default function Mask({ params }) {
   const { id } = use(params);
@@ -105,6 +110,21 @@ export default function Mask({ params }) {
     setLive(null);
   }
 
+  // The frame that goes on the entry: the same still, the same boxes, drawn small. Both ways
+  // off this screen call it, because the masking is done either way — somebody who skips the
+  // identification has still said what needs covering, and their sighting should carry their
+  // own picture rather than a stock photograph of somebody else's possum.
+  //
+  // CARD_WIDTH rather than full size: every entry on a timeline carries one of these.
+  async function carryCover() {
+    try {
+      const masked = still ? await redact(still.src, draft.boxes, CARD_WIDTH) : null;
+      draft.setCover(masked ? base64Of(masked) : null);
+    } catch {
+      draft.setCover(null);          // no picture is always better than the wrong picture
+    }
+  }
+
   async function sendFrame() {
     setSending(true);
     try {
@@ -131,6 +151,7 @@ export default function Mask({ params }) {
       // redact answers null on anything going wrong, and null here means the frame is not
       // sent rather than sent unmasked. Losing the suggestion costs a sentence this
       // interface already treats as optional; the other way costs somebody their face.
+      await carryCover();
       const masked = still ? await redact(still.src, draft.boxes) : null;
       const answer = await identifyFrame({
         storyboardId: id,
@@ -232,7 +253,10 @@ export default function Mask({ params }) {
                 {COPY.consentSend}
               </button>
               <button type="button" className={ui.btnQuiet}
-                      onClick={() => router.push(`/b/${id}/add/species`)}>
+                      onClick={async () => {
+                        await carryCover();
+                        router.push(`/b/${id}/add/species`);
+                      }}>
                 {COPY.consentSkip}
               </button>
             </div>
