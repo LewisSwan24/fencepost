@@ -44,6 +44,23 @@ export const COPY = {
   // do, /credits does. The assistant is the last one that should be vague about it.
   assistantCanned: "Pre-written answers for this demo. Nothing is generated live.",
 
+  // Asked once, on the first visit, before anything exists to write. It cannot be a setting
+  // on the profile screen: changing a handle makes you a different user on the server and
+  // your sightings do not come with you, which is the same thing the sign-in screen already
+  // says out loud. Skipping is a first-class answer, not a failure — it gives the random
+  // name, which is what everybody got until now.
+  nameTitle: "What should we call you?",
+  nameLede: "This is what sits beside your sightings and in the list of who a storyboard is shared with. It isn't an account and there's no password.",
+  nameLabel: "Your name",
+  namePlaceholder: "Sam from #14",
+  nameGo: "That's me",
+  nameSkip: "Skip — give me a random name",
+  // Shown under the field as they type, because a handle is not quite what they typed and
+  // finding that out afterwards is worse than being told now. The suffix is not decoration:
+  // it is what stops two people called Sam becoming the same person.
+  namePreview: "You'll appear as",
+  nameWhySuffix: "The few characters on the end keep you separate from anyone else with the same name.",
+
   // Accounts, added 2026-09-15. Until now identity was a handle this browser made up, and
   // there was nowhere to see it or change it.
   signInTitle: "Sign in",
