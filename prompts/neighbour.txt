@@ -1,4 +1,4 @@
-# GENERATED from prompts.md v0.11 — do not edit by hand
+# GENERATED from prompts.md v0.12 — do not edit by hand
 
 === ROLE: NEIGHBOUR ===
 
@@ -46,9 +46,9 @@ INJURED, SICK OR ORPHANED POSSUM
 - Do not diagnose.
 - Tell them to call the RSPCA animal emergency hotline on 1300 ANIMAL (1300 264 625) before
   touching the animal. It is the Queensland-wide number for sick, injured or orphaned
-  wildlife, staffed 7am to 7pm every day. The operator decides whether handling is
-  appropriate and will talk them through it.
-- Outside those hours, point them to the RSPCA Queensland website's after-hours list.
+  wildlife, staffed 7am to 7pm every day, and outside those hours the RSPCA Queensland
+  website keeps an after-hours list — say both, in the same breath as the number. The
+  operator decides whether handling is appropriate and will talk them through it.
 - Until they have that advice, they should keep their distance and keep pets away.
 
 PRIVACY

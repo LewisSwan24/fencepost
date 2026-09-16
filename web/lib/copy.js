@@ -32,6 +32,11 @@ export const COPY = {
   // browser happens to use, which reads like a broken site rather than one that cannot be
   // reached, and differs depending on what they opened it in.
   unreachable: "Can't reach Fencepost right now. Try again in a moment.",
+  // Shown when the browser will not keep anything for this site. Fencepost has no logins
+  // for a visitor, so the one thing standing between two people's entries is a name this
+  // browser remembers. Without it there is no way to be the same person twice, and saying
+  // so is more use than quietly making them somebody new on every reload.
+  needsStorage: "This browser isn't letting Fencepost remember who you are, so your sightings could not stay yours. Allow site data for this page, or open it in a normal window.",
   // This line lives in the drawer, not in the footer. The home page footer does say "Possum
   // Help is running from fixtures", but somebody who opens a storyboard directly never sees
   // it — and the thought "I am talking to an AI" forms inside this drawer. Every stand-in in
@@ -67,6 +72,12 @@ export const COPY = {
   // Added with the prototype, mirrored into ux-copy.md
   captureLede: "Start with a clip you already have.",
   noCameras: "Fencepost doesn't run any cameras. Everything here comes off your own phone.",
+  captureReading: "Reading your clip…",
+  // Both buttons open a file picker, and a picker that gets cancelled fires no event at
+  // all — so without this line somebody on a laptop with no clip to hand is simply stuck
+  // on this screen. It is also the line that keeps the placeholder path reachable on
+  // purpose rather than only by failure.
+  captureSkip: "No clip on this device? Carry on with placeholder stills.",
   // This used to read "This is the still people see in the storyboard.", which was false.
   // The chosen frame has never been carried anywhere: frameIndex is read only on the frame
   // screen, it is not sent on submit, and the server has nowhere to put a frame (`videos`
@@ -74,6 +85,11 @@ export const COPY = {
   // CLAUDE.md). The interface should not make a promise the product cannot keep.
   frameLede: "Scrub to the moment that shows it best.",
   frameNote: "Placeholder stills. In the real thing these are frames from your own video.",
+  // Shown instead of the line above once the stills are real. It says where they are,
+  // because that is the part somebody would otherwise assume wrongly: nothing about the
+  // clip leaves the phone on this screen, and the frame reaches the assistant only on the
+  // next one, once the covering-up gate has been passed.
+  frameNoteLive: "Frames from your own clip, read on this phone. The video itself is not uploaded.",
   maskHint: "Drag across anything that shouldn't be shared",
   // This screen deliberately does **not** show real photographs. The frame screen does and
   // this one does not, because those four pictures are of possums: drawing a "FACE" box and
@@ -99,7 +115,12 @@ export const COPY = {
   reply: "Reply",
   shareTitle: "Share this storyboard",
   shareLede: "The code carries the access you set here. It isn't a public link.",
+  // Two captions, because the square underneath means two different things. Before anything
+  // is issued there is nothing to encode, so what is drawn is a pattern and says so. After,
+  // it is the code itself, and the sentence has to say what scanning it actually does —
+  // somebody is about to point another person's phone at it.
   qrNote: "Placeholder graphic. A real code is generated when you share.",
+  qrLive: "Point a camera at this. It opens the storyboard at the access above, until it expires or you turn it off.",
   whatTheyCanDo: "What they can do",
   linkExpires: "Link expires",
   whoHasAccess: "Who has access",
