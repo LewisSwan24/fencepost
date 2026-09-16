@@ -20,6 +20,7 @@
 // one, and lib/api.test.mjs has to import this file directly.
 import * as fixtures from "./fixtures.js";
 import { COPY } from "./copy.js";
+import { toHandle } from "./handle.js";
 
 export const BASE = process.env.NEXT_PUBLIC_FENCEPOST_API || "http://127.0.0.1:8787";
 export const MODE = process.env.NEXT_PUBLIC_FENCEPOST_MODE || "hybrid";
@@ -160,6 +161,26 @@ export function visitorHandle() {
   if (saved) return saved;
   // The server checks the handle is 1..40 characters; this is 22.
   const made = "guest_" + randomSuffix();
+  return writeStore(HANDLE_KEY, made) ? made : null;
+}
+
+// Whether this browser already knows who it is. The name screen asks this before rendering
+// anything else, because the answer has to be settled before the first request goes out:
+// once visitorHandle() has minted a random name there is nothing left to ask about, and
+// changing a handle afterwards makes you a different user on the server.
+export function hasHandle() {
+  return !!HANDLE || !!readStore(HANDLE_KEY);
+}
+
+// Take a name and be that person. Returns the handle, or null if the name had nothing
+// usable in it or the browser would not keep it — in both cases the caller carries on and
+// lets visitorHandle() mint the random one, which is what everybody got until now.
+//
+// The storage key lives in this file and nowhere else. Spelling "fencepost.handle" a second
+// time in the screen that writes it is how the two quietly drift apart.
+export function chooseHandle(name) {
+  const made = toHandle(name);
+  if (!made) return null;
   return writeStore(HANDLE_KEY, made) ? made : null;
 }
 

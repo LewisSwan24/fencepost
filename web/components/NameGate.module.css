@@ -1,0 +1,45 @@
+/* The first screen anybody sees. Field styling matches sign-in.module.css rather than
+   inventing a second look for the same control — that file is a route module and a
+   component here cannot import it, so the values are repeated deliberately. */
+
+.form { display: flex; flex-direction: column; gap: 18px; }
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+
+.label {
+  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim);
+}
+
+.input {
+  width: 100%; padding: 13px 15px; border-radius: var(--radius-md);
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font-size: 15px; line-height: 1.6;
+}
+.input:focus { border-color: var(--accent-hover); outline: none; }
+
+/* Reserved whether or not there is anything in it, so the button below does not move the
+   moment somebody types their first letter. Two lines is what the preview occupies. */
+.preview { min-height: 52px; }
+
+.previewLine {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-dim);
+}
+
+/* The handle is the point of the preview, so it is the one thing here at full contrast. */
+.handle {
+  color: var(--text); font-weight: 600; word-break: break-all;
+}
+
+.why {
+  margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim);
+}
+
+/* Quiet, but reachable. It is the fallback rather than the offer — and it has to stay
+   possible, because it is what every visitor got before this screen existed. */
+.skip {
+  display: block; width: 100%; margin-top: 18px; padding: 8px 2px;
+  background: none; border: 0; text-align: left; cursor: pointer;
+  font: inherit; font-size: 13.5px; line-height: 1.6;
+  color: var(--text-dim); text-decoration: underline; text-underline-offset: 3px;
+}
+.skip:hover { color: var(--text); }
