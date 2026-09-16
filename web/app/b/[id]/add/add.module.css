@@ -64,3 +64,21 @@
 .pip { width: 9px; height: 9px; border-radius: 999px; flex: none; }
 .state { margin-left: auto; font-size: 12px; }
 .blockedNote { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; text-align: center; }
+
+/* The still under the masking canvas. The canvas carries the still's own aspect ratio, so
+   `cover` has nothing to crop — it is there to stop a rounding difference showing a hairline
+   of background, not to reframe anything. Cropping here would move every box relative to the
+   picture, which is the one thing this screen cannot get wrong. */
+.canvasShot {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; pointer-events: none; user-select: none;
+}
+
+/* "There is nothing here to cover." Deliberately plain and deliberately not pre-ticked. */
+.nothing {
+  display: flex; align-items: flex-start; gap: 10px; margin-top: 16px;
+  font-size: 13.5px; line-height: 1.55; color: var(--text-muted); cursor: pointer;
+}
+.nothing input { margin-top: 2px; width: 17px; height: 17px; accent-color: var(--accent-hover); }
+.nothing input:disabled { cursor: not-allowed; }
+.nothing input:disabled + span { color: var(--text-dim); }

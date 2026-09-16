@@ -108,13 +108,22 @@ export const COPY = {
   // next one, once the covering-up gate has been passed.
   frameNoteLive: "Frames from your own clip, read on this phone. The video itself is not uploaded.",
   maskHint: "Drag across anything that shouldn't be shared",
-  // This screen deliberately does **not** show real photographs. The frame screen does and
-  // this one does not, because those four pictures are of possums: drawing a "FACE" box and
-  // a "NUMBER PLATE" box over a possum in a tree points at things that are not there, and
-  // turns a safety gate into a joke. This screen demonstrates the mechanism, not a picture.
-  // So the canvas stays abstract — and says it is a stand-in, or it just looks unfinished.
-  maskNote:
-    "A stand-in frame. The markers show what has to be covered before anything is sent.",
+  // This screen used to draw a FACE box and a NUMBER PLATE box from the fixture, over an
+  // abstract canvas with no picture under it. Two invented rectangles, in fixed positions,
+  // bearing no relation to what anybody had filmed — and the gate was "cover those two".
+  // Somebody could follow it exactly and leave a real face showing, because the markers
+  // were never looking at their footage. The screen was a demonstration of a mechanism
+  // wearing the clothes of a safety check.
+  //
+  // Now the frame underneath is the one they chose, and nothing pretends to know what is in
+  // it. Automatic detection is the right answer and this prototype does not have it, so the
+  // honest fallback is the one docs/prompts.md §2.5.1 already specifies: 强制手动框选打码 —
+  // you say what needs covering, and saying "nothing does" is a deliberate act rather than
+  // the default.
+  maskNote: "This is the frame you picked. Nothing is detected automatically — cover what you know is there.",
+  maskNoFrame: "No frame from a clip this time, so there is nothing here to cover.",
+  maskNothing: "Nothing in this frame identifies a person or a house",
+  maskBlockedNow: "Cover what needs covering, or tick the line below to say there's nothing.",
   helperDisclosure: "AI suggestions. Nothing goes into your post unless you put it there.",
   helperEmpty: "No fun facts for this one. Possum Help only knows brushtail and ringtail possums.",
   helperOpen: "Possum Help — writing suggestions",
