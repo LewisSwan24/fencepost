@@ -413,9 +413,39 @@ function offlineIdentity() {
 }
 
 // ── Storyboards ────────────────────────
+// One repair attempt per page load. Not per session: a reload is somebody trying again, and
+// that is exactly when they should be able to get a different answer.
+let rejoined = false;
+
 export async function dashboard() {
   if (!usesNetwork) return fixtures.dashboard();
-  return call("/api/dashboard");
+  const view = await call("/api/dashboard");
+
+  // An empty Active section, with join codes configured, means the marks in joinDemo are
+  // lying. They exist so that opening the page twice does not redeem twice, and they are
+  // only ever an optimisation — but joinDemo treats them as the truth, so a grant that goes
+  // away for any reason can never come back: the code is still valid, the visitor still
+  // holds it, and the client refuses to try because it remembers succeeding once.
+  //
+  // Seen for real on 2026-09-17. A returning visitor's grant on the active storyboard was
+  // removed during a cleanup; their browser still had the mark for that code, so joinDemo
+  // skipped it, while the newer code for the archived board had no mark and was redeemed.
+  // What they got was a dashboard with the archived storyboard and "Nothing on the go" —
+  // and no way back short of clearing site data, which nobody at a fence is going to do.
+  //
+  // So the marks are dropped and the codes tried again. Redeeming one already held costs a
+  // use on a code that has no limit and grants the level it already grants; being wrong this
+  // way is cheap, and being wrong the other way is a visitor who can never reach anything.
+  if (rejoined || JOIN_TOKENS.length === 0 || (view.active || []).length) return view;
+  rejoined = true;
+  clearStore(JOINED_KEY);
+  try {
+    const current = await ensureSession();
+    await joinDemo(current.token, current.user_id);
+    return await call("/api/dashboard");
+  } catch {
+    return view;        // a failed repair must not cost them the page they already had
+  }
 }
 
 export async function createStoryboard(title) {
