@@ -179,10 +179,13 @@ function stubFetch(responses = {}) {
   globalThis.fetch = async (url, init) => {
     const path = String(url).replace(/^https?:[/][/][^/]+/, "");
     const body = init?.body ? JSON.parse(init.body) : null;
-    calls.push({ path, body });
-    const answer = responses[path];
-    if (answer instanceof Error) throw answer;
+    const entry = { path, body, ok: true };
+    calls.push(entry);
+    let answer = responses[path];
+    if (typeof answer === "function") answer = answer(calls);
+    if (answer instanceof Error) { entry.ok = false; throw answer; }
     if (answer && answer.status) {
+      entry.ok = false;
       return { ok: false, status: answer.status, json: async () => answer.payload };
     }
     return { ok: true, status: 200, json: async () => answer ?? {} };
@@ -191,11 +194,19 @@ function stubFetch(responses = {}) {
 }
 
 const SESSION = { token: "tok", user_id: "u_guest", handle: "guest_0000000000000000" };
+// The dashboard answers the way the server does: once a code has been redeemed, the
+// storyboard it grants is reachable. A stub that stayed empty was encoding the exact state
+// the client now treats as broken — "I redeemed a code and can still reach nothing" — so
+// every test tripped the repair in dashboard(). Modelling the grant is what lets both the
+// ordinary path and the repair be tested rather than one masking the other.
 const HAPPY = {
   "/api/session": SESSION,
   "/api/share-links/redeem": { storyboard_id: "sb_demo", level: "reshare" },
-  "/api/dashboard": { active: [], past: [] },
+  "/api/dashboard": (calls) => (calls.some((c) => c.path === "/api/share-links/redeem" && c.ok)
+    ? { active: [{ id: "sb_demo", title: "The demo one" }], past: [] }
+    : { active: [], past: [] }),
 };
+const HELD = { active: [{ id: "sb_demo", title: "The demo one" }], past: [] };
 const redeems = (calls) => calls.filter((c) => c.path === "/api/share-links/redeem");
 
 // What this browser has redeemed, read the way the product reads it. Asserting on the raw
@@ -227,9 +238,10 @@ test("a new visitor redeems the join code, once", async () => {
 });
 
 test("the same code is never redeemed twice", async () => {
+  // They redeemed it in an earlier session, so the server hands them the storyboard.
   const store = { "fencepost.joined": "jt-one|u_guest" };
   const api = await freshApi({ store, joinToken: "jt-one" });
-  const calls = stubFetch(HAPPY);
+  const calls = stubFetch({ ...HAPPY, "/api/dashboard": HELD });
 
   await api.dashboard();
   assert.equal(redeems(calls).length, 0, "it joined again on a code it had already used");
@@ -311,12 +323,18 @@ test("one code that fails does not stop the other", async () => {
   globalThis.fetch = async (url, init) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, "");
     const body = init && init.body ? JSON.parse(init.body) : {};
-    calls.push({ path, body });
+    // ok travels with the call for the same reason it does in stubFetch: the dashboard
+    // answers by what was actually granted, and a refused redemption grants nothing.
+    const entry = { path, body, ok: true };
+    calls.push(entry);
     if (path === "/api/share-links/redeem" && body.token === "jt-dead") {
+      entry.ok = false;
       return { ok: false, status: 403,
                json: async () => ({ error: { code: "link_revoked", message: "no" } }) };
     }
-    return { ok: true, status: 200, json: async () => HAPPY[path] ?? {} };
+    const answer = HAPPY[path];
+    return { ok: true, status: 200,
+             json: async () => (typeof answer === "function" ? answer(calls) : answer ?? {}) };
   };
 
   await api.dashboard();
@@ -412,11 +430,58 @@ test("a restored session with nothing to redeem asks for nothing", async () => {
   // free when the code has not moved. One request, the one that was asked for.
   const store = SIGNED_IN();
   const api = await freshApi({ store, joinToken: "jt-one" });
-  const calls = stubFetch(HAPPY);
+  const calls = stubFetch({ ...HAPPY, "/api/dashboard": HELD });
 
   await api.dashboard();
   assert.equal(redeems(calls).length, 0, "it redeemed a code it had already redeemed");
   assert.equal(calls.filter((c) => c.path === "/api/session").length, 0,
     "the stored session was thrown away and exchanged again");
   assert.deepEqual(calls.map((c) => c.path), ["/api/dashboard"]);
+});
+
+
+// ── When the marks outlive the grant ───────────────────────────────────────────
+// The marks above exist so that opening the page twice does not redeem twice. They are an
+// optimisation, and joinDemo treats them as the truth — so a grant that goes away for any
+// reason can never come back on its own. Seen on the deployment on 2026-09-17: a visitor's
+// grant on the active storyboard was removed during a cleanup, their browser still held the
+// mark for that code, and what they got was the archived storyboard and "Nothing on the go",
+// with no way back short of clearing site data.
+
+test("a visitor who can reach nothing tries the code again", async () => {
+  const store = { "fencepost.joined": JSON.stringify(["jt-one|u_guest"]) };
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch({ ...HAPPY, "/api/dashboard": { active: [], past: [] } });
+
+  const view = await api.dashboard();
+  assert.equal(redeems(calls).length, 1,
+    "the code was remembered as spent and never tried again");
+  assert.deepEqual(marks(store), ["jt-one|u_guest"], "the mark was not written back");
+  assert.ok(view, "the repair swallowed the page");
+});
+
+test("the repair happens once, not on a loop", async () => {
+  // A visitor can legitimately have nothing on the go. Trying the codes forever would count
+  // a use on every page load and make used_count meaningless as a count of visitors.
+  const api = await freshApi({ store: {}, joinToken: "jt-one" });
+  const calls = stubFetch({ ...HAPPY, "/api/dashboard": { active: [], past: [] } });
+
+  await api.dashboard();
+  await api.dashboard();
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 2,
+    "the first load redeems and repairs once; later loads must not keep trying");
+});
+
+test("a dashboard that already has something is left alone", async () => {
+  const store = { "fencepost.joined": JSON.stringify(["jt-one|u_guest"]) };
+  const api = await freshApi({ store, joinToken: "jt-one" });
+  const calls = stubFetch({
+    ...HAPPY,
+    "/api/dashboard": { active: [{ id: "sb_demo" }], past: [] },
+  });
+
+  await api.dashboard();
+  assert.equal(redeems(calls).length, 0, "a working visitor was made to redeem again");
+  assert.deepEqual(marks(store), ["jt-one|u_guest"], "their marks were thrown away");
 });
