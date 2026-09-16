@@ -50,10 +50,23 @@ export default function PickFrame({ params }) {
   // A real still is the user's own footage and is shown as it came out of the camera. The
   // placeholders are graded, because they are daytime stock standing in for a night clip
   // and ungraded they look nothing like the thing they represent.
+  // A real still carries its own shape and the picker has to honour it. At a fixed 206px a
+  // 360x640 phone clip showed 35% of itself — cropped from the middle, so the top and bottom
+  // of the frame were simply absent while somebody decided which frame to use. The masking
+  // screen then displayed the whole thing, including whatever had been hidden here. Choosing
+  // a frame you cannot see all of, and only then being asked what in it needs covering, is
+  // the wrong way round. Measured on 2026-09-16 by walking the flow on the deployment.
+  //
+  // The placeholders keep the fixed height: they are landscape stock photographs, and the
+  // shape they would impose is nobody's footage.
   function shotFor(i) {
-    if (live) return { src: real[i].src, alt: "A frame from your clip", graded: false };
+    if (live) {
+      const still = real[i];
+      return { src: still.src, alt: "A frame from your clip", graded: false,
+               aspect: still.w && still.h ? still.w / still.h : null };
+    }
     const frame = placeholderFor(i);
-    return { src: frame.file, alt: frame.alt, graded: !frame.night };
+    return { src: frame.file, alt: frame.alt, graded: !frame.night, aspect: null };
   }
 
   const at = (e) => {
@@ -75,7 +88,8 @@ export default function PickFrame({ params }) {
         <h1 className={ui.h1}>Pick a frame</h1>
         <p className={ui.lede} style={{ marginBottom: 18 }}>{COPY.frameLede}</p>
 
-        <Shot src={chosen.src} alt={chosen.alt} graded={chosen.graded} height={206}>
+        <Shot src={chosen.src} alt={chosen.alt} graded={chosen.graded}
+              height={206} aspect={chosen.aspect} maxHeight="38vh">
           <span className={styles.stampChip}>{frames[index].label}</span>
         </Shot>
         <p className={styles.footnote}>{live ? COPY.frameNoteLive : COPY.frameNote}</p>
