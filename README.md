@@ -122,6 +122,42 @@ Run it after any prompt change and keep the report.
 
 ## Deploying
 
+**Two projects, one repository, two different triggers.** This is the thing to hold in your
+head before touching anything at the repo root.
+
+| project | what it serves | how it deploys |
+|---|---|---|
+| `fencepost` | the Python API, `fencepost-api.vercel.app` | `vercel deploy --prod` from this directory |
+| `fencepost-web` | the front end, `fencepost-app.vercel.app` | automatically, on every push to `main` |
+
+So a `git push` rebuilds the front end and does **nothing** to the API, and a `vercel deploy`
+does the opposite. Neither one tells you anything about the other.
+
+**A root-level build file affects both.** `.vercelignore` is read for both projects, and
+`fencepost-web` has `web/` as its Root Directory. On 2026-09-17 a `web/` entry was added to
+`.vercelignore` to trim the Python bundle; it deleted the front end's source instead. Next.js
+found no app directory, emitted a single 404 page through the pages router, and Vercel
+deployed that and reported **Ready**. Every route on the site answered 404 for about an hour
+while the dashboard showed green.
+
+Two things came out of that, and they are why this section is longer than the command:
+
+- **Trimming the API bundle does not belong in `.vercelignore`.** It lives in `vercel.json`
+  under `functions["api/index.py"].excludeFiles`, which is scoped to that one function and
+  cannot reach another project's build. `.vercelignore` now holds only what nobody may ever
+  upload: `.env*`, `*.db`, and the two files carrying plaintext share tokens.
+- **After any deploy, and after any change to a root build file, run the check.** A few
+  seconds, no credentials, writes nothing:
+
+  ```bash
+  python scripts/check_deploy.py
+  ```
+
+  It loads real pages on the front end and every route on the API, and exits non-zero if
+  either is not serving. A green deployment status cannot tell you whether what got deployed
+  is what you meant to deploy; this can. It is not `scripts/verify_deployment.py`, which walks
+  ten authenticated chains and leaves a `verify-*` user in the production database each run.
+
 ```bash
 vercel deploy
 ```

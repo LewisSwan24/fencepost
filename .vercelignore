@@ -1,32 +1,37 @@
+# Shared by EVERY project built out of this repository.
+#
+# Two are: `fencepost` (the Python API, deployed by CLI from this directory) and
+# `fencepost-web` (the front end, deployed from git with web/ as its Root Directory).
+# Vercel reads this file for both, so an entry that is harmless to one can be fatal to the
+# other. That is not hypothetical — see the note at the bottom.
+#
+# So the rule for this file is: only things that must never be uploaded by ANYBODY.
+# Secrets and local artefacts. Nothing that is any project's source.
+#
+# Trimming the API's bundle does NOT belong here. It lives in vercel.json under
+# functions["api/index.py"].excludeFiles, which is scoped to that one function and cannot
+# reach another project's build.
+
 .env*
 *.db
-__pycache__/
-tests/
-docs/
 
-# vercel.json sets includeFiles "**" for the Python function, so anything sitting at the repo
-# root is uploaded into the bundle. These hold plaintext redeemable share tokens. They are
-# already gitignored, which is exactly why they were easy to miss here — .gitignore keeps them
-# out of the repository, and this file is what keeps them out of the deployment.
-#
-# Measured 2026-09-17: the API project serves no static files — every repo-root path returns
-# 404 and only /api/* exists — so nothing was ever reachable over HTTP. This is about what
-# travels in the bundle, not about a leak that happened.
+# Plaintext redeemable share tokens. Gitignored as well, which is why they were easy to miss
+# here: .gitignore keeps them out of the repository, this file keeps them out of deployments.
 joincode*.txt
 demo-secrets.txt
 
-# web/ is NOT listed here, and must not be.
+# --- Why this file is now this short -----------------------------------------------------
 #
-# It was, for about an hour on 2026-09-17, on the reasoning that the Python function has
-# never needed a byte of the front end. That reasoning is right and the conclusion was
-# wrong: this file is read by the git builds as well, and fencepost-web builds from this
-# same repository with web/ as its Root Directory. Excluding it did not trim the API
-# bundle — it deleted the front end's source.
+# On 2026-09-17 it gained `web/`, on the reasoning that the Python function has never needed
+# a byte of the front end. The reasoning was right and the conclusion was wrong: fencepost-web
+# builds from this same repository with web/ as its Root Directory, so the entry did not trim
+# the API bundle — it deleted the front end's source.
 #
-# The build still succeeded. Next.js found no app directory, emitted a single 404 page
-# through the pages router, and Vercel deployed that. Every route on fencepost-app.vercel.app
-# answered 404 while the deployment status read "Ready", which is why nothing shouted.
+# Nothing failed. Next.js found no app directory, emitted a single 404 page through the pages
+# router, and Vercel deployed it and reported Ready:
 #
-# The lesson is about this file rather than about web/: .vercelignore is shared by every
-# project built out of this repository, so an entry that is harmless for one of them can be
-# fatal to another. Before adding a path, ask what the OTHER project needs.
+#     Route (pages)          Size   First Load JS
+#     ─ ○ /404               180 B         108 kB
+#
+# Every route on fencepost-app.vercel.app answered 404 for about an hour while the deployment
+# status said everything was fine. scripts/check_deploy.py now catches exactly this.
