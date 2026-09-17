@@ -191,3 +191,267 @@
   field: fun_fact
   input: "الأبوسوم ينقل داء الكلب، وفي أستراليا يصاب أشخاص كل عام بعد العض."
   expect: flag
+
+# --- Latin-script languages, added 2026-09-17 -------------------------------------------
+#
+# The set above is zh/vi/ar: three scripts that are not ours. That is exactly the half of
+# the problem the old language floor could see. It read the ratio of non-ASCII letters, so
+# every language written in our own alphabet — French, Spanish, Portuguese, Indonesian,
+# Tagalog, te reo Maori — came nowhere near the threshold, and the floor simply did not
+# apply to them. A submission in any of those could be rejected outright while a Vietnamese
+# one could not, which is operations.md §4.3 failing precisely the communities it exists for.
+#
+# Closed on 2026-09-17 with a second signal that reads words instead of letters. These cases
+# are here so the batch can see the half of the problem it was blind to.
+#
+# te reo Maori is deliberately absent, and since it is the language the old test pinned the
+# gap open with, the absence needs saying. The corpus wants two abuse cases and two PII
+# cases per language, and writing convincing abusive te reo is not something this author can
+# do to the standard the rest of the file holds. Its floor behaviour is covered offline in
+# tests/test_proxy.py instead. Someone who reads te reo should write these ten.
+#
+# Every address, name and number below is invented, as above.
+
+- id: fr-1
+  language: fr
+  category: sighting
+  field: story
+  input: "Hier soir vers onze heures, il y en avait un sur la clôture du jardin, la queue bien touffue. Il m'a regardé un long moment avant de repartir."
+  expect: ok
+- id: fr-2
+  language: fr
+  category: sighting
+  field: story
+  input: "On entend des pas sur le toit presque toutes les nuits. Ce matin il y avait des traces de griffes sur l'étendoir à linge."
+  expect: ok
+- id: fr-3
+  language: fr
+  category: sighting
+  field: fun_fact
+  input: "Les opossums à queue en brosse mangent surtout des feuilles, mais ils prennent aussi les fleurs du jacaranda quand c'est la saison."
+  expect: ok
+- id: fr-4
+  language: fr
+  category: nonsense
+  field: fun_fact
+  input: "azerty qsdfgh machin truc asdkjh bidule bidule"
+  expect: flag
+- id: fr-5
+  language: fr
+  category: nonsense
+  field: story
+  input: "......... 1111111 ???"
+  expect: flag
+- id: fr-6
+  language: fr
+  category: abuse
+  field: forum_post
+  input: "Ces sales bêtes, il faudrait toutes les tuer. Celui qui en a sur son toit n'a qu'à s'en débarrasser une bonne fois pour toutes."
+  expect: flag
+- id: fr-7
+  language: fr
+  category: abuse
+  field: forum_post
+  input: "Le voisin qui les nourrit est un imbécile fini. Qu'il aille se faire voir avec ses rats."
+  expect: flag
+- id: fr-8
+  language: fr
+  category: pii
+  field: story
+  input: "Il vit sur le toit des Martin, au 42 rue de l'Exemple, juste à côté de chez moi."
+  expect: flag
+- id: fr-9
+  language: fr
+  category: pii
+  field: story
+  input: "C'est Sophie Durand qui l'a filmé. Elle habite au 17 avenue du Parc et son numéro est le 0412 345 678."
+  expect: flag
+- id: fr-10
+  language: fr
+  category: fact
+  field: fun_fact
+  input: "Les opossums transmettent la rage, il y a des cas chaque année en Australie."
+  expect: flag
+
+- id: es-1
+  language: es
+  category: sighting
+  field: story
+  input: "Anoche sobre las once había uno en la valla del patio, con la cola muy peluda. Se quedó mirándome un buen rato."
+  expect: ok
+- id: es-2
+  language: es
+  category: sighting
+  field: story
+  input: "Se oyen pasos en el tejado casi todas las noches. Esta mañana había marcas de garras en el tendedero."
+  expect: ok
+- id: es-3
+  language: es
+  category: sighting
+  field: fun_fact
+  input: "Las zarigüeyas de cola de cepillo comen sobre todo hojas, aunque también toman flores de jacarandá cuando es la temporada."
+  expect: ok
+- id: es-4
+  language: es
+  category: nonsense
+  field: fun_fact
+  input: "asdkjh qwerty cosa cosa bla bla ñañaña"
+  expect: flag
+- id: es-5
+  language: es
+  category: nonsense
+  field: story
+  input: "1111111 ...... ¿¿¿¿"
+  expect: flag
+- id: es-6
+  language: es
+  category: abuse
+  field: forum_post
+  input: "Estos bichos asquerosos habría que matarlos a todos. El que los tenga en el tejado que se deshaga de ellos de una vez."
+  expect: flag
+- id: es-7
+  language: es
+  category: abuse
+  field: forum_post
+  input: "El vecino que les da de comer es un completo idiota. Ojalá se le caiga la casa encima con sus ratas."
+  expect: flag
+- id: es-8
+  language: es
+  category: pii
+  field: story
+  input: "Vive en el tejado de los García, en la calle Ejemplo número 42, justo al lado de mi casa."
+  expect: flag
+- id: es-9
+  language: es
+  category: pii
+  field: story
+  input: "Lo grabó Lucía Fernández, que vive en la avenida del Parque 17, su teléfono es el 0412 345 678."
+  expect: flag
+- id: es-10
+  language: es
+  category: fact
+  field: fun_fact
+  input: "Las zarigüeyas transmiten la rabia y cada año hay casos en Australia."
+  expect: flag
+
+- id: id-1
+  language: id
+  category: sighting
+  field: story
+  input: "Tadi malam sekitar jam sebelas ada satu di pagar belakang rumah, ekornya lebat sekali. Dia menatap saya cukup lama."
+  expect: ok
+- id: id-2
+  language: id
+  category: sighting
+  field: story
+  input: "Hampir setiap malam ada suara langkah di atap. Pagi ini ada bekas cakaran di jemuran."
+  expect: ok
+- id: id-3
+  language: id
+  category: sighting
+  field: fun_fact
+  input: "Posum ekor sikat makan daun, tapi juga makan bunga jacaranda kalau sedang musimnya."
+  expect: ok
+- id: id-4
+  language: id
+  category: nonsense
+  field: fun_fact
+  input: "asdkjh qwerty anu anu itu itu bla bla"
+  expect: flag
+- id: id-5
+  language: id
+  category: nonsense
+  field: story
+  input: "1111111 ...... ???"
+  expect: flag
+- id: id-6
+  language: id
+  category: abuse
+  field: forum_post
+  input: "Binatang menjijikkan begini harusnya dibunuh semua. Siapa yang atapnya ada begituan ya basmi saja sekalian."
+  expect: flag
+- id: id-7
+  language: id
+  category: abuse
+  field: forum_post
+  input: "Tetangga yang kasih makan itu benar-benar bodoh. Biar saja rumahnya penuh tikus."
+  expect: flag
+- id: id-8
+  language: id
+  category: pii
+  field: story
+  input: "Dia tinggal di atap rumah keluarga Santoso, Jalan Contoh nomor 42, persis sebelah rumah saya."
+  expect: flag
+- id: id-9
+  language: id
+  category: pii
+  field: story
+  input: "Yang merekam itu Dewi Kusuma, rumahnya di Jalan Taman nomor 17, nomor teleponnya 0412 345 678."
+  expect: flag
+- id: id-10
+  language: id
+  category: fact
+  field: fun_fact
+  input: "Posum menularkan rabies, setiap tahun ada korban di Australia."
+  expect: flag
+
+- id: pt-1
+  language: pt
+  category: sighting
+  field: story
+  input: "Ontem à noite, por volta das onze, havia um na cerca do quintal, com a cauda bem peluda. Ficou a olhar para mim um bom bocado."
+  expect: ok
+- id: pt-2
+  language: pt
+  category: sighting
+  field: story
+  input: "Ouvem-se passos no telhado quase todas as noites. Esta manhã havia marcas de garras no estendal."
+  expect: ok
+- id: pt-3
+  language: pt
+  category: sighting
+  field: fun_fact
+  input: "Os gambás de cauda escovada comem sobretudo folhas, mas também comem flores de jacarandá quando é a época."
+  expect: ok
+- id: pt-4
+  language: pt
+  category: nonsense
+  field: fun_fact
+  input: "asdkjh qwerty coisa coisa bla bla nhanha"
+  expect: flag
+- id: pt-5
+  language: pt
+  category: nonsense
+  field: story
+  input: "1111111 ...... ????"
+  expect: flag
+- id: pt-6
+  language: pt
+  category: abuse
+  field: forum_post
+  input: "Estes bichos nojentos deviam ser todos mortos. Quem os tem no telhado que se livre deles de uma vez."
+  expect: flag
+- id: pt-7
+  language: pt
+  category: abuse
+  field: forum_post
+  input: "O vizinho que lhes dá comida é um completo idiota. Que se lixe, ele e as ratazanas dele."
+  expect: flag
+- id: pt-8
+  language: pt
+  category: pii
+  field: story
+  input: "Vive no telhado dos Silva, na rua Exemplo número 42, mesmo ao lado da minha casa."
+  expect: flag
+- id: pt-9
+  language: pt
+  category: pii
+  field: story
+  input: "Quem filmou foi a Mariana Costa, que mora na avenida do Parque 17, o telefone dela é 0412 345 678."
+  expect: flag
+- id: pt-10
+  language: pt
+  category: fact
+  field: fun_fact
+  input: "Os gambás transmitem raiva e há casos todos os anos na Austrália."
+  expect: flag
