@@ -107,6 +107,10 @@ export const COPY = {
   // clip leaves the phone on this screen, and the frame reaches the assistant only on the
   // next one, once the covering-up gate has been passed.
   frameNoteLive: "Frames from your own clip, read on this phone. The video itself is not uploaded.",
+  // A photograph has no timeline, so there is nothing to scrub and no timestamp to stamp on
+  // it. Reached only by coming back from the next screen — taking a photograph skips this
+  // one, because picking a frame from one frame is not a choice.
+  framePhoto: "Your photograph. There is nothing to scrub through, so this is the one.",
   maskHint: "Drag across anything that shouldn't be shared",
   // This screen used to draw a FACE box and a NUMBER PLATE box from the fixture, over an
   // abstract canvas with no picture under it. Two invented rectangles, in fixed positions,
@@ -122,6 +126,8 @@ export const COPY = {
   // the default.
   maskNote: "This is the frame you picked. Nothing is detected automatically — cover what you know is there.",
   maskNoFrame: "No frame from a clip this time, so there is nothing here to cover.",
+  // A photograph was not picked out of anything, so it is not "the frame you picked".
+  maskPhoto: "Your photograph. Nothing is detected automatically — cover what you know is there.",
   maskNothing: "Nothing in this frame identifies a person or a house",
   maskBlockedNow: "Cover what needs covering, or tick the line below to say there's nothing.",
   helperDisclosure: "AI suggestions. Nothing goes into your post unless you put it there.",

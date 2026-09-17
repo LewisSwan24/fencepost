@@ -50,6 +50,9 @@ export default function Mask({ params }) {
   // be the same shape as the still or the black rectangle lands somewhere other than where
   // the person drew it. A portrait phone clip in a fixed-height box is exactly that case.
   const still = draft.stills[draft.frameIndex] || null;
+  // No label means a photograph rather than a frame out of a clip: there was no timeline to
+  // take it from, so the copy must not claim one was picked.
+  const photo = !!still && !still.label;
   const shape = still && still.w && still.h ? still.w / still.h : null;
 
   // Either you covered something, or you said there is nothing to cover. There is no third
@@ -210,7 +213,7 @@ export default function Mask({ params }) {
           {drawn.length === 0 ? <span className={styles.hint}>{COPY.maskHint}</span> : null}
         </div>
         <p className={styles.footnote} style={{ marginTop: 10 }}>
-          {still ? COPY.maskNote : COPY.maskNoFrame}
+          {!still ? COPY.maskNoFrame : photo ? COPY.maskPhoto : COPY.maskNote}
         </p>
 
         {/* Saying "there is nothing to cover" is an act, not the default. Ticking it while

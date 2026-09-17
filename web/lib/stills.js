@@ -198,6 +198,70 @@ export function extractStills(file, count = 8) {
  * would be handed something that is not a picture.
  */
 /**
+ * A photograph, as the single still it is.
+ *
+ * "Record" means filming or photographing what is in front of you, and a possum on a fence
+ * at midnight is at least as often photographed as filmed. It also matters for a duller
+ * reason: Android Chrome picks its camera intent from `accept`, and a video-only one asks
+ * for ACTION_VIDEO_CAPTURE, which plenty of stock camera apps do not handle — they open and
+ * bounce straight back out. Reported from a phone on 2026-09-17.
+ *
+ * label is null rather than "0:00". There is no timeline in a photograph, and stamping a
+ * timestamp on one would be the same small lie this flow has had enough of.
+ */
+function stillFromImage(file) {
+  return new Promise((resolve) => {
+    if (typeof document === "undefined" || typeof URL === "undefined") {
+      resolve([]);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    const done = (value) => { URL.revokeObjectURL(url); resolve(value); };
+    img.onerror = () => done([]);
+    img.onload = () => {
+      try {
+        const size = drawSize(img.naturalWidth, img.naturalHeight);
+        if (!size) {
+          done([]);
+          return;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = size.width;
+        canvas.height = size.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          done([]);
+          return;
+        }
+        // Through a canvas, like every other frame here, which is also what strips the EXIF
+        // and the GPS a phone photograph carries — the CLAUDE.md line, met by construction
+        // rather than by a step somebody has to remember.
+        ctx.drawImage(img, 0, 0, size.width, size.height);
+        done([{ t: 0, label: null, w: size.width, h: size.height,
+                src: canvas.toDataURL("image/jpeg", JPEG_QUALITY) }]);
+      } catch {
+        done([]);
+      }
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Stills out of whatever was taken or picked — a clip or a photograph.
+ *
+ * Empty on anything going wrong, from either path, and the caller falls back to the
+ * placeholder photographs exactly as before.
+ */
+export function stillsFrom(file, count = 8) {
+  if (!file) return Promise.resolve([]);
+  return String(file.type || "").startsWith("image/")
+    ? stillFromImage(file)
+    : extractStills(file, count);
+}
+
+/**
  * The still with the drawn boxes painted over it, or null.
  *
  * The masking screen measured coverage, opened its gate, and then the untouched still was
