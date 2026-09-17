@@ -20,6 +20,19 @@
 joincode*.txt
 demo-secrets.txt
 
+# Local agent tooling. It contains a symlink to an absolute Windows path that means nothing
+# on a Linux builder, so every deploy printed a warning about being unable to stat it.
+#
+# This is the line that taught the difference between the two mechanisms, so it is worth
+# stating: .vercelignore decides what reaches Vercel AT ALL, and vercel.json's excludeFiles
+# decides what, of the files that did reach it, goes into the Python function. .claude/ was
+# put in excludeFiles first and kept being uploaded, warning and all, because trimming the
+# bundle is not the same as not sending the file.
+#
+# Which is also why web/ belongs in excludeFiles and must never appear here: the Python
+# function does not want it, and the front end cannot be built without it.
+.claude/
+
 # --- Why this file is now this short -----------------------------------------------------
 #
 # On 2026-09-17 it gained `web/`, on the reasoning that the Python function has never needed

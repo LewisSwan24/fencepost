@@ -3,7 +3,7 @@
   "functions": {
     "api/index.py": {
       "includeFiles": "**",
-      "excludeFiles": "{web/**,tests/**,docs/**,.claude/**,__pycache__/**,**/__pycache__/**,*.db,.next/**}"
+      "excludeFiles": "{web/**,tests/**,docs/**,__pycache__/**,**/__pycache__/**,*.db,.next/**}"
     }
   }
 }
