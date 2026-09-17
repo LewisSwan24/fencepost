@@ -70,21 +70,26 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
   const ticker = useRef(null);
   const startedAt = useRef(0);
 
+  // True for as long as a recording is running. The stream effect below needs to know this
+  // from inside a closure that React will not re-create, so it cannot read the state.
+  const filming = useRef(false);
+
   const [state, setState] = useState("starting");   // starting | ready | recording | blocked
   const [reason, setReason] = useState("other");    // why, when blocked
   const [mode, setMode] = useState("photo");
   const [elapsed, setElapsed] = useState(0);
+  const [facing, setFacing] = useState("environment");   // environment = the rear lens
+  const [swapping, setSwapping] = useState(false);
+  const [cameras, setCameras] = useState(null);     // how many lenses, null until asked
 
-  // Everything that has to happen whether this closes by the X, by Escape, by a shot being
-  // taken, or by the route changing underneath it. Leaving a track running leaves the phone's
-  // camera indicator lit while somebody is masking and writing, which reads — correctly — as
-  // the app still watching them.
-  const release = useCallback(() => {
-    if (ticker.current) {
-      clearInterval(ticker.current);
-      ticker.current = null;
-    }
-    samples.current = [];
+  // Letting go of the lens, and nothing else.
+  //
+  // Separate from release() because swapping between the front and rear cameras is exactly
+  // this and only this: the old stream has to stop before the new one is asked for, while the
+  // recording clock, the interval and — the part that matters — every frame sampled so far
+  // carry straight on. Folding the two together would mean flipping the camera halfway
+  // through filming silently threw away everything filmed up to that point.
+  const stopStream = useCallback(() => {
     const live = stream.current;
     stream.current = null;
     if (live) {
@@ -98,17 +103,33 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
     }
   }, []);
 
+  // Everything that has to happen whether this closes by the X, by Escape, by a shot being
+  // taken, or by the route changing underneath it. Leaving a track running leaves the phone's
+  // camera indicator lit while somebody is masking and writing, which reads — correctly — as
+  // the app still watching them.
+  const release = useCallback(() => {
+    if (ticker.current) {
+      clearInterval(ticker.current);
+      ticker.current = null;
+    }
+    filming.current = false;
+    samples.current = [];
+    stopStream();
+  }, [stopStream]);
+
   useEffect(() => {
     let dead = false;
 
     (async () => {
       try {
-        // facingMode as a preference rather than { exact: "environment" }. Exact is a
-        // constraint the browser must satisfy or fail, and a laptop with one front-facing
-        // webcam fails it — which would make this screen unusable on every machine this
-        // prototype is demonstrated from. A phone honours the preference.
+        // facingMode as a preference rather than { exact: facing }. Exact is a constraint the
+        // browser must satisfy or fail, and a laptop with one front-facing webcam fails it —
+        // which would make this screen unusable on every machine this prototype is
+        // demonstrated from, and would turn the flip button into a way to break the camera.
+        // A plain value is read as `ideal`, so it never rejects: a device with one lens just
+        // hands the same one back.
         const got = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
           // No microphone. Nothing here keeps audio, and asking for a permission in order to
           // throw the result away is not a thing to do to somebody.
           audio: false,
@@ -125,7 +146,20 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
           // own once the element has its metadata, so a rejection is not worth a screen.
           try { await video.current.play(); } catch { /* the element catches up by itself */ }
         }
-        setState("ready");
+        // A swap that lands mid-recording must not knock the screen back to "ready" — the
+        // shutter would turn from a stop button into a start button underneath a finger.
+        setState((was) => (was === "recording" ? was : "ready"));
+        setSwapping(false);
+
+        // Whether there is a second lens to offer at all. Only worth asking once the stream
+        // exists, because before permission the list is unlabelled and on some browsers
+        // empty. A device with one camera gets no flip button rather than a button that
+        // appears to do nothing — facingMode is a preference, so flipping a single-lens
+        // device silently hands the same lens back.
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (!dead) setCameras(devices.filter((d) => d.kind === "videoinput").length);
+        } catch { /* leave it unknown, and keep offering the flip */ }
       } catch (error) {
         // One screen, four sentences. See reasonFor: what the person should do about this is
         // different in each case, and only the browser knows which case it is.
@@ -134,18 +168,34 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
         // plainly granted permission, look at response headers before looking at this file: a
         // Permissions-Policy without `camera=(self)` blocks it on the top-level page and also
         // makes enumerateDevices report no camera, so it presents as a phone with no lens.
-        if (!dead) {
-          setReason(reasonFor(error));
-          setState("blocked");
+        if (dead) return;
+        setSwapping(false);
+        // A flip that fails while filming must not cost somebody the frames they already
+        // have. Hand back what was sampled and let the flow carry on; the alternative is an
+        // error screen holding a recording hostage over a lens that was working a second ago.
+        if (filming.current && samples.current.length) {
+          stopVideo();
+          return;
         }
+        setReason(reasonFor(error));
+        setState("blocked");
       }
     })();
 
+    // Keyed on `facing`, so flipping the camera is just this effect running again. The
+    // cleanup lets go of the lens and nothing else — the interval, the clock and the frames
+    // already sampled belong to the recording, not to the stream that happened to produce
+    // them, and a flip halfway through filming must not cost somebody what they already
+    // filmed.
     return () => {
       dead = true;
-      release();
+      stopStream();
     };
-  }, [release]);
+  }, [facing, stopStream]);
+
+  // The full teardown, on the way out only. Separate from the stream effect above because
+  // that one now runs on every flip, and this must not.
+  useEffect(() => release, [release]);
 
   // Escape closes, like the Sheet everywhere else in this flow. This is a fixed overlay
   // rather than a Sheet — a camera should not be dismissable by a drag that ends off the
@@ -185,9 +235,20 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
     samples.current.push({ ...still, t, label: clockLabel(t) });
   }
 
+  // Flipping is a change of one piece of state; the stream effect does the rest. Allowed
+  // while filming as well as before it, because a camera you cannot turn round mid-shot is
+  // not a camera — the frames sampled before the swap and after it sit in one list, in order,
+  // and the picker cannot tell which lens produced which.
+  function flip() {
+    if (swapping) return;
+    setSwapping(true);
+    setFacing((was) => (was === "environment" ? "user" : "environment"));
+  }
+
   function startVideo() {
     samples.current = [];
     startedAt.current = Date.now();
+    filming.current = true;
     setElapsed(0);
     setState("recording");
     // One straight away, so that a press and release faster than the interval still produces
@@ -209,13 +270,24 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
       clearInterval(ticker.current);
       ticker.current = null;
     }
+    filming.current = false;
+    // thin() copies references out before release() empties the list, so the frames survive
+    // the teardown that follows.
     const taken = thin(samples.current, FRAMES);
     release();
     onClip?.(taken);
   }
 
   const recording = state === "recording";
-  const busy = state === "starting" || state === "blocked";
+  // Mid-swap the preview is briefly black, so the shutter is held shut — except while
+  // filming, where the same button is the only way to stop, and refusing a stop press because
+  // a lens is still opening is how a recording runs on past the moment somebody wanted it to
+  // end.
+  const busy = state === "starting" || state === "blocked" || (swapping && !recording);
+  // A device known to have one lens gets no flip button rather than one that appears to do
+  // nothing. Unknown — enumerateDevices refused, or has not answered yet — still offers it,
+  // because the phones this is for all have two.
+  const canFlip = state !== "starting" && state !== "blocked" && cameras !== 1;
 
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-label="Camera">
@@ -259,12 +331,26 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
           </button>
-          {recording ? (
-            <span className={styles.badge} role="status">
-              <span className={styles.dot} />
-              {clockLabel(elapsed)}
-            </span>
-          ) : null}
+          <span className={styles.barRight}>
+            {recording ? (
+              <span className={styles.badge} role="status">
+                <span className={styles.dot} />
+                {clockLabel(elapsed)}
+              </span>
+            ) : null}
+            {canFlip ? (
+              <button type="button" className={styles.flip} aria-label={COPY.cameraFlip}
+                      disabled={swapping} onClick={flip}>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {/* A lens with two arrows going round it. */}
+                  <path d="M3 8a4 4 0 014-4h10M21 16a4 4 0 01-4 4H7" />
+                  <path d="M17 1l4 3-4 3M7 17l-4 3 4 3" />
+                  <circle cx="12" cy="12" r="3.2" />
+                </svg>
+              </button>
+            ) : null}
+          </span>
         </div>
       </div>
 

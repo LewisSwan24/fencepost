@@ -53,6 +53,14 @@
   pointer-events: none;
 }
 
+/* The right-hand end of the bar carries the recording clock and the flip button together, so
+   the clock does not jump sideways when the flip appears or the recording starts. */
+.barRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .close {
   pointer-events: auto;
   width: 40px;
@@ -69,6 +77,32 @@
 
 .close:hover {
   background: rgba(0, 0, 0, 0.62);
+}
+
+/* Same round chrome as the close button. Written out rather than composed, because composes
+   is a CSS Modules feature whose support depends on the bundler, and eight duplicated lines
+   are cheaper than a class that silently resolves to nothing in a future toolchain. */
+.flip {
+  pointer-events: auto;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+}
+
+.flip:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.flip:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* The recording indicator. Red dot and a running clock, because a camera that is recording
