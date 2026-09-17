@@ -205,6 +205,33 @@ export function extractStills(file, count = 8, knownSeconds = 0) {
 }
 
 /**
+ * Where the drawing happens.
+ *
+ * The three functions below are the only safety-critical code in this front end — they are
+ * what puts the black rectangle over a neighbour's face before a frame leaves the device —
+ * and until now not one of them had a test, because they need a canvas and the suite is
+ * `node --test` with no DOM. That gap is how the worst bug of 2026-09-17 shipped green: an
+ * empty box list read as a failure, so ticking "nothing here identifies a person" silently
+ * threw the author's own photograph away, and all 154 tests passed.
+ *
+ * Rather than take on a native canvas dependency, the surface is a parameter. In the browser
+ * it defaults to the real thing; in a test it is a stand-in that records what was drawn, so
+ * the assertions can be about behaviour — how many rectangles, and where — instead of about
+ * whether a function returned truthy.
+ *
+ * Null when there is no document, which is what the old `typeof document === "undefined"`
+ * guards were doing in each function separately.
+ */
+function domSurface() {
+  if (typeof document === "undefined" || typeof Image === "undefined") return null;
+  return {
+    canvas: () => document.createElement("canvas"),
+    image: () => new Image(),
+  };
+}
+
+
+/**
  * The base64 out of a data URL, or null.
  *
  * proxy/roles.py builds `data:image/jpeg;base64,{image_b64}` itself, so sending the whole
@@ -302,11 +329,11 @@ export function thin(list, count) {
  * Synchronous: the frame is already decoded and on screen. Null if the preview has not
  * reported its dimensions yet, which is what videoWidth being 0 means.
  */
-export function grabStill(video) {
-  if (!video || typeof document === "undefined") return null;
+export function grabStill(video, surface = domSurface()) {
+  if (!video || !surface) return null;
   const size = drawSize(video.videoWidth, video.videoHeight);
   if (!size) return null;
-  const canvas = document.createElement("canvas");
+  const canvas = surface.canvas();
   canvas.width = size.width;
   canvas.height = size.height;
   const ctx = canvas.getContext("2d");
@@ -350,14 +377,14 @@ export function stillsFrom(file, count = 8, knownSeconds = 0) {
  * Painted opaque, not blurred: a blur can be undone well enough to matter, and the subject
  * is a neighbour's face or a number plate on somebody's street.
  */
-export function redact(src, boxes, maxWidth = 0) {
+export function redact(src, boxes, maxWidth = 0, surface = domSurface()) {
   return new Promise((resolve) => {
     const drawn = Array.isArray(boxes) ? boxes : [];
-    if (!src || !drawn.length || typeof document === "undefined") {
+    if (!src || !drawn.length || !surface) {
       resolve(null);
       return;
     }
-    const img = new Image();
+    const img = surface.image();
     img.onerror = () => resolve(null);
     img.onload = () => {
       try {
@@ -377,7 +404,7 @@ export function redact(src, boxes, maxWidth = 0) {
           resolve(null);
           return;
         }
-        const canvas = document.createElement("canvas");
+        const canvas = surface.canvas();
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
@@ -403,20 +430,20 @@ export function redact(src, boxes, maxWidth = 0) {
  * Module-private on purpose. Nothing outside this file should be able to ask for "the frame,
  * unmasked" — the only caller is maskedFrame below, which reaches it in exactly one case.
  */
-function redraw(src, maxWidth = 0) {
+function redraw(src, maxWidth = 0, surface = domSurface()) {
   return new Promise((resolve) => {
-    if (!src || typeof document === "undefined") {
+    if (!src || !surface) {
       resolve(null);
       return;
     }
-    const img = new Image();
+    const img = surface.image();
     img.onerror = () => resolve(null);
     img.onload = () => {
       try {
         const scaled = maxWidth ? drawSize(img.naturalWidth, img.naturalHeight, maxWidth) : null;
         const width = scaled ? scaled.width : img.naturalWidth;
         const height = scaled ? scaled.height : img.naturalHeight;
-        const canvas = document.createElement("canvas");
+        const canvas = surface.canvas();
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
@@ -455,9 +482,9 @@ function redraw(src, maxWidth = 0) {
  * nothing to cover. Empty means affirmed, not unanswered. If that gate ever goes, this
  * branch has to go with it.
  */
-export function maskedFrame(src, boxes, maxWidth = 0) {
+export function maskedFrame(src, boxes, maxWidth = 0, surface = domSurface()) {
   const drawn = Array.isArray(boxes) ? boxes : [];
-  return drawn.length ? redact(src, drawn, maxWidth) : redraw(src, maxWidth);
+  return drawn.length ? redact(src, drawn, maxWidth, surface) : redraw(src, maxWidth, surface);
 }
 
 export function base64Of(src) {

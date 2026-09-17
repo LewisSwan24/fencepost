@@ -219,8 +219,18 @@ file, and emptying an author field each fail exactly the test meant to catch the
 
 ## Checked in a browser
 
-Some things the suite cannot reach, because they are React behaviour or focus behaviour and
-the tests run without a DOM. These were measured against `npm run dev` on 2026-09-15 by
+One thing left this section on 2026-09-17. The masking — `redact`, `maskedFrame`, `grabStill`
+— needs a canvas, so it lived here and nowhere else, and that is precisely how the worst bug
+of that day shipped with every test green: an empty box list read as a failure, so the
+ordinary sighting with nothing to cover silently lost the author's own photograph. The
+drawing surface is a parameter now, defaulting to the real DOM and replaced in
+`lib/masking.test.mjs` by a stand-in that records what was drawn. Thirteen tests assert how
+many rectangles were painted and where, and both directions were checked by mutation:
+reverting the empty-list behaviour fails one of them, and a `redact` that exports the frame
+without painting anything fails four.
+
+The rest of this section still holds. These are React behaviour or focus behaviour, and the
+tests run without a DOM. These were measured against `npm run dev` on 2026-09-15 by
 dispatching real pointer and keyboard events at the page, not by clicking through by hand:
 the preview pane scales an emulated viewport, so coordinates written by eye land somewhere
 else, and an earlier attempt to drag a mask box failed for that reason rather than because
