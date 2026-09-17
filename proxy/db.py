@@ -20,6 +20,18 @@ HISTORY_TURNS = 6
 
 
 def now() -> str:
+    """Every timestamp this application writes, in one place.
+
+    The shape is load-bearing, not cosmetic. Four queries compare stamps as **strings** —
+    settle_review, settle_stale, purge_screening and the rate limiter all build a cutoff and
+    write `column < ?`. That is only correct while every stamp carries the same UTC offset,
+    which is true because this function is the only writer and always emits +00:00.
+
+    So the invariant is "one writer", not "every reader is tolerant". Anything that writes a
+    stamp some other way — a bare Z suffix, a local offset, microseconds — silently breaks
+    ordering in those four places rather than failing outright. tests/test_data_layer.py pins
+    the shape so a change here has to be deliberate.
+    """
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
@@ -158,7 +170,16 @@ class Database:
                         f"{table}.{name} cannot be added to an existing table in place "
                         f"({definition.strip()}). This one needs a migration written by "
                         "hand: build the new table, copy the rows, swap the names.")
-                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+                # Guarded the same way the create loop above is, and for the same reason.
+                # Two instances cold-starting together both read PRAGMA table_info before
+                # either has added the column, so both issue the ALTER and the loser gets
+                # "duplicate column name" — which, without this, takes down the whole API for
+                # that request. The column exists either way, which is all this wanted.
+                try:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+                except Exception as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
         self.conn.commit()
 
     def _refresh_rate_limit_scopes(self) -> None:
@@ -803,6 +824,15 @@ class Database:
             marks = ",".join("?" * len(mine))
             removed["screening_of_entries"] = self.conn.execute(
                 f"DELETE FROM screening_results WHERE subject_id IN ({marks})", mine).rowcount
+            # Other people's votes on this person's entries. review_votes.entry_id has a
+            # foreign key to entries(id) (schema.sql:132) and both backends enforce it, so
+            # deleting the entries below while somebody else's vote still points at one
+            # raises — halfway through the cascade, with the earlier deletes already done and
+            # the commit at the end never reached. That leaves the connection holding a dirty
+            # transaction for whichever writer touches the instance next.
+            # The row below clears only votes this person *cast*, which is a different set.
+            removed["votes_on_my_entries"] = self.conn.execute(
+                f"DELETE FROM review_votes WHERE entry_id IN ({marks})", mine).rowcount
         for name, sql, args in (
             ("screening_results", "DELETE FROM screening_results WHERE author_id = ?", (user_id,)),
             ("review_votes", "DELETE FROM review_votes WHERE voter_id = ?", (user_id,)),
@@ -930,22 +960,47 @@ class SqliteRateLimiter:
         self.limits = limits or DEFAULT_LIMITS
 
     def check_and_count(self, user_id: str, scope: str) -> None:
+        """Claim the slot first, then check whether the cap was passed — and give it back if so.
+
+        This used to count first and insert afterwards: DELETE expired, SELECT COUNT, compare,
+        INSERT. Serverless means several instances at once, and on one identity they all read
+        the same count before any of them has inserted, so N concurrent requests each saw
+        `used` below the cap and each added a row. The ceiling was whatever arrived between
+        two round trips.
+
+        Inserting first, committing so the other instances can see the row, and only then
+        counting makes the race safe in the direction that matters: nobody can be counted
+        out of existence, so the cap cannot be exceeded.
+
+        It can be undershot by one at the exact boundary. With nine of ten used, two requests
+        landing in the same instant both insert, both count eleven, and both hand the slot
+        back — nine used, one caller told to slow down who could have been served. Retrying
+        succeeds immediately, and refusing one extra request is the right way round for a
+        limiter. Getting it exact needs arrival order, which this table cannot express: id is
+        a random uuid and used_at has second granularity, so almost every row ties and
+        ordering by either is ordering by nothing. An exact answer would mean a monotonic
+        column, which is a schema change and a migration for a boundary nobody has hit.
+        """
         cap, window = self.limits[scope]
         cutoff = (datetime.now(timezone.utc)
                   - timedelta(seconds=window)).isoformat(timespec="seconds")
         self.db.conn.execute(
             "DELETE FROM rate_limits WHERE user_id = ? AND scope = ? AND used_at < ?",
             (user_id, scope, cutoff))
+        mine, stamp = new_id(), now()
+        self.db.conn.execute(
+            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
+            (mine, user_id, scope, stamp))
+        # Committed before counting, or the other instances' rows are invisible and the race
+        # is exactly where it was.
+        self.db.conn.commit()
         used = self.db.conn.execute(
             "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ? AND scope = ?",
             (user_id, scope)).fetchone()["c"]
-        if used >= cap:
+        if used > cap:
+            self.db.conn.execute("DELETE FROM rate_limits WHERE id = ?", (mine,))
             self.db.conn.commit()
             raise RateLimited(scope)
-        self.db.conn.execute(
-            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
-            (new_id(), user_id, scope, now()))
-        self.db.conn.commit()
 
 
 class SqliteScreeningLog:

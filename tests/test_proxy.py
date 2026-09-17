@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 from proxy import auth                                    # noqa: E402
+from proxy import app                                      # noqa: E402
 from proxy.app import COPY, Deps, handle, handle_stream    # noqa: E402
 from proxy.model import UpstreamError                     # noqa: E402
 from proxy import roles                                   # noqa: E402
@@ -131,6 +132,78 @@ class Screener(unittest.TestCase):
         _, payload = handle(screen(submission="He lives at 42 Example St."), TOKEN, deps)
         self.assertFalse(payload["published"])
         self.assertFalse(deps.screening.records[0]["downgraded_non_english"])
+
+
+class ModelInputBounds(unittest.TestCase):
+    """Nothing unbounded reaches the model.
+
+    Every field the Screener sees was already capped through _plain_text. The three role
+    endpoints were not: a question, a Writer draft and a Screener submission each went
+    upstream at whatever length arrived, and so did the image beside them. Under
+    FENCEPOST_OPEN_SIGNUP anybody can swap a handle for a token, so there was no qualifier
+    left on "uncapped free text into a paid endpoint".
+
+    The assertion that matters in each case is that the model was never called.
+    """
+
+    def test_an_over_long_question_never_reaches_the_model(self):
+        client = FakeClient("should not be used")
+        status, payload = handle(chat(message="x" * (app.MESSAGE_LIMIT + 1)), TOKEN,
+                                 deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual("bad_request", payload["error"]["code"])
+        self.assertEqual([], client.calls)
+
+    def test_an_over_long_question_is_refused_on_the_streaming_path_too(self):
+        client = FakeClient("should not be used")
+        status, _ = handle_stream(chat(message="x" * (app.MESSAGE_LIMIT + 1), stream=True),
+                                  TOKEN, deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual([], client.calls)
+
+    def test_a_question_at_the_limit_still_works(self):
+        client = FakeClient("a reply")
+        status, _ = handle(chat(message="x" * app.MESSAGE_LIMIT), TOKEN, deps_for(client))
+        self.assertEqual(200, status)
+        self.assertEqual(1, len(client.calls))
+
+    def test_an_oversized_image_never_reaches_the_model(self):
+        client = FakeClient("should not be used")
+        status, _ = handle(chat(image_b64="A" * (app.IMAGE_B64_LIMIT + 1)), TOKEN,
+                           deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual([], client.calls)
+
+    def test_an_image_that_is_not_a_string_is_refused(self):
+        client = FakeClient("should not be used")
+        status, _ = handle(chat(image_b64={"nice": "try"}), TOKEN, deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual([], client.calls)
+
+    def test_an_over_long_submission_never_reaches_the_screener(self):
+        client = FakeClient(OK_JSON)
+        status, _ = handle(screen(submission="x" * (app.STORY_LIMIT + 1)), TOKEN,
+                           deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual([], client.calls)
+
+    def test_an_over_long_draft_never_reaches_the_writer(self):
+        client = FakeClient("should not be used")
+        status, _ = handle({"role": "writer", "species_selected": "brushtail",
+                            "story_draft": "x" * (app.STORY_LIMIT + 1)}, TOKEN,
+                           deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual([], client.calls)
+
+    def test_a_control_character_smuggled_into_a_question_is_refused(self):
+        """Newlines and tabs are ordinary in a question; the rest are not."""
+        ok, _ = handle(chat(message="line one\nline two"), TOKEN,
+                       deps_for(FakeClient("a reply")))
+        self.assertEqual(200, ok)
+        client = FakeClient("should not be used")
+        status, _ = handle(chat(message="hidden\x07bell"), TOKEN, deps_for(client))
+        self.assertEqual(400, status)
+        self.assertEqual([], client.calls)
 
 
 class LanguageFloor(unittest.TestCase):
