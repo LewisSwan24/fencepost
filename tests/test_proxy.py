@@ -1,6 +1,9 @@
 """Unit tests for the proxy. Offline — the model is faked, so only the proxy's own rules run.
 
-    python -m unittest discover -s tests -t .
+    python tests/test_proxy.py
+
+(`unittest discover` does not work here: tests/ has no __init__.py, so it raises
+ImportError: Start directory is not importable.)
 """
 
 import json

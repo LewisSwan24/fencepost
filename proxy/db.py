@@ -512,6 +512,26 @@ class Database:
 
     # ---------- review queue (operations.md §2) ----------
 
+    @staticmethod
+    def _still_open(prefix: str = "") -> str:
+        """The SQL for "this mark has not been settled yet".
+
+        'labelled' is a public mark, not an ending. operations.md §2.1 gives the owner the
+        final say over a labelled entry, §2.2 lets two "looks right" votes clear the mark, and
+        §2.2 clears it automatically after seven days — none of which can happen to a row the
+        queries treat as finished. Filtering on `disposition IS NULL` alone made all three
+        impossible at once: two `worth_checking` votes set 'labelled', and from that moment the
+        entry was gone from the queue, out of reach of the seven-day sweep, and answered 409
+        not_in_review to the one person the operations doc says decides. The label was
+        permanent and nobody had the button. Found by an adversarial review on 2026-09-17.
+
+        Only 'kept' and 'removed' are endings. One helper, so the four queries that ask this
+        question cannot drift apart again — which is how they came to agree on the wrong
+        answer in three places at once.
+        """
+        column = f"{prefix}disposition"
+        return f"({column} IS NULL OR {column} = 'labelled')"
+
     def settle_review(self, days: int = 7) -> int:
         """Clear the mark automatically after seven days so nothing piles up for ever
         (operations §2.2).
@@ -522,7 +542,7 @@ class Database:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
         done = self.conn.execute(
             "UPDATE screening_results SET disposition = 'kept', disposed_at = ? "
-            "WHERE verdict = 'review' AND disposition IS NULL AND created_at < ?",
+            f"WHERE verdict = 'review' AND {self._still_open()} AND created_at < ?",
             (now(), cutoff)).rowcount
         self.conn.commit()
         return done
@@ -542,7 +562,7 @@ class Database:
             "(SELECT COUNT(*) FROM review_votes v WHERE v.entry_id = e.id "
             " AND v.vote = 'looks_right') AS looks_right "
             "FROM screening_results s JOIN entries e ON e.id = s.subject_id "
-            "WHERE s.subject_type = 'entry' AND s.verdict = 'review' AND s.disposition IS NULL "
+            f"WHERE s.subject_type = 'entry' AND s.verdict = 'review' AND {self._still_open('s.')} "
             "AND e.storyboard_id = ? AND e.author_id != ? AND e.deleted_at IS NULL "
             "ORDER BY s.created_at", (storyboard_id, viewer_id)).fetchall()
 
@@ -644,7 +664,7 @@ class Database:
         row = self.conn.execute(
             "SELECT 1 AS present FROM screening_results "
             "WHERE subject_type = 'entry' AND subject_id = ? AND verdict = 'review' "
-            "AND disposition IS NULL LIMIT 1", (entry_id,)).fetchone()
+            f"AND {self._still_open()} LIMIT 1", (entry_id,)).fetchone()
         return row is not None
 
     def dispose(self, entry_id: str, action: str) -> None:
@@ -669,7 +689,7 @@ class Database:
         self.conn.execute(
             "UPDATE screening_results SET disposition = ?, disposed_at = ? "
             "WHERE subject_type = 'entry' AND subject_id = ? AND verdict = 'review' "
-            "AND disposition IS NULL",
+            f"AND {self._still_open()}",
             (action, now(), entry_id))
         if action == "removed":
             self.conn.execute("UPDATE entries SET deleted_at = ? WHERE id = ?", (now(), entry_id))

@@ -1167,7 +1167,17 @@ class Review(Fixture):
         self.assertEqual(403, self.queue(watcher["token"], board)[0])
         self.assertEqual(403, self.vote(watcher["token"], entry_id, "worth_checking")[0])
 
-    def test_two_worth_checking_apply_the_public_label(self):
+    def test_two_worth_checking_apply_the_public_label_and_leave_it_open(self):
+        """The label is a public mark, not an ending.
+
+        This used to assert the entry left the queue, and that assertion was the defect.
+        operations.md §2.1 gives the owner the final say over a labelled entry, §2.2 lets two
+        "looks right" votes clear the mark, and §2.2 clears it automatically after seven days.
+        None of the three can happen to a row the queries treat as finished — and the owner's
+        disposal has exactly one surface in the product: the controls rendered per item in
+        this queue, web/app/b/[id]/review/page.js:81 being the only caller of disposeEntry.
+        An entry that left the queue on being labelled took the owner's final say with it.
+        """
         owner, guest, board, entry_id = self.flagged()
         second = self.session("second")
         self.db.grant(board, second["user_id"], "contribute", owner["user_id"])
@@ -1175,7 +1185,39 @@ class Review(Fixture):
         self.vote(second["token"], entry_id, "worth_checking")
         _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
         self.assertEqual(1, view["entries"][0]["being_checked"])
+        still_there = self.queue(guest["token"], board)[1]["items"]
+        self.assertEqual([entry_id], [item["entry_id"] for item in still_there])
+        self.assertEqual(2, still_there[0]["worth_checking"])
+
+    def test_the_owner_can_lift_a_public_label(self):
+        """§2.1, which was unreachable: dispose answered 409 not_in_review on a labelled
+        entry, so the mark was permanent and nobody had the button."""
+        owner, guest, board, entry_id = self.flagged()
+        second = self.session("second")
+        self.db.grant(board, second["user_id"], "contribute", owner["user_id"])
+        self.vote(guest["token"], entry_id, "worth_checking")
+        self.vote(second["token"], entry_id, "worth_checking")
+        status, _ = self.post("/api/review/dispose",
+                              {"entry_id": entry_id, "action": "kept"}, token=owner["token"])
+        self.assertEqual(200, status)
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(0, view["entries"][0]["being_checked"])
+        # Kept is an ending, so now it does leave.
         self.assertEqual([], self.queue(guest["token"], board)[1]["items"])
+
+    def test_two_looks_right_clear_a_label_that_was_already_applied(self):
+        """§2.2's second row, also unreachable before: once labelled, a later pair of
+        "looks right" votes matched no rows and the mark stayed up."""
+        owner, guest, board, entry_id = self.flagged()
+        second = self.session("second")
+        self.db.grant(board, second["user_id"], "contribute", owner["user_id"])
+        self.vote(guest["token"], entry_id, "worth_checking")
+        self.vote(second["token"], entry_id, "worth_checking")
+        # Both change their minds. One vote each, changeable.
+        self.vote(guest["token"], entry_id, "looks_right")
+        self.vote(second["token"], entry_id, "looks_right")
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        self.assertEqual(0, view["entries"][0]["being_checked"])
 
     def test_two_looks_right_clear_it_without_a_label(self):
         owner, guest, board, entry_id = self.flagged()
