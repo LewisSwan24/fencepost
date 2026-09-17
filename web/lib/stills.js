@@ -37,8 +37,11 @@ function usableDuration(duration) {
  * Taking the midpoint of each slice avoids both ends without having to know anything about
  * how long the clip is.
  */
-export function pickTimes(duration, count) {
-  const length = usableDuration(duration);
+export function pickTimes(duration, count, fallbackSeconds = 0) {
+  // What the file says, and only if that is unusable, what the caller measured. This order
+  // round rather than the other: a file that knows its own length is more trustworthy than
+  // a stopwatch, and the stopwatch exists for the one case where the file does not know.
+  const length = usableDuration(duration) || usableDuration(fallbackSeconds);
   if (!length || !Number.isInteger(count) || count < 1) return [];
   const times = [];
   for (let i = 0; i < count; i += 1) {
@@ -114,7 +117,7 @@ function seek(video, time) {
  * photographs. Tonight is never allowed to be worse than last night because a phone had an
  * opinion about H.265.
  */
-export function extractStills(file, count = 8) {
+export function extractStills(file, count = 8, knownSeconds = 0) {
   return new Promise((resolve) => {
     if (!file || typeof document === "undefined" || typeof URL === "undefined") {
       resolve([]);
@@ -151,7 +154,12 @@ export function extractStills(file, count = 8) {
 
     video.onloadedmetadata = async () => {
       try {
-        const times = pickTimes(video.duration, count);
+        // A clip this page recorded itself is the case video.duration cannot answer. A
+        // MediaRecorder writes its container header before it knows how long the recording
+        // will be, so a WebM out of it very often reports Infinity — and usableDuration
+        // reads Infinity as unknown, which gives no times and therefore no stills at all.
+        // The camera timed the recording while it was happening, so it can simply say.
+        const times = pickTimes(video.duration, count, knownSeconds);
         const size = drawSize(video.videoWidth, video.videoHeight);
         if (!times.length || !size) {
           finish([]);
@@ -249,16 +257,77 @@ function stillFromImage(file) {
 }
 
 /**
+ * A long list of stills, thinned down to `count` of them, spread across the list.
+ *
+ * The in-page camera samples the preview while somebody is filming, so it ends up with far
+ * more frames than the picker wants. Which ones to drop is the same question pickTimes
+ * answers for a file — take the midpoint of each slice — and the answer is the same for the
+ * same reason: the first frame of a recording is a hand and the last one is the hand coming
+ * back, and a midpoint never lands on either.
+ *
+ * Shorter than `count` comes back whole. Indices are kept distinct, because the frame picker
+ * keys its filmstrip on each still's `t` and two of the same still would collide.
+ */
+export function thin(list, count) {
+  const all = Array.isArray(list) ? list : [];
+  if (!Number.isInteger(count) || count < 1) return [];
+  if (all.length <= count) return all.slice();
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < count; i += 1) {
+    let at = Math.floor(((i + 0.5) / count) * all.length);
+    while (seen.has(at) && at < all.length - 1) at += 1;
+    if (seen.has(at)) continue;
+    seen.add(at);
+    out.push(all[at]);
+  }
+  return out;
+}
+
+/**
+ * A photograph taken off a live camera preview, or null.
+ *
+ * The other two paths here start from a file the operating system handed over. This one
+ * starts from a <video> element already showing the camera, so there is no file, no decode
+ * and no camera app in between — which is the entire point of it. The still it returns is
+ * the same shape as the other two, label included, so nothing downstream can tell where the
+ * picture came from.
+ *
+ * Synchronous: the frame is already decoded and on screen. Null if the preview has not
+ * reported its dimensions yet, which is what videoWidth being 0 means.
+ */
+export function grabStill(video) {
+  if (!video || typeof document === "undefined") return null;
+  const size = drawSize(video.videoWidth, video.videoHeight);
+  if (!size) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  try {
+    // Through a canvas like everything else, which is what strips EXIF and GPS. A frame off
+    // a live MediaStream carries neither to begin with — there is no file for a phone to
+    // have written them into — so here it is the shape and the quality that are the point.
+    ctx.drawImage(video, 0, 0, size.width, size.height);
+    return { t: 0, label: null, w: size.width, h: size.height,
+             src: canvas.toDataURL("image/jpeg", JPEG_QUALITY) };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Stills out of whatever was taken or picked — a clip or a photograph.
  *
  * Empty on anything going wrong, from either path, and the caller falls back to the
  * placeholder photographs exactly as before.
  */
-export function stillsFrom(file, count = 8) {
+export function stillsFrom(file, count = 8, knownSeconds = 0) {
   if (!file) return Promise.resolve([]);
   return String(file.type || "").startsWith("image/")
     ? stillFromImage(file)
-    : extractStills(file, count);
+    : extractStills(file, count, knownSeconds);
 }
 
 /**

@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickTimes, drawSize, clockLabel, base64Of, stillsFrom } from "./stills.js";
+import { pickTimes, drawSize, clockLabel, base64Of, stillsFrom, thin } from "./stills.js";
 
 test("stills are spread across the clip, not taken from the start", () => {
   const times = pickTimes(16, 8);
@@ -136,4 +136,66 @@ test("nothing chosen is an empty list, not a crash", async () => {
 
 test("a file with no type at all falls to the clip path rather than throwing", async () => {
   assert.ok(Array.isArray(await stillsFrom({ name: "clip" })));
+});
+
+// A clip the page recorded itself.
+//
+// MediaRecorder writes its container header before it knows how long the recording will
+// run, so a WebM out of it commonly reports duration Infinity. usableDuration reads that as
+// unknown and pickTimes then returns nothing — which is not a degraded result, it is zero
+// stills out of a clip the person just filmed. The camera holds a stopwatch for exactly
+// this, and these tests pin the order: the file first, the stopwatch only as a fallback.
+test("a clip with no duration in its header falls back to the measured length", () => {
+  const times = pickTimes(Infinity, 8, 4);
+  assert.equal(times.length, 8);
+  assert.ok(times[0] > 0 && times[7] < 4);
+});
+
+test("a duration the file does know is preferred over the measured one", () => {
+  // 16s in the file, a wrong 4s from the caller. The file wins.
+  const times = pickTimes(16, 8, 4);
+  assert.ok(times[7] > 4);
+});
+
+test("neither a duration nor a measurement is still an empty list, not a crash", () => {
+  assert.deepEqual(pickTimes(Infinity, 8, 0), []);
+  assert.deepEqual(pickTimes(0, 8), []);
+  assert.deepEqual(pickTimes(NaN, 8, NaN), []);
+});
+
+// Thinning the camera's samples down to a filmstrip.
+//
+// The in-page camera samples the preview every half second while somebody films, so a
+// twenty-second recording arrives as forty frames and the picker wants eight. Two things
+// have to hold: never the very first frame (a hand and a black screen) and never two of the
+// same one, because the filmstrip keys its cells on each still's t and duplicates collide.
+const sample = (n) => Array.from({ length: n }, (_, i) => ({ t: i * 0.5, label: "x" }));
+
+test("a long run of samples comes back as the count asked for", () => {
+  assert.equal(thin(sample(40), 8).length, 8);
+  assert.equal(thin(sample(9), 8).length, 8);
+});
+
+test("thinning never opens on the first frame", () => {
+  // The first half-second of a recording is a hand moving away from the shutter.
+  assert.ok(thin(sample(40), 8)[0].t > 0);
+});
+
+test("thinned samples stay in order and stay distinct", () => {
+  const out = thin(sample(40), 8);
+  for (let i = 1; i < out.length; i += 1) assert.ok(out[i].t > out[i - 1].t);
+  assert.equal(new Set(out.map((s) => s.t)).size, out.length);
+});
+
+test("a short recording is kept whole rather than padded", () => {
+  const three = sample(3);
+  assert.deepEqual(thin(three, 8), three);
+  assert.equal(thin(three, 8).length, 3);
+});
+
+test("nothing to thin, or a nonsense count, is an empty list", () => {
+  assert.deepEqual(thin([], 8), []);
+  assert.deepEqual(thin(null, 8), []);
+  assert.deepEqual(thin(sample(40), 0), []);
+  assert.deepEqual(thin(sample(40), 1.5), []);
 });
