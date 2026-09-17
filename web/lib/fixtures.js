@@ -172,11 +172,25 @@ const ROUTES = [
     // shared.txt SAFETY FALLBACK — bats do not get the scope sentence, nothing is said
     // about whether they are safe, and only vaccinated people may touch one.
     key: "bat",
-    match: /\bbats?\b|flying.?fox/i,
+    // "microbat" has no word boundary before "bat", so \bbats?\b missed it and the question
+    // fell through to the out-of-scope line — which used to offer to identify the animal by
+    // its tail. The prefixes are spelled out rather than dropping the leading \b, because
+    // dropping it would catch "wombat" and "combat" too.
+    match: /\b(?:micro|mega|fruit[- ]?)?bats?\b|flying.?fox/i,
+    // The number carries its hours and the after-hours alternative in the same breath. That
+    // is a hard rule in shared.txt every time it is given out, and this line was breaking it.
     reply:
-      "Bats are outside what I cover, and I won't say anything about whether one is safe to be near. Keep people and pets back, and don't pick it up — not even if it looks hurt or stuck. Only vaccinated handlers should touch a bat. The RSPCA hotline on 1300 ANIMAL (1300 264 625) handles them, and a bite or scratch means 000 and medical help straight away.",
+      "Bats are outside what I cover, and I won't say anything about whether one is safe to be near. Keep people and pets back, and don't pick it up — not even if it looks hurt or stuck. Only vaccinated handlers should touch a bat. Call the RSPCA on 1300 ANIMAL (1300 264 625) — they're on 7am to 7pm every day, and their site has the after-hours list. A bite or scratch means 000 and medical help straight away.",
   },
-  { key: "snake", match: /\bsnakes?\b|\bpython\b|\bviper\b|\badder\b/i, script: "snake" },
+  // The dangerous ones are routinely named without the word "snake" — nobody says "taipan
+  // snake". Missing them sent the question to the out-of-scope line, which used to offer to
+  // identify it. shared.txt: never identify a snake, not even when the user names the species
+  // themselves, so the list is here to catch the naming, not to do the identifying.
+  {
+    key: "snake",
+    match: /\bsnakes?\b|\bpython\b|\bviper\b|\badder\b|\btaipan\b|\beastern brown\b|\bred.?bell(?:y|ied)\b|\bking brown\b|\bmulga\b|\bcopperhead\b|\bwhip.?snake\b|\bblack snake\b/i,
+    script: "snake",
+  },
   {
     // neighbour.txt CONTEXT BOUNDARY — somebody else's entry.
     key: "others",
@@ -230,10 +244,21 @@ const ROUTES = [
   },
 ];
 
-// In scope but not one of these. shared.txt HONESTY: if it does not know it says so, and
-// then asks the distinguishing question neighbour.txt prescribes instead of guessing.
+// Not one of the routes above. shared.txt HONESTY: if it does not know, it says so.
+//
+// This used to end "tell me about the tail — bushy, or thin and curled at the tip — and I can
+// say which of the two it looks like", which is the question neighbour.txt prescribes for a
+// possum. The trouble is what reaches a fallback: everything the routes missed. Ask about a
+// taipan or a microbat — neither of which matched, before the two routes above were widened —
+// and the answer was an offer to identify it from its tail. That is the one thing shared.txt
+// says never to do, on the screen, at a public exhibit.
+//
+// Widening the lists helps and is not enough, because there will always be a name nobody
+// listed. So the fallback stops offering identification at all. Nothing is lost: the species
+// route already carries the tail question, and it only fires when somebody is actually asking
+// about a possum.
 const FALLBACK =
-  "I've only got a few answers loaded in this prototype, so I'd be guessing at that one. If it helps, tell me about the tail — bushy, or thin and curled at the tip — and I can say which of the two it looks like.";
+  "I've only got a few answers loaded in this prototype, so I'd be guessing at that one. I only cover brushtail and ringtail possums, and I won't try to identify anything else. If it's another animal and you're unsure about it, keep people and pets back and call the RSPCA on 1300 ANIMAL (1300 264 625) — they're on 7am to 7pm every day, and their site has the after-hours list.";
 
 export function assistantReply(text) {
   const route = ROUTES.find((r) => r.match.test(String(text || "")));
