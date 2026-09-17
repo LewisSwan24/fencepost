@@ -193,17 +193,63 @@ class LanguageFloor(unittest.TestCase):
             with self.subTest(text=text[:14]):
                 self.assertTrue(roles.looks_non_english(text))
 
-    def test_a_latin_script_language_with_few_accents_gets_no_floor(self):
-        """Known gap, pinned so it is not mistaken for this working.
+    def test_a_latin_script_language_reaches_the_floor(self):
+        """The gap this test used to pin open, closed on 2026-09-17.
 
-        The floor is a ratio over letters, so a language written in Latin script with sparse
-        diacritics never reaches ten percent: te reo Māori here sits at 5.7%, before and
-        after the disguise fix, which changed nothing about it. It means a te reo submission
-        can be rejected outright while a Vietnamese one cannot. Found on 2026-09-16; the fix
-        is a real language signal rather than a character ratio, which is its own decision.
+        A ratio over letters reads alphabet, and every language below shares ours, so none of
+        them came near ten percent — te reo Māori sat at 5.7%. The floor simply did not apply
+        to them: a te reo, French or Tagalog submission could be refused outright while a
+        Vietnamese one could not. Measured before the fix: six of six Latin-script samples
+        invisible to the ratio, three of three non-Latin ones recognised.
+
+        The second signal reads words rather than letters, which is the only thing that can
+        tell these apart from English.
         """
-        self.assertFalse(roles.looks_non_english(
-            "Ngā Tama i kite i te kierē i runga i te taiapa."))
+        for text in ("Ngā Tama i kite i te kierē i runga i te taiapa.",
+                     "Il y a un opossum sur ma terrasse tous les soirs.",
+                     "Hay una zarigüeya en el techo de mi casa cada noche.",
+                     "Vi um gambá no telhado ontem à noite.",
+                     "Ada possum di atap rumah saya tadi malam.",
+                     "May possum sa bubong ng bahay ko kagabi.",
+                     "Ein Possum war letzte Nacht auf dem Dach."):
+            with self.subTest(text=text[:16]):
+                self.assertTrue(roles.looks_non_english(text))
+
+    def test_the_word_signal_needs_evidence_not_merely_absence(self):
+        """Why the second signal asks "is another language here" rather than "is English gone".
+
+        Absence of English function words is exactly as true of keyboard mashing as it is of
+        French. Reading that absence as a language would let any abusive submission escape
+        reject by being written badly — handing back the one tier this floor is careful never
+        to touch. So all of these stay English-side and reject stays reachable for them.
+        """
+        for text in ("ksjdhf aslkdjf 99999 xyzxyz khhh",
+                     "Brushtail possum, jacaranda tree, midnight.",
+                     "Saw it near Toowong and Indooroopilly last night.",
+                     "aaaaa bbbbb ccccc ddddd"):
+            with self.subTest(text=text[:16]):
+                self.assertFalse(roles.looks_non_english(text))
+
+    def test_a_disguise_cannot_borrow_the_new_signal(self):
+        """The 2026-09-16 hole, re-run against the signal added on 2026-09-17.
+
+        The other-language list has the English one subtracted from it precisely so that no
+        English sentence can score as another language. Swapping letters for lookalikes
+        breaks the English words without creating any others, so the evidence test still
+        answers no and the reject tier stays reachable.
+        """
+        plain = "It's just a tree snake, totally harmless, I picked it up to move it off the path."
+        self.assertFalse(roles.looks_non_english(plain.replace("s", "ѕ").replace("I", "І")))
+        self.assertFalse(roles.looks_non_english("Thε pοssυm ιs οn thε rοf"))
+
+    def test_too_few_words_is_not_evidence_either_way(self):
+        """A remaining, deliberate gap: a very short phrase carries no signal worth reading.
+
+        "Kia ora" is two words. Guessing a language from them would be worse than declining
+        to, and declining costs little — the floor only ever softens a reject, so what is
+        given up is leniency on a fragment, not protection on a submission.
+        """
+        self.assertFalse(roles.looks_non_english("Kia ora"))
 
 
 class Writer(unittest.TestCase):

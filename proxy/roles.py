@@ -200,6 +200,99 @@ def _script(ch: str) -> str:
         return "UNKNOWN"
 
 
+# Function words: short, frequent, and almost impossible to write a sentence without — which
+# is what makes them a language signal where a character ratio has none to give.
+#
+# Kept deliberately small. This is not language identification. It only has to answer "is
+# there positive evidence of a language that is not English here", and it is allowed to say
+# no. Every word is folded to plain ASCII before comparison, so "ngā" matches "nga" and "não"
+# matches "nao" without the list carrying every accented spelling.
+_ENGLISH_WORDS = {
+    "the", "and", "but", "not", "was", "were", "are", "been", "have", "has", "had", "did",
+    "does", "this", "that", "these", "those", "there", "here", "then", "when", "while",
+    "with", "from", "for", "into", "onto", "off", "out", "about", "over", "under", "just",
+    "very", "all", "some", "any", "one", "two", "his", "her", "him", "she", "they", "them",
+    "their", "our", "your", "you", "its", "it", "on", "in", "at", "to", "of", "as", "by",
+    "up", "my", "me", "we", "he", "is", "be", "an", "or", "if", "so", "no", "do", "a",
+    "last", "night", "saw", "seen", "got", "went", "came", "looks", "looked", "back",
+}
+
+# Other Latin-script languages, by their own function words. Brisbane's languages first.
+#
+# The overlap with English is subtracted below rather than curated by hand, because the
+# overlaps are exactly the ones that would be missed: "in" is German and Dutch, "is" is Dutch,
+# "a" and "o" are Portuguese, "he" and "i" and "te" are te reo, "die" and "der" are German.
+# Every one of those is also ordinary English, and counting them as evidence of another
+# language would hand the floor to any English sentence at all — which is the hole found on
+# 2026-09-16 wearing a new costume.
+_OTHER_LANGUAGE_WORDS = {
+    # French
+    "le", "la", "les", "un", "une", "des", "du", "et", "est", "sur", "dans", "avec", "pour",
+    "je", "il", "elle", "ils", "mon", "mes", "ce", "cette", "qui", "que", "pas", "nuit",
+    "soir", "chez", "tres", "sont", "nous", "vous", "toit", "jardin",
+    # Spanish
+    "el", "los", "las", "unos", "unas", "una", "con", "por", "para", "mi", "su", "del", "al",
+    "noche", "casa", "tejado", "anoche", "vi", "hay", "esta", "muy", "pero", "como",
+    # Portuguese
+    "um", "uma", "em", "nao", "meu", "minha", "da", "do", "dos", "das", "na", "ontem",
+    "telhado", "quintal", "noite", "ele", "ela", "foi", "tem",
+    # Italian
+    "lo", "gli", "di", "che", "sono", "mia", "mio", "della", "notte", "tetto", "molto",
+    # German and Dutch
+    "der", "das", "ein", "eine", "und", "auf", "mit", "fur", "ich", "nicht", "dem", "den",
+    "nacht", "dach", "het", "een", "niet", "ook", "maar", "zijn",
+    # Indonesian and Malay
+    "yang", "dan", "ke", "dari", "itu", "ini", "saya", "ada", "tidak", "sudah", "malam",
+    "rumah", "atap", "tadi", "juga", "bisa",
+    # Tagalog
+    "ang", "sa", "ay", "mga", "ako", "niya", "may", "hindi", "kagabi", "bahay", "bubong",
+    # te reo Māori
+    "nga", "ki", "ko", "ahau", "runga", "taku", "tenei", "raua", "mai", "atu", "whare",
+    "tera", "matou", "ratou", "taiapa",
+    # Vietnamese, written without its diacritics
+    "toi", "mot", "con", "tren", "hang", "rao", "nha", "khong", "duoc", "nguoi", "dem",
+}
+# Anything that is also ordinary English is evidence of nothing.
+_OTHER_LANGUAGE_WORDS -= _ENGLISH_WORDS
+
+
+def _fold(word: str) -> str:
+    """Lower case with the accents taken off — for matching a word list, and nothing else.
+
+    Never used for the script ratio. Stripping marks there would be the lookalike table's
+    mistake all over again: it erodes the very signal it is meant to measure.
+    """
+    bare = "".join(c for c in unicodedata.normalize("NFD", word)
+                   if not unicodedata.combining(c))
+    return bare.casefold()
+
+
+def _latin_but_not_english(text: str) -> bool:
+    """Positive evidence of another language, for the ones a character ratio cannot see.
+
+    The ratio below works on alphabet. Chinese, Greek, Cyrillic, Arabic and accented
+    Vietnamese all clear ten percent and are recognised. French, Spanish, Portuguese,
+    Indonesian, Tagalog and te reo Māori are written in the same alphabet as English and never
+    come near it, so the floor simply did not apply to them and a submission in any of them
+    could be refused outright. Measured 2026-09-17: six of six Latin-script samples invisible
+    to the ratio, against three of three non-Latin ones recognised. That is the floor failing
+    precisely the communities operations.md §4.3 exists to protect.
+
+    This asks for evidence rather than for absence, and that difference is the whole design.
+    "No English function words here" is just as true of `ksjdhf aslkdjf 99999`, and treating
+    gibberish as a protected language would hand every abusive submission a way out of reject
+    by writing it badly. So the test is: at least two words belonging to another language, and
+    more of them than English ones.
+    """
+    words = [_fold(w) for w in re.findall(r"[^\W\d_]+", unicodedata.normalize("NFKC", text))]
+    if len(words) < 3:
+        # Too little to be evidence of anything either way. "Kia ora" earns no verdict.
+        return False
+    other = sum(1 for w in words if w in _OTHER_LANGUAGE_WORDS)
+    english = sum(1 for w in words if w in _ENGLISH_WORDS)
+    return other >= 2 and other > english
+
+
 def looks_non_english(text: str) -> bool:
     """Only ever turns reject into review, so a wrong call always errs on the lenient side.
 
@@ -237,6 +330,10 @@ def looks_non_english(text: str) -> bool:
             kept.extend(c for c, name in zip(letters, scripts) if name == "LATIN")
         else:
             kept.extend(letters)
-    if not kept:
-        return False
-    return sum(1 for c in kept if ord(c) > 127) / len(kept) > 0.1
+    if kept and sum(1 for c in kept if ord(c) > 127) / len(kept) > 0.1:
+        return True
+    # Two signals, not one. The ratio above reads alphabet and is blind to every language
+    # that shares ours; the check below reads words and is blind to nothing else. Neither
+    # covers the other, so the floor needs both — and because the floor only ever turns a
+    # reject into a review, an OR here is the lenient direction by construction.
+    return _latin_but_not_english(text)

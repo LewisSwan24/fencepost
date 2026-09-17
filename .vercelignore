@@ -3,3 +3,18 @@
 __pycache__/
 tests/
 docs/
+
+# vercel.json sets includeFiles "**" for the Python function, so anything sitting at the repo
+# root is uploaded into the bundle. These hold plaintext redeemable share tokens. They are
+# already gitignored, which is exactly why they were easy to miss here — .gitignore keeps them
+# out of the repository, and this file is what keeps them out of the deployment.
+#
+# Measured 2026-09-17: the API project serves no static files — every repo-root path returns
+# 404 and only /api/* exists — so nothing was ever reachable over HTTP. This is about what
+# travels in the bundle, not about a leak that happened.
+joincode*.txt
+demo-secrets.txt
+
+# The front end is its own Vercel project, deployed from git. The Python function has never
+# needed a byte of it.
+web/
