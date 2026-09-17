@@ -397,6 +397,24 @@ class Retention(Fixture):
             "SELECT COUNT(*) AS c FROM chat_messages WHERE user_id = ?",
             (self.guest,)).fetchone()["c"])
 
+    def test_deleting_an_account_clears_other_peoples_votes_on_its_entries(self):
+        """The cascade used to stop halfway, holding the transaction open.
+
+        review_votes.entry_id has a foreign key to entries(id), and both backends enforce it
+        (store.py turns PRAGMA foreign_keys on). delete_account cleared the votes this person
+        *cast* and then deleted their entries — so a vote somebody else had cast on one of
+        those entries made the delete raise, after the screening rows, chat and everything
+        earlier in the loop had already run and before the commit at the end. The connection
+        was left holding a dirty transaction for whichever writer touched the instance next.
+        """
+        entry = self.db.add_entry(self.storyboard, self.guest, "ringtail", story="theirs")
+        self.db.cast_vote(entry, self.owner, "worth_checking")
+        removed = self.db.delete_account(self.guest)
+        self.assertEqual(1, removed["votes_on_my_entries"])
+        self.assertEqual(0, self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM review_votes").fetchone()["c"])
+        self.assertEqual([], [e["story"] for e in self.db.timeline(self.storyboard)])
+
     def test_deleting_an_account_leaves_an_anonymous_tombstone(self):
         self.db.delete_account(self.guest)
         handle = self.db.conn.execute("SELECT handle FROM users WHERE id = ?",
@@ -498,6 +516,45 @@ class Limits(Fixture):
                 with self.assertRaises(RateLimited) as caught:
                     limiter.check_and_count(self.owner, scope)
                 self.assertEqual(scope, caught.exception.scope)
+
+    def test_a_refused_request_does_not_spend_quota(self):
+        """The slot is claimed before it is counted, so a refusal has to give it back.
+
+        Counting first and inserting afterwards let concurrent requests on one identity all
+        read the same total and all insert, so the ceiling was whatever arrived between two
+        round trips. Claiming first closes that, but only if the loser removes its own row —
+        otherwise being refused would itself consume the quota it was refused for, and the
+        window would never reopen.
+        """
+        limiter = self.limiter()
+        cap, _ = self.CAPS["chat"]
+        for _ in range(cap):
+            limiter.check_and_count(self.owner, "chat")
+        for _ in range(3):
+            with self.assertRaises(RateLimited):
+                limiter.check_and_count(self.owner, "chat")
+        rows = self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ? AND scope = 'chat'",
+            (self.owner,)).fetchone()["c"]
+        self.assertEqual(cap, rows, "a refused request left its row behind")
+
+    def test_the_cap_holds_when_the_count_is_read_stale(self):
+        """The concurrency the old order got wrong, reproduced without threads.
+
+        Several instances reading before any of them writes is what made the limit porous.
+        Standing in for that: fill the window to the cap, then let a request arrive that
+        would have passed under a count taken beforehand. It must still be refused, because
+        the check now happens after the row exists rather than before.
+        """
+        limiter = self.limiter()
+        cap, _ = self.CAPS["submission"]
+        for _ in range(cap):
+            limiter.check_and_count(self.owner, "submission")
+        with self.assertRaises(RateLimited):
+            limiter.check_and_count(self.owner, "submission")
+        self.assertEqual(cap, self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ? AND scope = 'submission'",
+            (self.owner,)).fetchone()["c"])
 
     def test_scopes_are_counted_apart(self):
         limiter = self.limiter()
@@ -663,6 +720,36 @@ class SchemaRepairs(unittest.TestCase):
 
         left = self.db.conn.execute("SELECT COUNT(*) AS c FROM rate_limits").fetchone()["c"]
         self.assertEqual(1, left, "the counters were wiped by a repair with nothing to repair")
+
+
+class Timestamps(Fixture):
+    """Four queries compare stamps as strings, so the shape they are written in is a rule.
+
+    settle_review, settle_stale, purge_screening and the rate limiter each build a cutoff and
+    ask `column < ?`. Lexicographic ordering only matches chronological ordering while every
+    stamp carries the same UTC offset, and that holds because db.now() is the only writer.
+    Pinned here so a change to it has to be a decision rather than an accident.
+    """
+
+    def test_every_stamp_is_written_in_one_shape(self):
+        stamp = db_module.now()
+        self.assertTrue(stamp.endswith("+00:00"), stamp)
+        self.assertNotIn(".", stamp, "sub-second precision would break the comparisons")
+        self.assertEqual(len("2026-09-17T05:01:21+00:00"), len(stamp))
+
+    def test_what_the_database_stores_has_that_shape_too(self):
+        entry = self.db.add_entry(self.storyboard, self.guest, "ringtail", story="x")
+        for table, column, key in (("entries", "created_at", entry),
+                                   ("storyboards", "created_at", self.storyboard)):
+            with self.subTest(table=table):
+                got = self.db.conn.execute(
+                    f"SELECT {column} AS stamp FROM {table} WHERE id = ?", (key,)).fetchone()
+                self.assertTrue(str(got["stamp"]).endswith("+00:00"), got["stamp"])
+
+    def test_string_order_is_time_order(self):
+        early = db_module.now()
+        later = (datetime.now(timezone.utc) + timedelta(days=400)).isoformat(timespec="seconds")
+        self.assertLess(early, later, "a cutoff comparison would read these the wrong way round")
 
 
 if __name__ == "__main__":

@@ -42,6 +42,23 @@ STORY_LIMIT = 4000
 # all of them at once.
 STILL_LIMIT = 120_000
 
+# What may be handed to the model, in characters.
+#
+# Everything the Screener sees was already bounded — fun_fact, story, titles and the closing
+# note all go through _plain_text. The three role endpoints were not: a question to the
+# assistant, a story draft for the Writer and a submission to the Screener each reached the
+# model at whatever length arrived, and so did the image beside them. Under
+# FENCEPOST_OPEN_SIGNUP anybody can swap a handle for a token, so "uncapped free text into a
+# paid endpoint" is a sentence with no qualifier left on it.
+#
+# A question is a question; nobody needs two thousand characters to ask one. The draft and
+# the submission take the limit of the field they come from, so the door and the database
+# agree about what is too long.
+MESSAGE_LIMIT = 2_000
+# A 720px JPEG at the quality lib/stills.js uses runs 80–150 KB, so roughly 110–200k
+# characters of base64. Twice the top of that, and still not enough to post a film through.
+IMAGE_B64_LIMIT = 400_000
+
 # Accounts. A handle is one word that sits next to what somebody wrote, so 24 is generous
 # and 3 stops a single letter. The password floor is 8; the ceiling is not a rule about
 # passwords but about scrypt, which is deliberately expensive and should not be pointed at
@@ -110,11 +127,18 @@ def _error(code: str, copy_key: str = None, **extra) -> dict:
 def _plain_text(value, limit: int, multiline: bool = False):
     """Validate a piece of free text, returning (cleaned value, is it acceptable).
 
-    This is for **the fields the Screener never sees**: the storyboard title, the forum
-    thread title, the closing line. They pass through this layer alone, so this layer has to
-    stop what no model is needed for — wrong type, too long, hidden control characters, and
-    "a few spaces", which lands in the database and shows up in the interface as a blank
-    nobody can identify.
+    Two jobs, and the second was added on 2026-09-17.
+
+    For **the fields the Screener never sees** — the storyboard title, the forum thread
+    title, the closing line — this is the only layer there is, so it has to stop what no
+    model is needed for: wrong type, too long, hidden control characters, and "a few spaces",
+    which lands in the database and shows up in the interface as a blank nobody can identify.
+
+    For **the text going to the model** — a question to the assistant, a draft for the
+    Writer, a submission to the Screener — it is the door. Those three arrived uncapped,
+    which under FENCEPOST_OPEN_SIGNUP means anybody holding a token could point unbounded
+    free text at a paid endpoint. Screening happens after; a length check does not need a
+    model and should not wait for one.
 
     `None` passes through untouched (an optional field); empty after strip counts as not
     given rather than as an empty string. Why these are not screened as well: see
@@ -134,6 +158,19 @@ def _plain_text(value, limit: int, multiline: bool = False):
     if any(ch < " " and ch not in allowed or ch == "\x7f" for ch in text):
         return None, False
     return text, True
+
+
+def _image_b64(value):
+    """The optional frame beside a question. Returns (value, ok).
+
+    Not run through _plain_text: base64 has no control characters to strip and no
+    "a few spaces" case, so length and type are the whole of it.
+    """
+    if value is None:
+        return None, True
+    if not isinstance(value, str) or len(value) > IMAGE_B64_LIMIT:
+        return None, False
+    return value, True
 
 
 def _admit(body: dict, token: str, deps: Deps):
@@ -190,15 +227,16 @@ def handle(body: dict, token: str, deps: Deps):
 
 def _neighbour(body: dict, user_id: str, deps: Deps):
     storyboard_id = body.get("storyboard_id")
-    message = body.get("message")
-    if not storyboard_id or not message:
+    message, message_ok = _plain_text(body.get("message"), MESSAGE_LIMIT, multiline=True)
+    image, image_ok = _image_b64(body.get("image_b64"))
+    if not storyboard_id or not message or not message_ok or not image_ok:
         return 400, _error("bad_request")
     # The permission gate and the context both live on the server. history and context in
     # the request body are ignored even when present.
     _settle(deps)
     context = deps.context.build(user_id, storyboard_id)
     history = deps.history.recent(user_id, storyboard_id)
-    result = roles.neighbour(deps.client, context, history, message, body.get("image_b64"))
+    result = roles.neighbour(deps.client, context, history, message, image)
     deps.history.append(user_id, storyboard_id, "user", message)
     # Every model call stores the prompt version alongside it (CLAUDE.md working rule 2)
     deps.history.append(user_id, storyboard_id, "assistant", result["reply"],
@@ -208,7 +246,10 @@ def _neighbour(body: dict, user_id: str, deps: Deps):
 
 
 def _writer(body: dict, deps: Deps):
-    result = roles.writer(deps.client, body.get("species_selected", "unknown"), body.get("story_draft", ""))
+    draft, draft_ok = _plain_text(body.get("story_draft", ""), STORY_LIMIT, multiline=True)
+    if not draft_ok:
+        return 400, _error("bad_request")
+    result = roles.writer(deps.client, body.get("species_selected", "unknown"), draft or "")
     return 200, {
         "role": "writer",
         "fun_facts": result["fun_facts"],
@@ -220,8 +261,8 @@ def _writer(body: dict, deps: Deps):
 
 
 def _screener(body: dict, user_id: str, deps: Deps):
-    submission = body.get("submission")
-    if submission is None or body.get("field") not in FIELDS:
+    submission, submission_ok = _plain_text(body.get("submission"), STORY_LIMIT, multiline=True)
+    if submission is None or not submission_ok or body.get("field") not in FIELDS:
         return 400, _error("bad_request")
     subject_type = body.get("subject_type", "submission")
     subject_id = body.get("subject_id")
@@ -290,15 +331,17 @@ def handle_stream(body: dict, token: str, deps: Deps):
     user_id, refusal = _admit(body, token, deps)
     if refusal:
         return refusal
-    storyboard_id, message = body.get("storyboard_id"), body.get("message")
-    if not storyboard_id or not message:
+    storyboard_id = body.get("storyboard_id")
+    message, message_ok = _plain_text(body.get("message"), MESSAGE_LIMIT, multiline=True)
+    image, image_ok = _image_b64(body.get("image_b64"))
+    if not storyboard_id or not message or not message_ok or not image_ok:
         return 400, _error("bad_request")
     try:
         context = deps.context.build(user_id, storyboard_id)
         history = deps.history.recent(user_id, storyboard_id)
     except PermissionDenied:
         return 403, _error("no_access")
-    stream = roles.neighbour_stream(deps.client, context, history, message, body.get("image_b64"))
+    stream = roles.neighbour_stream(deps.client, context, history, message, image)
     return 200, StreamSession(stream, deps, user_id, storyboard_id, message)
 
 
