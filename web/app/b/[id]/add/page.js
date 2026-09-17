@@ -20,7 +20,7 @@ import { use, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { COPY } from "../../../../lib/copy";
 import { BackButton, Steps, ui } from "../../../../components/ui";
-import { extractStills } from "../../../../lib/stills";
+import { stillsFrom } from "../../../../lib/stills";
 import { useDraft } from "./DraftContext";
 import styles from "./add.module.css";
 
@@ -32,7 +32,13 @@ export default function Capture({ params }) {
   const library = useRef(null);
   const [reading, setReading] = useState(false);
 
-  const next = () => router.push(`/b/${id}/add/frame`);
+  const next = (stills) => {
+    // A photograph has no frame to pick, so that screen is skipped rather than shown with
+    // one cell and a scrubber that cannot move. The placeholder path keeps the picker: it
+    // has ten stand-in photographs to choose between.
+    const photo = stills.length === 1 && !stills[0].label;
+    router.push(`/b/${id}/add/${photo ? "mask" : "frame"}`);
+  };
 
   async function chosen(event) {
     const file = event.target.files?.[0];
@@ -42,12 +48,13 @@ export default function Capture({ params }) {
     if (!file) return;
 
     setReading(true);
-    // extractStills resolves to [] rather than throwing, on a codec the browser will not
-    // decode or a seek that never lands. An empty list means the frame screen falls back to
-    // the placeholders, so a phone with an opinion about H.265 costs a picture, not a flow.
-    draft.setStills(await extractStills(file));
+    // stillsFrom resolves to [] rather than throwing, on a codec the browser will not decode
+    // or a seek that never lands. An empty list means the frame screen falls back to the
+    // placeholders, so a phone with an opinion about H.265 costs a picture, not a flow.
+    const stills = await stillsFrom(file);
+    draft.setStills(stills);
     setReading(false);
-    next();
+    next(stills);
   }
 
   return (
@@ -62,10 +69,18 @@ export default function Capture({ params }) {
         <p className={ui.lede}>{COPY.captureLede}</p>
 
         {/* Two inputs rather than one, because the difference between them is the capture
-            attribute and that cannot be changed per click on iOS. */}
-        <input ref={recorder} type="file" accept="video/*" capture="environment"
+            attribute and that cannot be changed per click on iOS.
+
+            accept takes photographs as well as clips, and that is two things at once. It is
+            what Record has always meant — whatever is in front of you, filmed or
+            photographed — and a possum on a fence at midnight is at least as often a
+            photograph. It is also the fix for a real failure: Android Chrome chooses its
+            camera intent from accept, and a video-only one asks for ACTION_VIDEO_CAPTURE,
+            which plenty of stock camera apps do not handle. Reported from a phone on
+            2026-09-17: the camera opened and bounced straight back out. */}
+        <input ref={recorder} type="file" accept="image/*,video/*" capture="environment"
                hidden onChange={chosen} />
-        <input ref={library} type="file" accept="video/*" hidden onChange={chosen} />
+        <input ref={library} type="file" accept="image/*,video/*" hidden onChange={chosen} />
 
         <button type="button" className={styles.bigPrimary} disabled={reading}
                 onClick={() => recorder.current?.click()}>

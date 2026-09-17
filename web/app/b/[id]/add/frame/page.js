@@ -46,6 +46,10 @@ export default function PickFrame({ params }) {
   // arriving here by the back button with the list already changed underneath.
   const index = Math.min(Math.max(0, draft.frameIndex), frames.length - 1);
   const span = Math.max(1, frames.length - 1);
+  // A photograph arrives as a single still with no label, because it has no timeline. It
+  // skips this screen on the way in; coming back from the masking screen is the one way to
+  // see it here, and a scrubber that cannot move would be furniture.
+  const photo = live && frames.length === 1 && !frames[0].label;
 
   // A real still is the user's own footage and is shown as it came out of the camera. The
   // placeholders are graded, because they are daytime stock standing in for a night clip
@@ -62,7 +66,8 @@ export default function PickFrame({ params }) {
   function shotFor(i) {
     if (live) {
       const still = real[i];
-      return { src: still.src, alt: "A frame from your clip", graded: false,
+      return { src: still.src, graded: false,
+               alt: still.label ? "A frame from your clip" : "Your photograph",
                aspect: still.w && still.h ? still.w / still.h : null };
     }
     const frame = placeholderFor(i);
@@ -90,11 +95,15 @@ export default function PickFrame({ params }) {
 
         <Shot src={chosen.src} alt={chosen.alt} graded={chosen.graded}
               height={206} aspect={chosen.aspect} maxHeight="38vh">
-          <span className={styles.stampChip}>{frames[index].label}</span>
+          {frames[index].label ? (
+            <span className={styles.stampChip}>{frames[index].label}</span>
+          ) : null}
         </Shot>
-        <p className={styles.footnote}>{live ? COPY.frameNoteLive : COPY.frameNote}</p>
+        <p className={styles.footnote}>
+          {photo ? COPY.framePhoto : live ? COPY.frameNoteLive : COPY.frameNote}
+        </p>
 
-        <div style={{ marginTop: 20 }}
+        <div style={{ marginTop: 20, display: photo ? "none" : undefined }}
              onPointerDown={(e) => {
                try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
                dragging.current = true;

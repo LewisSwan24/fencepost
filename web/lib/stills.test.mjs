@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickTimes, drawSize, clockLabel, base64Of } from "./stills.js";
+import { pickTimes, drawSize, clockLabel, base64Of, stillsFrom } from "./stills.js";
 
 test("stills are spread across the clip, not taken from the start", () => {
   const times = pickTimes(16, 8);
@@ -109,4 +109,31 @@ test("anything that is not a data URL gives nothing to send", () => {
                      "data:image/jpeg;base64,"]) {
     assert.equal(base64Of(bad), null);
   }
+});
+
+// What a photograph is routed by.
+//
+// stillsFrom picks its path off file.type and nothing else, which is the whole reason a
+// phone photograph reaches the masking screen at all. A rename on that property — reading
+// file.mimeType, say — would send every photograph down the video decoder, which answers
+// with an empty list, and the flow would silently fall back to a stock picture of somebody
+// else's possum. That failure is invisible on a laptop and only shows up at a fence in the
+// dark, so it is worth a test even though the decoding itself needs a browser.
+test("a photograph is routed by its type, not by its name", async () => {
+  let asked = 0;
+  const file = { name: "possum.jpg", get type() { asked += 1; return "image/jpeg"; } };
+  const out = await stillsFrom(file);
+  assert.equal(asked > 0, true, "the dispatcher must read file.type");
+  // node has no document, so both paths answer empty here — what is asserted is the read
+  // and that neither path throws.
+  assert.ok(Array.isArray(out));
+});
+
+test("nothing chosen is an empty list, not a crash", async () => {
+  assert.deepEqual(await stillsFrom(null), []);
+  assert.deepEqual(await stillsFrom(undefined), []);
+});
+
+test("a file with no type at all falls to the clip path rather than throwing", async () => {
+  assert.ok(Array.isArray(await stillsFrom({ name: "clip" })));
 });
