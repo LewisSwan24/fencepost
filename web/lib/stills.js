@@ -48,7 +48,13 @@ export function pickTimes(duration, count, fallbackSeconds = 0) {
     const at = ((i + 0.5) / count) * length;
     // Seeking to exactly the last frame lands past the end on some decoders and never fires
     // `seeked`, which would hang the extraction on the final still.
-    times.push(Math.min(at, Math.max(0, length - 0.05)));
+    const clamped = Math.min(at, Math.max(0, length - 0.05));
+    // That clamp is what makes duplicates possible. On a clip under about 0.27s the last
+    // positions all land on the same instant, and under 0.05s every one of them is 0 — eight
+    // stills stamped with an identical t, which the frame picker uses as its React key. Fewer
+    // real positions is the honest answer to a very short clip; eight copies of one is not.
+    if (times.length && clamped <= times[times.length - 1]) continue;
+    times.push(clamped);
   }
   return times;
 }

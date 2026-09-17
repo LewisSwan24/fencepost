@@ -80,6 +80,15 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
   const [elapsed, setElapsed] = useState(0);
   const [facing, setFacing] = useState("environment");   // environment = the rear lens
   const [swapping, setSwapping] = useState(false);
+  // Whether the element has actually reported a frame size.
+  //
+  // Ready is not the same as ready to shoot. play() can reject — the comment above the call
+  // says so, and recovering later is the normal case — but setState("ready") runs regardless,
+  // so the shutter lit up while the element still had no dimensions. A press then reached
+  // grabStill() with videoWidth 0, got null back, closed the camera and dropped somebody on
+  // the stock-photograph picker with no explanation. loadedmetadata is the event that says
+  // there is a frame to take, and it fires on every new stream, so a flip re-arms it too.
+  const [framed, setFramed] = useState(false);
   const [cameras, setCameras] = useState(null);     // how many lenses, null until asked
 
   // Letting go of the lens, and nothing else.
@@ -177,6 +186,12 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
           stopVideo();
           return;
         }
+        // A recording with nothing in it yet still has to be torn down. Left running, the
+        // 500ms sampler keeps ticking behind the error notice, and up to twenty seconds later
+        // the cap fires stopVideo() and routes somebody off the screen they were reading —
+        // with no input from them and nothing to show for it. release() clears the interval
+        // and the filming flag; the stream is already gone.
+        if (filming.current) release();
         setReason(reasonFor(error));
         setState("blocked");
       }
@@ -242,6 +257,7 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
   function flip() {
     if (swapping) return;
     setSwapping(true);
+    setFramed(false);
     setFacing((was) => (was === "environment" ? "user" : "environment"));
   }
 
@@ -283,7 +299,8 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
   // filming, where the same button is the only way to stop, and refusing a stop press because
   // a lens is still opening is how a recording runs on past the moment somebody wanted it to
   // end.
-  const busy = state === "starting" || state === "blocked" || (swapping && !recording);
+  const busy = state === "starting" || state === "blocked"
+    || (swapping && !recording) || (!framed && !recording);
   // A device known to have one lens gets no flip button rather than one that appears to do
   // nothing. Unknown — enumerateDevices refused, or has not answered yet — still offers it,
   // because the phones this is for all have two.
@@ -294,7 +311,8 @@ export default function Camera({ onPhoto, onClip, onClose, onFallback, onLibrary
       <div className={styles.stage}>
         {/* Rendered even while starting, so the stream has an element to attach to the
             moment it arrives rather than waiting for another render. */}
-        <video ref={video} className={styles.preview} playsInline muted autoPlay />
+        <video ref={video} className={styles.preview} playsInline muted autoPlay
+               onLoadedMetadata={() => setFramed(true)} />
 
         {state === "starting" ? (
           <div className={styles.notice}>
