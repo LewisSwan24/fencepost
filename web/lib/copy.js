@@ -12,10 +12,21 @@ export const COPY = {
   consentTitle: "Send this frame for identification?",
   consentBody:
     "One frame from your video will be sent to an AI service to help work out which possum it is.",
+  // Four bullets rather than three, because the third was doing two jobs and only getting one
+  // of them right. "The frame isn't kept afterwards" was written when nothing was kept; since
+  // entries.still it is false on the screen where it matters most, because both buttons on
+  // this sheet store a masked copy of the frame on the sighting. The sentence was never
+  // updated when that landed, so a consent sheet — of every screen in this product — was the
+  // one telling somebody the opposite of what the code does. Caught by an adversarial review.
+  //
+  // Both halves are said out loud now: the copy sent away is not kept, and the copy that stays
+  // is the picture on their own sighting, where they can see it and where deleting the entry
+  // takes it with them. Nobody should have to read lib/stills.js to find that out.
   consentPoints: [
     "Location data is removed before it's sent",
     "Faces and number plates need masking first",
-    "The frame isn't kept afterwards",
+    "The copy sent for identification isn't kept",
+    "The masked frame stays as the picture on your sighting",
   ],
   consentSend: "Mask and send",
   consentSkip: "Skip — I'll pick the species myself",
