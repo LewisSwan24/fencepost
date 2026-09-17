@@ -23,15 +23,42 @@ from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
                       SqliteScreeningLog)
 from proxy.model import DashScope, UpstreamError, redact
 
-POST_ROUTES = ("/api/session", "/api/register", "/api/login",
-               "/api/storyboards", "/api/storyboards/close",
-               "/api/videos", "/api/entries",
-               "/api/entries/edit", "/api/entries/delete", "/api/entries/remove",
-               "/api/share-links",
-               "/api/share-links/redeem", "/api/share-links/revoke", "/api/grants/revoke",
-               "/api/forum/threads", "/api/forum/posts", "/api/forum/posts/delete", "/api/forum/posts/remove",
-               "/api/review/vote",
-               "/api/review/dispose", "/api/assistant")
+
+def _tokenless(fn):
+    """Session, register and login take no token — they are how somebody gets one."""
+    return lambda body, token, deps: fn(body, deps)
+
+
+# Path to handler, the same shape as GET_ROUTES below. This used to be a tuple of paths
+# beside a twenty-branch if-chain, and the shape was the defect: the chain sat outside the
+# only try/except in the method, so an exception anywhere in it left the request with no
+# response written at all. On Vercel that surfaces as FUNCTION_INVOCATION_FAILED and the
+# client learns nothing — the exact lesson the comment on _deps() already records, applied
+# there and not here. A table dispatches in one line, and one line can be wrapped.
+POST_ROUTES = {
+    "/api/session": _tokenless(create_session),
+    "/api/register": _tokenless(register),
+    "/api/login": _tokenless(login),
+    "/api/storyboards": create_storyboard,
+    "/api/storyboards/close": close_storyboard,
+    "/api/videos": register_video,
+    "/api/entries": submit_entry,
+    "/api/entries/edit": edit_entry,
+    "/api/entries/delete": delete_entry,
+    "/api/entries/remove": remove_entry,
+    "/api/share-links": issue_share_link,
+    "/api/share-links/redeem": redeem_share_link,
+    "/api/share-links/revoke": revoke_share_link,
+    "/api/grants/revoke": revoke_grant,
+    "/api/forum/threads": create_thread,
+    "/api/forum/posts": create_post,
+    "/api/forum/posts/delete": delete_post,
+    "/api/forum/posts/remove": remove_post,
+    "/api/review/vote": cast_review_vote,
+    "/api/review/dispose": dispose_entry,
+    # The assistant is the one that can stream, so do_POST still names it directly.
+    "/api/assistant": handle,
+}
 GET_ROUTES = {"/api/timeline": timeline, "/api/dashboard": dashboard,
               "/api/record": my_record,
               "/api/forum": list_threads, "/api/forum/thread": read_thread,
@@ -110,6 +137,18 @@ class handler(BaseHTTPRequestHandler):
             body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
+        # Valid JSON is not the same as a body. `[]` and `"hello"` both parse, and every
+        # handler downstream starts with body.get(...), which is an AttributeError on a list.
+        if not isinstance(body, dict):
+            return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
+        # An id is a string or it is not an id. No handler checks this — they pass the value
+        # into a query and let the driver complain, which arrives here as an unhandled
+        # exception. _run below turns that into a 500, but a client sending an object where a
+        # string belongs has made a bad request, and 400 is the true answer. One rule here
+        # rather than a check in twenty handlers, because the rule is the same in all twenty.
+        if any(key.endswith("_id") and value is not None and not isinstance(value, str)
+               for key, value in body.items()):
+            return self._json(400, {"error": {"code": "bad_request", "message": COPY["bad_request"]}})
         if path not in POST_ROUTES:
             # Route before building dependencies: an unknown address should not come back
             # 503 because some configuration is missing
@@ -124,49 +163,27 @@ class handler(BaseHTTPRequestHandler):
             print(f"[proxy] deps: {redact(str(exc))[:200]}", file=sys.stderr)
             return self._json(503, {"error": {"code": "upstream_unavailable",
                                               "message": COPY["upstream_unavailable"]}})
-        if path == "/api/session":
-            return self._json(*create_session(body, deps))
-        if path == "/api/register":
-            return self._json(*register(body, deps))
-        if path == "/api/login":
-            return self._json(*login(body, deps))
-        if path == "/api/storyboards":
-            return self._json(*create_storyboard(body, token, deps))
-        if path == "/api/storyboards/close":
-            return self._json(*close_storyboard(body, token, deps))
-        if path == "/api/videos":
-            return self._json(*register_video(body, token, deps))
-        if path == "/api/entries":
-            return self._json(*submit_entry(body, token, deps))
-        if path == "/api/entries/edit":
-            return self._json(*edit_entry(body, token, deps))
-        if path == "/api/entries/delete":
-            return self._json(*delete_entry(body, token, deps))
-        if path == "/api/share-links":
-            return self._json(*issue_share_link(body, token, deps))
-        if path == "/api/share-links/redeem":
-            return self._json(*redeem_share_link(body, token, deps))
-        if path == "/api/share-links/revoke":
-            return self._json(*revoke_share_link(body, token, deps))
-        if path == "/api/grants/revoke":
-            return self._json(*revoke_grant(body, token, deps))
-        if path == "/api/forum/threads":
-            return self._json(*create_thread(body, token, deps))
-        if path == "/api/entries/remove":
-            return self._json(*remove_entry(body, token, deps))
-        if path == "/api/forum/posts/remove":
-            return self._json(*remove_post(body, token, deps))
-        if path == "/api/forum/posts/delete":
-            return self._json(*delete_post(body, token, deps))
-        if path == "/api/forum/posts":
-            return self._json(*create_post(body, token, deps))
-        if path == "/api/review/vote":
-            return self._json(*cast_review_vote(body, token, deps))
-        if path == "/api/review/dispose":
-            return self._json(*dispose_entry(body, token, deps))
-        if body.get("stream"):
+        # One dispatch, inside one try. Everything a handler can raise — a database error,
+        # a field that is an object where a string belongs, anything at all — becomes a
+        # response the caller can read instead of a connection that closes with nothing on it.
+        if path == "/api/assistant" and body.get("stream"):
             return self._sse(body, token, deps)
-        self._json(*handle(body, token, deps))
+        self._json(*self._run(POST_ROUTES[path], body, token, deps))
+
+    def _run(self, fn, body, token, deps):
+        """Call a route handler and answer, whatever happens.
+
+        proxy.app.handle() has a blanket except of its own, but it only covers the assistant
+        roles: everything reached through POST_ROUTES and GET_ROUTES goes straight to a
+        function with no such net. BaseHTTPRequestHandler writes nothing on an unhandled
+        exception, so the client gets a closed connection rather than a status.
+        """
+        try:
+            return fn(body, token, deps)
+        except Exception as exc:
+            print(f"[proxy] unhandled: {redact(str(exc))[:300]}", file=sys.stderr)
+            return 500, {"error": {"code": "upstream_unavailable",
+                                   "message": COPY["upstream_unavailable"]}}
 
     def do_GET(self):
         path, _, query = self.path.partition("?")
@@ -181,7 +198,10 @@ class handler(BaseHTTPRequestHandler):
             return self._json(503, {"error": {"code": "upstream_unavailable",
                                               "message": COPY["upstream_unavailable"]}})
         params = {key: values[0] for key, values in parse_qs(query).items()}
-        self._json(*GET_ROUTES[path](params, token, deps))
+        # Guarded the same way as POST. A query string cannot carry a non-string, so there is
+        # no id check to make here — but a database error inside a reader is just as capable
+        # of ending the request with nothing written.
+        self._json(*self._run(GET_ROUTES[path], params, token, deps))
 
     def _sse(self, body: dict, token: str, deps) -> None:
         status, result = handle_stream(body, token, deps)

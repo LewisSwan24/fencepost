@@ -54,10 +54,20 @@ class Entrypoint(unittest.TestCase):
         self.server.shutdown()
         entry._DEPS = None
 
-    def post(self, body, token=TOKEN):
+    def post(self, body, token=TOKEN, path=None):
+        url = self.url if path is None else self.url.replace("/api/assistant", path)
         request = urllib.request.Request(
-            self.url, data=json.dumps(body).encode(),
+            url, data=json.dumps(body).encode(),
             headers={"content-type": "application/json", "authorization": "Bearer " + token})
+        try:
+            return urllib.request.urlopen(request)
+        except urllib.error.HTTPError as err:
+            return err
+
+    def get(self, path, token=TOKEN):
+        request = urllib.request.Request(
+            self.url.replace("/api/assistant", path),
+            headers={"authorization": "Bearer " + token})
         try:
             return urllib.request.urlopen(request)
         except urllib.error.HTTPError as err:
@@ -86,6 +96,69 @@ class Entrypoint(unittest.TestCase):
         except urllib.error.HTTPError as err:
             resp = err
         self.assertEqual(400, resp.status)
+
+    def test_a_handler_that_raises_still_answers(self):
+        """The defect this guards: BaseHTTPRequestHandler writes nothing on an unhandled
+        exception, so the caller gets a closed connection rather than a status.
+
+        Every CRUD route used to be dispatched from a twenty-branch if-chain sitting outside
+        the only try/except in the method. proxy.app.handle() has a blanket except of its own,
+        but it covers the assistant roles alone — everything reached through POST_ROUTES went
+        to a bare function call. On Vercel that surfaces as FUNCTION_INVOCATION_FAILED, which
+        tells the person at the fence nothing at all.
+        """
+        def explode(body, token, deps):
+            raise RuntimeError("the database went away")
+
+        original = entry.POST_ROUTES["/api/entries"]
+        entry.POST_ROUTES["/api/entries"] = explode
+        try:
+            resp = self.post({"storyboard_id": "s1"}, path="/api/entries")
+            self.assertEqual(500, resp.status)
+            self.assertEqual(COPY["upstream_unavailable"],
+                             json.loads(resp.read())["error"]["message"])
+        finally:
+            entry.POST_ROUTES["/api/entries"] = original
+
+    def test_a_reader_that_raises_still_answers(self):
+        """The same guard on the GET side, which had the same shape."""
+        def explode(params, token, deps):
+            raise RuntimeError("the database went away")
+
+        original = entry.GET_ROUTES["/api/timeline"]
+        entry.GET_ROUTES["/api/timeline"] = explode
+        try:
+            resp = self.get("/api/timeline?storyboard_id=s1")
+            self.assertEqual(500, resp.status)
+        finally:
+            entry.GET_ROUTES["/api/timeline"] = original
+
+    def test_an_id_that_is_not_a_string_is_a_bad_request(self):
+        """A client sending an object where an id belongs has made a bad request.
+
+        No handler type-checks its id fields; they pass the value into a query and let the
+        driver raise, which without the guard above ended the request with no response and
+        with the guard would be a 500. Neither is true: 400 is.
+        """
+        for body in ({"entry_id": {}}, {"storyboard_id": ["s1"]}, {"thread_id": 7}):
+            with self.subTest(body=body):
+                resp = self.post(body, path="/api/entries/delete")
+                self.assertEqual(400, resp.status)
+
+    def test_json_that_is_not_an_object_is_a_bad_request(self):
+        """`[]` and `"hello"` are valid JSON and not bodies. Every handler downstream opens
+        with body.get(...), which is an AttributeError on a list."""
+        for raw in (b"[]", b'"hello"', b"42"):
+            with self.subTest(raw=raw):
+                request = urllib.request.Request(
+                    self.url, data=raw,
+                    headers={"content-type": "application/json",
+                             "authorization": "Bearer " + TOKEN})
+                try:
+                    resp = urllib.request.urlopen(request)
+                except urllib.error.HTTPError as err:
+                    resp = err
+                self.assertEqual(400, resp.status)
 
     def test_json_round_trip(self):
         resp = self.post({"role": "neighbour", "storyboard_id": "s1", "message": "hello"})
