@@ -32,10 +32,16 @@ export default function Capture({ params }) {
   const library = useRef(null);
   const [reading, setReading] = useState(false);
 
-  const next = (stills) => {
-    // A photograph has no frame to pick, so that screen is skipped rather than shown with
-    // one cell and a scrubber that cannot move. The placeholder path keeps the picker: it
-    // has ten stand-in photographs to choose between.
+  // A photograph has no frame to pick, so that screen is skipped rather than shown with one
+  // cell and a scrubber that cannot move. The placeholder path keeps the picker: it has ten
+  // stand-in photographs to choose between.
+  //
+  // The default matters. This took a list argument while the skip button below still called
+  // it with nothing, and `stills.length` on undefined threw — so the one way off this screen
+  // for somebody holding a phone with no clip on it crashed the page. Shipped 2026-09-17 and
+  // caught the same hour. A parameter that is only ever right when every caller remembers to
+  // pass it is a parameter that wants a default.
+  const next = (stills = []) => {
     const photo = stills.length === 1 && !stills[0].label;
     router.push(`/b/${id}/add/${photo ? "mask" : "frame"}`);
   };
