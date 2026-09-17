@@ -21,7 +21,7 @@ import { useRouter } from "next/navigation";
 import { COPY } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
 import { isDeliberate } from "../../../../../lib/mask";
-import { base64Of, redact } from "../../../../../lib/stills";
+import { base64Of, maskedFrame } from "../../../../../lib/stills";
 
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
@@ -121,7 +121,11 @@ export default function Mask({ params }) {
   // CARD_WIDTH rather than full size: every entry on a timeline carries one of these.
   async function carryCover() {
     try {
-      const masked = still ? await redact(still.src, draft.boxes, CARD_WIDTH) : null;
+      // maskedFrame rather than redact: with no boxes there is nothing to burn in, and the
+      // still already is the masked frame. redact() reads an empty list as a failure and
+      // answers null, so the ordinary case — nothing in shot that identifies anybody, tick
+      // the box, carry on — used to lose the author's own photograph without a word.
+      const masked = still ? await maskedFrame(still.src, draft.boxes, CARD_WIDTH) : null;
       draft.setCover(masked ? base64Of(masked) : null);
     } catch {
       draft.setCover(null);          // no picture is always better than the wrong picture
@@ -155,7 +159,7 @@ export default function Mask({ params }) {
       // sent rather than sent unmasked. Losing the suggestion costs a sentence this
       // interface already treats as optional; the other way costs somebody their face.
       await carryCover();
-      const masked = still ? await redact(still.src, draft.boxes) : null;
+      const masked = still ? await maskedFrame(still.src, draft.boxes) : null;
       const answer = await identifyFrame({
         storyboardId: id,
         imageBase64: masked ? base64Of(masked) : null,
