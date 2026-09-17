@@ -391,6 +391,69 @@ export function redact(src, boxes, maxWidth = 0) {
   });
 }
 
+/**
+ * The same frame at a smaller width, with nothing painted over it. Null on failure.
+ *
+ * Module-private on purpose. Nothing outside this file should be able to ask for "the frame,
+ * unmasked" — the only caller is maskedFrame below, which reaches it in exactly one case.
+ */
+function redraw(src, maxWidth = 0) {
+  return new Promise((resolve) => {
+    if (!src || typeof document === "undefined") {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.onerror = () => resolve(null);
+    img.onload = () => {
+      try {
+        const scaled = maxWidth ? drawSize(img.naturalWidth, img.naturalHeight, maxWidth) : null;
+        const width = scaled ? scaled.width : img.naturalWidth;
+        const height = scaled ? scaled.height : img.naturalHeight;
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", JPEG_QUALITY));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.src = src;
+  });
+}
+
+/**
+ * The frame that is safe to use, given what the author said about this picture.
+ *
+ *   boxes drawn  → burn them in. redact() answers null on any failure, and null is never a
+ *                  fallback to the original.
+ *   no boxes     → there is nothing to burn in, so the frame already is the masked frame.
+ *
+ * That second branch is the whole reason this exists. redact() reads an empty box list as a
+ * failure and answers null, which is the right answer to the question *it* asks — but the
+ * masking screen used it for both jobs, so the ordinary case (a possum on a fence, no face
+ * and no number plate in shot, author ticks "nothing here identifies a person or a house")
+ * silently lost their own photograph and the entry carried a stock picture of somebody else's
+ * possum. Which is the exact thing that keeping the author's frame was added to stop.
+ * Found by an adversarial review on 2026-09-17 and reproduced in a browser: zero canvas
+ * exports down that path, against two when a box is drawn.
+ *
+ * An empty list is only reachable here because the masking screen's gate gives it a meaning:
+ * you cannot leave that screen without either drawing a box or ticking to say there is
+ * nothing to cover. Empty means affirmed, not unanswered. If that gate ever goes, this
+ * branch has to go with it.
+ */
+export function maskedFrame(src, boxes, maxWidth = 0) {
+  const drawn = Array.isArray(boxes) ? boxes : [];
+  return drawn.length ? redact(src, drawn, maxWidth) : redraw(src, maxWidth);
+}
+
 export function base64Of(src) {
   const at = String(src || "").indexOf(";base64,");
   if (at < 0) return null;
