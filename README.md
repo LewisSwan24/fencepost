@@ -42,7 +42,7 @@ python tests/test_entrypoint.py && python tests/test_resources.py &&
 python tests/test_store.py && python tests/test_teardown.py
 ```
 
-318 tests. The last two were missing from the line above until 2026-09-17, so
+323 tests. The last two were missing from the line above until 2026-09-17, so
 thirty-one of them were never run by the documented command. The data layer ones
 matter most: they pin the three access invariants — other people's entries never
 enter the assistant's context, a soft-deleted entry disappears on the next call, and
