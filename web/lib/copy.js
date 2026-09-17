@@ -114,6 +114,9 @@ export const COPY = {
   cameraVideoHint: "Press to start, press again to stop. Fencepost keeps still frames from what you film, not the footage.",
   cameraStarting: "Opening the camera…",
   cameraClose: "Close the camera",
+  // One label for both directions. "Switch to front camera" would have to know which way it
+  // is pointing, and a label that lies for a moment during the swap is worse than a plain one.
+  cameraFlip: "Switch camera",
   cameraTakePhoto: "Take a photograph",
   cameraStartVideo: "Start recording",
   cameraStopVideo: "Stop recording",
