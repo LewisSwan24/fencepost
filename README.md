@@ -37,11 +37,15 @@ Create a `.env` in the repository root. It is git-ignored.
 None of them touch the network — the model is faked.
 
 ```bash
-python tests/test_proxy.py && python tests/test_data_layer.py && python tests/test_entrypoint.py && python tests/test_resources.py
+python tests/test_proxy.py && python tests/test_data_layer.py &&
+python tests/test_entrypoint.py && python tests/test_resources.py &&
+python tests/test_store.py && python tests/test_teardown.py
 ```
 
-183 tests. The data layer ones matter most: they pin the three access invariants — other people's
-entries never enter the assistant's context, a soft-deleted entry disappears on the next call, and
+304 tests. The last two were missing from the line above until 2026-09-17, so
+thirty-one of them were never run by the documented command. The data layer ones
+matter most: they pin the three access invariants — other people's entries never
+enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
 
 ## Generated files, and why they are committed
