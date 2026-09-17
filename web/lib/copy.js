@@ -95,6 +95,48 @@ export const COPY = {
   // on this screen. It is also the line that keeps the placeholder path reachable on
   // purpose rather than only by failure.
   captureSkip: "No clip on this device? Carry on with placeholder stills.",
+
+  // The viewfinder.
+  //
+  // Record opens a camera inside the page rather than handing off to the phone's camera app.
+  // That started as a bug fix — the handoff asked Android for a video-capture intent and the
+  // stock camera app opened and bounced straight back out — but the page is the better place
+  // for it anyway: one screen does both a photograph and a recording, which the handoff
+  // cannot, because an input element gets to name exactly one capture intent.
+  //
+  // "Record" stays the word on the button. Filming and photographing what is in front of you
+  // are the same act from where the person holding the phone is standing.
+  cameraModePhoto: "Photo",
+  cameraModeVideo: "Video",
+  cameraPhotoHint: "Point at the possum and press the button.",
+  // Says where the frames come from, because this is the one screen where somebody could
+  // reasonably expect a video file at the end of it, and there is never going to be one.
+  cameraVideoHint: "Press to start, press again to stop. Fencepost keeps still frames from what you film, not the footage.",
+  cameraStarting: "Opening the camera…",
+  cameraClose: "Close the camera",
+  cameraTakePhoto: "Take a photograph",
+  cameraStartVideo: "Start recording",
+  cameraStopVideo: "Stop recording",
+  // Four different reasons the camera does not open, and they are four different stories with
+  // four different things to do about them. Collapsing them into one "camera unavailable" is
+  // how somebody ends up reading "this device hasn't got a camera" while holding a phone with
+  // two, because another app happens to have the lens — which is the commonest failure on
+  // Android and the only one that is fixed in ten seconds.
+  //
+  // Being refused is an ordinary answer rather than an error, so each sentence says what to do
+  // next instead of what went wrong. A permission the browser has already been told to refuse
+  // cannot be asked for again from script, which is why that one points at the address bar
+  // rather than offering a button that would quietly do nothing.
+  cameraDeniedTitle: "Fencepost can't reach the camera",
+  cameraDeniedBody: "Your browser is holding the camera back. You can allow it from the address bar, or use the phone's own camera app instead.",
+  cameraMissingTitle: "No camera on this device",
+  cameraMissingBody: "There's no camera here for Fencepost to open. You can still use a photo or a clip you already have.",
+  cameraBusyTitle: "Something else has the camera",
+  cameraBusyBody: "Another app is using the camera right now. Close it and try again, or use the phone's own camera app instead.",
+  cameraBlockedTitle: "Fencepost can't reach the camera",
+  cameraBlockedBody: "The camera didn't open, and the browser didn't say why. You can use the phone's own camera app instead.",
+  cameraFallback: "Use the phone camera app",
+  cameraUseLibrary: "Choose something you already have",
   // This used to read "This is the still people see in the storyboard.", which was false.
   // The chosen frame has never been carried anywhere: frameIndex is read only on the frame
   // screen, it is not sent on submit, and the server has nowhere to put a frame (`videos`

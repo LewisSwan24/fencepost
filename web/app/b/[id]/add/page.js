@@ -20,6 +20,7 @@ import { use, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { COPY } from "../../../../lib/copy";
 import { BackButton, Steps, ui } from "../../../../components/ui";
+import Camera, { cameraSupported } from "../../../../components/Camera";
 import { stillsFrom } from "../../../../lib/stills";
 import { useDraft } from "./DraftContext";
 import styles from "./add.module.css";
@@ -31,6 +32,7 @@ export default function Capture({ params }) {
   const recorder = useRef(null);
   const library = useRef(null);
   const [reading, setReading] = useState(false);
+  const [camera, setCamera] = useState(false);
 
   // A photograph has no frame to pick, so that screen is skipped rather than shown with one
   // cell and a scrubber that cannot move. The placeholder path keeps the picker: it has ten
@@ -63,6 +65,22 @@ export default function Capture({ params }) {
     next(stills);
   }
 
+  // The viewfinder hands back finished stills rather than a file — it drew them off the live
+  // preview, so there is nothing to decode and no reading state to show.
+  function fromCamera(stills) {
+    setCamera(false);
+    draft.setStills(stills);
+    next(stills);
+  }
+
+  // Record opens the camera in the page. The file input behind it is not dead code: it is
+  // what happens on a browser with no getUserMedia, on http where the API does not exist at
+  // all, and when somebody has told the browser to refuse this site the camera.
+  function record() {
+    if (cameraSupported()) setCamera(true);
+    else recorder.current?.click();
+  }
+
   return (
     <div className={ui.screen}>
       <div className={ui.bar}>
@@ -74,22 +92,30 @@ export default function Capture({ params }) {
         <h1 className={ui.h1} style={{ fontSize: 28 }}>Add a sighting</h1>
         <p className={ui.lede}>{COPY.captureLede}</p>
 
-        {/* Two inputs rather than one, because the difference between them is the capture
-            attribute and that cannot be changed per click on iOS.
+        {/* Record opens the viewfinder in components/Camera.js and only reaches the first
+            input when there is no getUserMedia to open it with. Why the handoff stopped being
+            the main path is written up there; the two accept values here are the part that
+            matters at this line.
 
-            accept takes photographs as well as clips, and that is two things at once. It is
-            what Record has always meant — whatever is in front of you, filmed or
-            photographed — and a possum on a fence at midnight is at least as often a
-            photograph. It is also the fix for a real failure: Android Chrome chooses its
-            camera intent from accept, and a video-only one asks for ACTION_VIDEO_CAPTURE,
-            which plenty of stock camera apps do not handle. Reported from a phone on
-            2026-09-17: the camera opened and bounced straight back out. */}
-        <input ref={recorder} type="file" accept="image/*,video/*" capture="environment"
+            image/* alone, with capture. Chromium hands over to the camera only when the
+            accept list resolves to a single media supertype — acceptsOnlyType() is a count
+            equality, so "image/*,video/*" matches neither branch and the capture attribute is
+            silently discarded. What happens next is worse than the old chooser: every
+            remaining type is a media type, so Chrome routes to the Android system photo
+            picker, which on Android 13 and up has no camera tile at all. A single image type
+            gives MediaStore.ACTION_IMAGE_CAPTURE, which is also the only branch Chromium sets
+            EXTRA_OUTPUT on — the video branch does not, and a camera app that returns without
+            data there is read as if it were the photo branch.
+
+            So the fallback takes photographs and not clips. That is the most a file input can
+            honestly offer on Android, and somebody who needs a clip has Choose from library
+            below, which wants exactly the picker this one is avoiding. */}
+        <input ref={recorder} type="file" accept="image/*" capture="environment"
                hidden onChange={chosen} />
         <input ref={library} type="file" accept="image/*,video/*" hidden onChange={chosen} />
 
         <button type="button" className={styles.bigPrimary} disabled={reading}
-                onClick={() => recorder.current?.click()}>
+                onClick={record}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 10l5-3v10l-5-3z" /><rect x="2" y="6" width="13" height="12" rx="3" />
@@ -117,6 +143,16 @@ export default function Capture({ params }) {
           {COPY.captureSkip}
         </button>
       </div>
+
+      {/* Mounted only while it is open, so the camera is started by mounting and stopped by
+          unmounting. Keeping it mounted and hidden would hold the phone's camera — and its
+          indicator light — for the rest of the flow. */}
+      {camera ? (
+        <Camera onPhoto={fromCamera} onClip={fromCamera}
+                onClose={() => setCamera(false)}
+                onFallback={() => { setCamera(false); recorder.current?.click(); }}
+                onLibrary={() => { setCamera(false); library.current?.click(); }} />
+      ) : null}
     </div>
   );
 }
