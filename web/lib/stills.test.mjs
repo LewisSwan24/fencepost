@@ -199,3 +199,25 @@ test("nothing to thin, or a nonsense count, is an empty list", () => {
   assert.deepEqual(thin(sample(40), 0), []);
   assert.deepEqual(thin(sample(40), 1.5), []);
 });
+
+// A clip too short to have eight distinct moments in it.
+//
+// pickTimes clamps every position to just before the end, so on a clip under about 0.27s the
+// last few land on the same instant and under 0.05s all eight are 0. The frame picker keys
+// its filmstrip on t, so identical stamps are duplicate React keys — a warning, and cells
+// that can reconcile onto the wrong image. Fewer real positions is the honest answer to a
+// short clip; eight copies of one is not.
+test("a very short clip yields fewer positions rather than repeated ones", () => {
+  for (const seconds of [0.25, 0.2, 0.1, 0.04, 0.01]) {
+    const times = pickTimes(seconds, 8);
+    assert.equal(new Set(times).size, times.length, `duplicate stamps at ${seconds}s`);
+    for (let i = 1; i < times.length; i += 1) assert.ok(times[i] > times[i - 1]);
+  }
+});
+
+test("a clip with room for all eight still gets all eight", () => {
+  // The dedupe must not quietly cost positions on an ordinary clip.
+  assert.equal(pickTimes(16, 8).length, 8);
+  assert.equal(pickTimes(4, 8).length, 8);
+  assert.equal(pickTimes(1, 8).length, 8);
+});
