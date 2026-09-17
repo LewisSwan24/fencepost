@@ -309,3 +309,93 @@ test("a code made for one storyboard does not appear on another", () => {
   assert.ok(!shareLinks("sb_jacaranda").links.some((l) => l.id === made.share_link_id),
     "the code leaked into another storyboard list");
 });
+
+// The safety line, which is the one thing in this product that is not negotiable.
+//
+// CLAUDE.md: snakes and bats are never identified, never called safe, always referred out.
+// An adversarial review on 2026-09-17 got past it twice without any cleverness, just by
+// naming the animal the way people actually name it. "microbat" has no word boundary before
+// "bat", and nobody says "taipan snake" — so both fell through to the out-of-scope line,
+// which at the time ended "tell me about the tail ... and I can say which of the two it looks
+// like". An offer to identify a taipan, on screen, at a public exhibit.
+//
+// Two defences, and the second is the one that matters: the lists below, and a fallback that
+// does not offer identification at all. A list will always be missing a name.
+
+const NEVER_IDENTIFIED = [
+  "is the microbat safe to touch?",
+  "there's a microbat in the carport",
+  "a megabat on the powerline",
+  "fruit bat in the mango tree",
+  "there is a bat in my roof",
+  "a flying fox got caught in the netting",
+  "there is a taipan in the yard",
+  "an eastern brown by the bins",
+  "red-belly black near the fence",
+  "red-bellied black snake",
+  "a king brown in the shed",
+  "is this copperhead venomous?",
+  "mulga in the woodpile",
+  "brown snake on my patio",
+  "carpet python in the roof",
+  "death adder in the garden",
+  "some kind of whip-snake",
+];
+
+test("nothing that might be a snake or a bat is ever offered an identification", () => {
+  for (const ask of NEVER_IDENTIFIED) {
+    const reply = assistantReply(ask).reply;
+    assert.doesNotMatch(reply, /which of the two it looks like/i, `offered to identify: ${ask}`);
+    assert.doesNotMatch(reply, /\b(?:harmless|non-?venomous|not venomous|safe to (?:touch|handle))\b/i,
+                        `called it safe: ${ask}`);
+  }
+});
+
+test("a snake named without the word snake still reaches the snake answer", () => {
+  for (const ask of ["there is a taipan in the yard", "an eastern brown by the bins",
+                     "a king brown in the shed", "is this copperhead venomous?"]) {
+    assert.match(assistantReply(ask).reply, /snake catcher/i, `no referral for: ${ask}`);
+  }
+});
+
+test("a bat named with a prefix still reaches the bat answer", () => {
+  for (const ask of ["is the microbat safe to touch?", "a megabat on the powerline",
+                     "fruit bat in the mango tree"]) {
+    assert.match(assistantReply(ask).reply, /vaccinated handlers/i, `no bat answer for: ${ask}`);
+  }
+});
+
+test("a wombat is not a bat", () => {
+  // The obvious way to catch "microbat" is to drop the leading word boundary, which also
+  // catches wombat, combat and acrobat. A wombat question getting the rabies-risk answer
+  // would be its own kind of wrong.
+  assert.doesNotMatch(assistantReply("there is a wombat outside").reply, /vaccinated handlers/i);
+});
+
+test("the answer for something it does not recognise never offers to identify it", () => {
+  // Everything the routes missed lands here, which is exactly why it cannot make that offer.
+  for (const ask of ["what is this weird animal", "is that thing dangerous",
+                     "found something long in the laundry", "what's in my compost bin"]) {
+    assert.doesNotMatch(assistantReply(ask).reply, /which of the two it looks like/i,
+                        `fallback offered to identify: ${ask}`);
+  }
+});
+
+test("asking about the two possums still gets the tail question", () => {
+  // The safety fix must not cost the thing the assistant is actually for.
+  assert.match(assistantReply("is it a brushtail or a ringtail?").reply, /tail/i);
+});
+
+test("every time 1300 ANIMAL is given, the hours and the after-hours list come with it", () => {
+  // shared.txt makes this a hard rule, and the bat answer was breaking it: the number with
+  // no hours sends somebody to a line that is closed, at night, which is when they are
+  // looking at a possum.
+  const probes = [...NEVER_IDENTIFIED, "the possum looks hurt", "I found an orphaned joey",
+                  "what is this weird animal"];
+  for (const ask of probes) {
+    const reply = assistantReply(ask).reply;
+    if (!reply.includes("1300")) continue;
+    assert.match(reply, /7\s*am to 7\s*pm/i, `no hours with the number: ${ask}`);
+    assert.match(reply, /after-hours/i, `no after-hours alternative: ${ask}`);
+  }
+});
