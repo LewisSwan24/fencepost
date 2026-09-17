@@ -31,6 +31,11 @@ from proxy.model import DashScope
 
 CASES = Path(__file__).resolve().parent / "nonenglish_cases.yaml"
 
+# Which of these share our alphabet. Only used to label the report: the point of the second
+# signal in roles.looks_non_english is that these are the ones a character ratio cannot see,
+# so a run that covers none of them is not evidence about the floor as it now stands.
+LATIN_SCRIPT = {"fr", "es", "id", "pt", "mi", "tl", "de", "it", "nl"}
+
 
 def main() -> None:
     load_env()
@@ -65,9 +70,20 @@ def main() -> None:
         "",
         f"- Run: {datetime.now():%Y-%m-%d %H:%M}",
         f"- Prompt version: `{', '.join(sorted(versions)) or 'unknown'}`",
-        f"- Sample: {total} cases, zh/vi/ar {counts['zh']}/{counts['vi']}/{counts['ar']}",
+        # Read off the corpus rather than named here. The file grew from three languages to
+        # seven on 2026-09-17 and a hardcoded trio would have reported on three of them while
+        # quietly running all seven — the report claiming less than the run covered.
+        f"- Sample: {total} cases across {len(counts)} languages, "
+        + " ".join(f"{lang} {n}" for lang, n in sorted(counts.items())),
         f"- Agreed with the human judgement: {agreed}/{total} ({agreed / total:.0%})",
-        "  - " + ", ".join(f"{lang} {by_language[lang]}/{counts[lang]}" for lang in ("zh", "vi", "ar")),
+        "  - " + ", ".join(f"{lang} {by_language[lang]}/{counts[lang]}"
+                           for lang in sorted(counts)),
+        # The split that matters. zh, vi and ar are written in scripts that are not ours, and
+        # the old character-ratio floor could see all three. fr, es, id and pt share our
+        # alphabet, so it could see none of them and they could be rejected outright — which
+        # is the half of operations.md §4.3 that was not working until 2026-09-17.
+        f"- Latin-script languages in the sample: "
+        + ", ".join(sorted(LATIN_SCRIPT & set(counts)) or ["none"]),
         f"- Times the floor pushed a reject down to review: {floored}",
         "",
         "The model column is what the model decided; final is what the user actually met "
