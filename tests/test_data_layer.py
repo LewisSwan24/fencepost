@@ -722,6 +722,73 @@ class SchemaRepairs(unittest.TestCase):
         self.assertEqual(1, left, "the counters were wiped by a repair with nothing to repair")
 
 
+class StoredFrame(Fixture):
+    """entries.still — what is kept, where it may be read, and when it goes.
+
+    data-model.md 5 asked "does the visual frame land on disk; if it does, you need a frames
+    table and a TTL task". entries.still answered that de facto in 99c969a and nothing was
+    written down, so the two consequences the document anticipated were never weighed. These
+    pin the answer that the code actually implements, since it is the answer the safety line
+    in CLAUDE.md turns on: a masked, EXIF-stripped, card-sized copy that is the sighting's own
+    picture and dies with the sighting is content, not a retained frame. Nothing here had a
+    test before 2026-09-17.
+    """
+
+    FRAME = "/9j/4AAQSkZJRgABAQ"        # base64 JPEG, no data: prefix — the stored shape
+
+    def test_the_masked_frame_reaches_the_timeline(self):
+        self.db.add_entry(self.storyboard, self.guest, "ringtail", story="on the fence",
+                          still=self.FRAME)
+        self.assertEqual([self.FRAME], [e["still"] for e in self.db.timeline(self.storyboard)])
+
+    def test_the_frame_never_enters_the_assistant_context(self):
+        """The one that matters most, and the reason this class exists.
+
+        SqliteContext.build selects species, fun_fact and story — never still. A base64 image
+        in the context would be a Tier 1 question nobody has answered and a large silent cost
+        on every assistant call. Merging this query with timeline() would do it by accident,
+        which is exactly what the docstring above timeline() warns against.
+        """
+        self.db.add_entry(self.storyboard, self.guest, "ringtail", story="on the fence",
+                          still=self.FRAME)
+        context = self.context.build(self.guest, self.storyboard)
+        flattened = json.dumps(context)
+        self.assertNotIn(self.FRAME, flattened)
+        self.assertNotIn("still", flattened)
+        # And the entry itself is still visible to its author, so this is not the context
+        # being empty by accident.
+        self.assertIn("on the fence", flattened)
+
+    def test_soft_deleting_an_entry_takes_its_frame_off_the_timeline_at_once(self):
+        """CLAUDE.md: a soft delete takes effect immediately, no cache and no TTL. That has
+        to cover the picture as well as the words."""
+        entry = self.db.add_entry(self.storyboard, self.guest, "ringtail", story="mine",
+                                  still=self.FRAME)
+        self.db.remove_entry(entry, self.owner)
+        self.assertEqual([], self.db.timeline(self.storyboard))
+        # Still in the row, and unreachable — which is what a soft delete is. The 30-day
+        # purge is what removes the bytes; see operations 1.
+        row = self.db.conn.execute("SELECT still, deleted_at FROM entries WHERE id = ?",
+                                   (entry,)).fetchone()
+        self.assertIsNotNone(row["deleted_at"])
+
+    def test_deleting_an_account_takes_the_frame_with_the_entry(self):
+        """No TTL task is needed for the stored copy because it has no life of its own: it is
+        a column on the entry, so every path that removes an entry removes it."""
+        self.db.add_entry(self.storyboard, self.guest, "ringtail", story="theirs",
+                          still=self.FRAME)
+        self.db.delete_account(self.guest)
+        left = self.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM entries WHERE still IS NOT NULL").fetchone()["c"]
+        self.assertEqual(0, left)
+
+    def test_an_entry_without_a_frame_is_an_ordinary_entry(self):
+        """None is not a failure. The placeholder path has no clip behind it, and a browser
+        that would not decode one arrives here the same way."""
+        self.db.add_entry(self.storyboard, self.guest, "brushtail", story="no clip")
+        self.assertEqual([None], [e["still"] for e in self.db.timeline(self.storyboard)])
+
+
 class Timestamps(Fixture):
     """Four queries compare stamps as strings, so the shape they are written in is a rule.
 
