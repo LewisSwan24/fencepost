@@ -521,6 +521,54 @@ class Boundaries(unittest.TestCase):
         self.assertNotIn("SHARED RULES", json.dumps(payload))
 
 
+class PrefixStability(unittest.TestCase):
+    """The gateway's prefix cache only pays out on identical bytes, matched in 128-token
+    blocks (measured 2026-09-18 — qwen-integration.md §7). A Neighbour request therefore
+    has to be a pure append of the previous one: stored history == sent history, and the
+    per-call context rides with the system prompt instead of wrapping the user message.
+    """
+
+    def test_the_context_rides_with_the_system_prompt(self):
+        client = FakeClient("hi")
+        deps = deps_for(client)
+        handle(chat(), TOKEN, deps)
+        sent = client.calls[0]
+        self.assertIn("<context>", sent["system"])
+        self.assertIn("species_selected", sent["system"])
+        self.assertEqual("is this a possum?", sent["content"])
+
+    def test_the_next_turn_replays_the_previous_one_byte_for_byte(self):
+        client = FakeClient("first reply", "second reply")
+        deps = deps_for(client)
+        handle(chat(message="one"), TOKEN, deps)
+        handle(chat(message="two"), TOKEN, deps)
+        first, second = client.calls
+        self.assertEqual(first["system"], second["system"])
+        self.assertEqual(first["content"], second["history"][0]["content"])
+        self.assertEqual("first reply", second["history"][1]["content"])
+
+    def test_the_stream_path_replays_the_same_bytes(self):
+        client = FakeClient(["first ", "reply"], "second reply")
+        deps = deps_for(client)
+        _, session = handle_stream(chat(message="one"), TOKEN, deps)
+        list(session)
+        session.finish()
+        handle(chat(message="two"), TOKEN, deps)
+        streamed, second = client.calls
+        self.assertEqual(streamed["content"], second["history"][0]["content"])
+
+    def test_a_frame_goes_to_the_model_but_not_into_history(self):
+        client = FakeClient("hi")
+        deps = deps_for(client)
+        handle(chat(image_b64="AAAA", frame_consent=True), TOKEN, deps)
+        sent = client.calls[0]["content"]
+        self.assertIsInstance(sent, list)
+        self.assertIn("AAAA", json.dumps(sent))
+        stored = json.dumps(deps.history.recent("u1", "s1"), ensure_ascii=False)
+        self.assertNotIn("AAAA", stored)
+        self.assertIn("is this a possum?", stored)
+
+
 class Versioning(unittest.TestCase):
     def test_every_role_returns_the_prompt_version(self):
         writer_json = '{"fun_facts":[],"tidied_story":null,"question":"What was it doing?"}'

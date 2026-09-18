@@ -44,7 +44,10 @@ class FakeClient:
         self.calls = []
 
     def call(self, role, system, content, history=()):
-        self.calls.append({"role": role, "content": content})
+        # system and history are recorded because that is where the context block and
+        # the earlier turns ride — "what the assistant sees" means the whole request.
+        self.calls.append({"role": role, "system": system, "content": content,
+                           "history": list(history)})
         return self.replies.pop(0) if self.replies else "a reply"
 
 

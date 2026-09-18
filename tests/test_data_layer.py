@@ -46,7 +46,11 @@ class FakeClient:
         self.calls = []
 
     def call(self, role, system, content, history=()):
-        self.calls.append({"role": role, "content": content, "history": list(history)})
+        # system is recorded because that is where the context block rides — an
+        # assertion that some text "never reaches the model" is only as wide as the
+        # part of the request it looks at.
+        self.calls.append({"role": role, "system": system, "content": content,
+                           "history": list(history)})
         if isinstance(self.reply, Exception):
             raise self.reply
         return self.reply
@@ -134,6 +138,37 @@ class InvariantTwo(Fixture):
         gone = self.db.add_entry(self.storyboard, self.owner, "ringtail")
         self.db.soft_delete_entry(gone)
         self.assertEqual("brushtail", self.context.build(self.owner, self.storyboard)["species_selected"])
+
+    def test_a_deleted_entry_never_reaches_the_model_again(self):
+        """Through the whole request, not just the context: the next call carries the
+        previous call's history, so nothing stored may bring the deleted text back. The
+        context block rides with the system prompt, rebuilt from the database every call,
+        and history stores only the bare messages — that combination is what makes this
+        hold on every deletion path at once, with no purge hook any of them could forget.
+        """
+        entry = self.db.add_entry(self.storyboard, self.owner, "brushtail", story="WILL BE DELETED")
+        client = FakeClient("sure")
+        deps = Deps(client=client, history=self.history, context=self.context)
+        body = {"role": "neighbour", "storyboard_id": self.storyboard, "message": "tell me about it"}
+        handle(body, auth.issue(self.owner), deps)
+        self.assertIn("WILL BE DELETED", json.dumps(client.calls[0], ensure_ascii=False))
+        self.db.soft_delete_entry(entry)
+        handle(body, auth.issue(self.owner), deps)
+        self.assertNotIn("WILL BE DELETED", json.dumps(client.calls[1], ensure_ascii=False))
+
+    def test_an_edit_takes_effect_on_the_next_call(self):
+        """prompts.md §2.6.3: deletion and editing take effect immediately — the old
+        wording must not survive in the sent request either."""
+        entry = self.db.add_entry(self.storyboard, self.owner, "brushtail", story="the old wording")
+        client = FakeClient("sure")
+        deps = Deps(client=client, history=self.history, context=self.context)
+        body = {"role": "neighbour", "storyboard_id": self.storyboard, "message": "tell me about it"}
+        handle(body, auth.issue(self.owner), deps)
+        self.db.update_entry(entry, None, "the new wording")
+        handle(body, auth.issue(self.owner), deps)
+        sent = json.dumps(client.calls[1], ensure_ascii=False)
+        self.assertIn("the new wording", sent)
+        self.assertNotIn("the old wording", sent)
 
 
 class InvariantThree(Fixture):
