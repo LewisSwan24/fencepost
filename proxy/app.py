@@ -285,6 +285,11 @@ def _neighbour(body: dict, user_id: str, deps: Deps):
     context = deps.context.build(user_id, storyboard_id)
     history = deps.history.recent(user_id, storyboard_id)
     result = roles.neighbour(deps.client, context, history, message, image)
+    # Stored is sent, byte for byte: the user turn went out as this bare message (the
+    # context block rides with the system prompt — roles._context_block), so the next
+    # call replays history unchanged and the prefix cache survives the turn boundary.
+    # Wrapping what is stored here would break the cache and keep deleted entry text
+    # alive inside history, past the invariant that a deletion takes effect at once.
     deps.history.append(user_id, storyboard_id, "user", message)
     # Every model call stores the prompt version alongside it (CLAUDE.md working rule 2)
     deps.history.append(user_id, storyboard_id, "assistant", result["reply"],
@@ -362,6 +367,7 @@ class StreamSession:
         return iter(self._stream)
 
     def finish(self) -> None:
+        # The bare message is exactly what went out as the user turn — see _neighbour.
         self._deps.history.append(self._user_id, self._storyboard_id, "user", self._message)
         self._deps.history.append(
             self._user_id, self._storyboard_id, "assistant", self._stream.text,

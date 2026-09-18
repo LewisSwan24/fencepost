@@ -79,7 +79,7 @@ def run_case(client, role: str, case: dict):
         result = roles.writer(client, species, case.get("input", ""))
         return result, json.dumps(result, ensure_ascii=False)
 
-    # _neighbour_content requires both of these and reads them with [], not .get() — so a
+    # _context_block requires both of these and reads them with [], not .get() — so a
     # context missing either raises rather than quietly running on a default. The old
     # harness never met that requirement because it assembled the block itself, which is
     # one more way the evidence did not come from the path it certified.

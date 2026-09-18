@@ -48,32 +48,61 @@ def _strip_fences(raw: str) -> str:
 
 # ---------- Neighbour ----------
 
-def _neighbour_content(context: dict, message: str, image_b64=None):
+def _context_block(context: dict) -> str:
+    """The Tier-1 context for one call, appended to the system prompt (prompts.md §2.2).
+
+    It rides with the system message, not inside the user message, and the two reasons
+    reinforce each other:
+
+    - The gateway caches the input prefix in 128-token blocks and only pays out on
+      identical bytes (measured 2026-09-18, qwen-integration.md §7). History is stored as
+      the bare message and replayed exactly as it went out; a context block that existed
+      only in the sent bytes of the last turn broke the prefix right there, so every turn
+      re-read the whole conversation and only the static prompt was ever a cache hit.
+    - A block rebuilt from the database on every call cannot go stale. A deleted or edited
+      entry is gone from the next call with nothing stored that could carry it back
+      (prompts.md §2.6.3) — no purge hook for any deletion path to forget. Storing the
+      wrapped turn instead would need one on all three of them.
+
+    The static prompt stays ahead of it: that part of the prefix is the same for every
+    user and every call, so it is the part most likely to already be warm.
+    """
     fields = {
         "species_selected": context["species_selected"],
         "storyboard_visible_to_this_user": str(context["storyboard_visible_to_this_user"]).lower(),
     }
     own = context.get("own_entries") or []
     if own:
-        # Tier 1 promises the assistant can see the user's own entries, but the §2.2
-        # template has no slot for them. The doc needs a line added; see the stage 3 report.
         fields["own_entries"] = "".join(
             "\n- " + " | ".join(f"{k}: {e[k]}" for k in ("species", "fun_fact", "story") if e.get(k))
             for e in own
         )
-    text = _wrap(fields, message)
+    lines = "\n".join(f"{k}: {v}" for k, v in fields.items())
+    return f"<context>\n{lines}\n</context>"
+
+
+def _neighbour_user_content(message: str, image_b64=None):
+    """The user turn is the bare message — exactly the bytes chat_messages stores, so the
+    next call replays them unchanged and the prefix cache survives the turn boundary.
+    A frame rides along for this call only and is never persisted (frames are not kept).
+    """
     if not image_b64:
-        return text
+        return message
     return [
-        {"type": "text", "text": text},
+        {"type": "text", "text": message},
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
     ]
 
 
+def _neighbour_system(context: dict) -> tuple[str, str]:
+    prompt, version = load_prompt("neighbour")
+    return f"{prompt}\n\n{_context_block(context)}", version
+
+
 def neighbour(client, context: dict, history, message: str, image_b64=None) -> dict:
-    system, version = load_prompt("neighbour")
-    content = _neighbour_content(context, message, image_b64)
-    return {"reply": client.call("neighbour", system, content, history=history),
+    system, version = _neighbour_system(context)
+    return {"reply": client.call("neighbour", system,
+                                 _neighbour_user_content(message, image_b64), history=history),
             "prompt_version": version}
 
 
@@ -92,9 +121,10 @@ class Stream:
 
 
 def neighbour_stream(client, context: dict, history, message: str, image_b64=None) -> Stream:
-    system, version = load_prompt("neighbour")
-    content = _neighbour_content(context, message, image_b64)
-    return Stream(version, client.stream("neighbour", system, content, history=history))
+    system, version = _neighbour_system(context)
+    return Stream(version, client.stream("neighbour", system,
+                                         _neighbour_user_content(message, image_b64),
+                                         history=history))
 
 
 # ---------- Writer ----------

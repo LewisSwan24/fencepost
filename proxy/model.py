@@ -21,6 +21,20 @@ def redact(text: str) -> str:
     return text.replace(key, "***") if key else text
 
 
+def log_usage(role: str, usage) -> None:
+    """One line per model call, so the prefix-cache hit rate is a number in the runtime
+    log instead of a guess (baseline measured 2026-09-18, qwen-integration.md §7).
+    cached_tokens is the part of the prompt the gateway served from cache."""
+    if usage is None:
+        return
+    d = usage if isinstance(usage, dict) else usage.model_dump()
+    prompt = d.get("prompt_tokens") or 0
+    cached = (d.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+    pct = f"{round(100 * cached / prompt)}%" if prompt else "-"
+    print(f"[proxy] {role} usage: prompt={prompt} cached={cached} ({pct}) "
+          f"completion={d.get('completion_tokens') or 0}", file=sys.stderr)
+
+
 class DashScope:
     def __init__(self, chat_model=None, screener_model=None, base_url=None, timeout=None):
         load_env()
@@ -56,21 +70,29 @@ class DashScope:
         except Exception as exc:
             print(f"[proxy] upstream {role}: {redact(str(exc))[:300]}", file=sys.stderr)
             raise UpstreamError(role) from None
+        log_usage(role, getattr(resp, "usage", None))
         return resp.choices[0].message.content or ""
 
     def stream(self, role: str, system: str, content, history=()):
         """Yield text deltas. Upstream problems raise UpstreamError; the caller ends it."""
         messages = [{"role": "system", "content": system}, *history,
                     {"role": "user", "content": content}]
+        usage = None
         try:
             chunks = self._client.chat.completions.create(
                 model=self.chat_model,
                 messages=messages,
                 timeout=self.timeout,
                 stream=True,
+                # The final usage chunk arrives with empty choices; without this option
+                # the streaming path would never report its cache hit rate. Verified
+                # against the token-plan gateway 2026-09-18.
+                stream_options={"include_usage": True},
                 extra_body={"reasoning_effort": EFFORT[role]},
             )
             for chunk in chunks:
+                if getattr(chunk, "usage", None) is not None:
+                    usage = chunk.usage
                 if not chunk.choices:
                     continue
                 piece = chunk.choices[0].delta.content
@@ -79,3 +101,4 @@ class DashScope:
         except Exception as exc:
             print(f"[proxy] upstream stream {role}: {redact(str(exc))[:300]}", file=sys.stderr)
             raise UpstreamError(role) from None
+        log_usage(role, usage)
