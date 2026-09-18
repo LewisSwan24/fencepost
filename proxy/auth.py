@@ -2,8 +2,14 @@
 
 prompts.md §2.6.1 wants every call to carry the requester's identity, so the proxy can
 resolve their access before it assembles any context. The mechanism is an HMAC-signed
-token, `<user_id>.<signature>`, keyed on FENCEPOST_TOKEN_SECRET.
+token, `<user_id>.<issued_at>.<signature>`, keyed on FENCEPOST_TOKEN_SECRET.
 No table, no dependency; without the secret a client cannot forge somebody else.
+
+The issue time is in the signed material, and it is what this module can decide on its own:
+a token older than TOKEN_TTL_SECONDS is refused here. What it cannot decide is whether
+somebody has since signed out — that is a fact about a row, not about the token — so
+app._identify reads users.tokens_valid_from and compares. Two layers, and this is the one
+that stays dependency-free. See data-model.md §1.2.
 """
 
 import base64
@@ -11,6 +17,7 @@ import hashlib
 import hmac
 import secrets
 import os
+import time
 
 
 class AuthError(Exception):
@@ -24,8 +31,69 @@ def _secret() -> bytes:
     return value.encode()
 
 
-def _sign(user_id: str) -> str:
-    return hmac.new(_secret(), user_id.encode(), hashlib.sha256).hexdigest()
+def _sign(material: str) -> str:
+    return hmac.new(_secret(), material.encode(), hashlib.sha256).hexdigest()
+
+
+def _material(user_id: str, stamp) -> str:
+    """What a token's signature covers: a version tag, the user id and the issue time.
+
+    The `v2|` is not decoration. The token before this one was `<user_id>.HMAC(user_id)`,
+    and that verifier split on the LAST dot - so handed a new `<uid>.<ms>.<sig>` it read the
+    user id as "<uid>.<ms>", signed that, and matched. A rollback of the API to a build from
+    before 2026-09-18 would therefore have accepted every new token as a user id with no row:
+    200 on reads, 500 on writes, and never the 401 that makes a client recover. The prefix
+    is something the old format can never produce, so a rolled-back API refuses new tokens
+    outright. Found by the pre-deploy review and reproduced there; not foreseen.
+    """
+    return f"v2|{user_id}.{stamp}"
+
+
+# How long a token stays good for.
+#
+# Until 2026-09-18 a token was `<user_id>.<signature>` and nothing else, which made it a
+# permanent bearer password equal to the user id: no issue time, so no expiry, and the only
+# way to invalidate one was rotating FENCEPOST_TOKEN_SECRET, which signs out everybody at
+# once. A signed-in account keeps its token in localStorage, so a captured one was permanent
+# account access — and the Sign out button did not touch it, because it only cleared the
+# browser. There is no password reset either, so nothing else revoked it.
+#
+# An issue time is the cheap half of the fix: it turns "compromised for ever" into
+# "compromised until it expires", with no table and no extra read. Thirty days because the
+# cost of getting it wrong is asymmetric — a guest is re-issued a token silently under open
+# sign-up and notices nothing, while an account holder is signed out and, with no password
+# reset in the product, a forgotten password means locked out. Long enough that nobody in a
+# course-length project is interrupted; short enough that a leak is not for ever.
+#
+# The other half, revoking a token before it expires, is not here: it needs the database, and
+# this module deliberately has no dependency on it. users.tokens_valid_from carries it and
+# app._identify does the comparison. See data-model.md §1.2.
+TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
+# Stated once rather than multiplied at each comparison. The constant above is in the
+# unit a person reasons in; this is the unit the token is in.
+TTL_MS = TOKEN_TTL_SECONDS * 1000
+
+# A token stamped in the future is refused, but not to the second. Several serverless
+# instances issue these and one of them can be a little ahead, so a token minted on a fast
+# instance would be refused by a slow one for as long as the drift lasts. Five minutes is
+# more than any plausible drift and far less than the thirty days it would take to matter.
+_CLOCK_SLACK_SECONDS = 5 * 60
+
+
+def now_ms() -> int:
+    """Milliseconds since the epoch, the unit tokens and the revocation cutoff share.
+
+    An earlier version of this docstring said milliseconds "make them separate" - a token
+    issued at T and a sign-out at T. That was a claim about the unit standing in for a claim
+    about the clock, and the clock does not honour it: on Python 3.12 under Windows
+    time.time() moves in 15.6 ms steps, and two serverless instances can disagree by more
+    than that in either direction. So nothing relies on two readings of this clock being in
+    order. What keeps sign-out correct is the rule in app.sign_out and app._mint - the cutoff
+    is written past the token that asked, and a token is never issued below the cutoff -
+    which holds whatever the resolution or the drift. Milliseconds are kept because they
+    make ties rare, not because anything depends on ties being impossible.
+    """
+    return int(time.time() * 1000)
 
 
 def new_share_token() -> str:
@@ -37,18 +105,51 @@ def hash_share_token(token: str) -> str:
     return hashlib.sha256((token or "").encode()).hexdigest()
 
 
-def issue(user_id: str) -> str:
-    return f"{user_id}.{_sign(user_id)}"
+def issue(user_id: str, issued_at: int = None) -> str:
+    """`<user_id>.<issued_at>.<signature>`, the issue time inside the signed material.
+
+    Milliseconds since the epoch as a plain integer, not one of the ISO stamps the rest of
+    the schema uses: this string travels in an `Authorization: Bearer` header and RFC 6750's
+    b64token grammar has no colon in it. Why milliseconds rather than seconds is in now_ms.
+    `issued_at` is settable so a test can age a token without waiting.
+    """
+    stamp = now_ms() if issued_at is None else int(issued_at)
+    return f"{user_id}.{stamp}.{_sign(_material(user_id, stamp))}"
 
 
-def verify(token: str) -> str:
-    """Return the user_id. The signature check uses compare_digest, not ==."""
-    user_id, dot, signature = (token or "").rpartition(".")
-    if not dot or not user_id or not signature:
+def verify(token: str) -> tuple[str, int]:
+    """Return (user_id, issued_at) — the issue time in milliseconds. The signature check uses compare_digest, not ==.
+
+    Three things are refused and all of them say the same word outward: a token that is not
+    three parts, one whose signature does not match, and one older than TOKEN_TTL_SECONDS.
+    A token from the future is refused as well — a clock that far out is either wrong or
+    somebody extending their own expiry, and neither should be served.
+
+    The signature is checked before the age. The other order would tell a forger whether the
+    timestamp they invented was in range, which is a free oracle on a field they control.
+    """
+    user_id, dot, rest = (token or "").partition(".")
+    stamp, dot2, signature = rest.partition(".")
+    if not dot or not dot2 or not user_id or not stamp or not signature:
         raise AuthError("unauthorized")
-    if not hmac.compare_digest(signature, _sign(user_id)):
+    # Bytes, not str. compare_digest raises TypeError on a str holding anything outside ASCII,
+    # and the signature segment is whatever the Authorization header carried - http.server
+    # decodes it as latin-1 - so "Bearer u1.1.<e-acute>" used to reach here and escape as a
+    # 500, or drop an SSE stream with nothing written. Every refusal is meant to be one 401.
+    presented = signature.encode("utf-8", "surrogatepass")
+    if not hmac.compare_digest(presented, _sign(_material(user_id, stamp)).encode()):
         raise AuthError("unauthorized")
-    return user_id
+    # Only reachable with a valid signature, so this cannot be driven by a stranger — but a
+    # ValueError escaping here would be a 500 where every other refusal is a 401, and the
+    # rule is that nothing about why leaves the server.
+    try:
+        issued_at = int(stamp)
+    except ValueError:
+        raise AuthError("unauthorized") from None
+    age_ms = now_ms() - issued_at
+    if age_ms > TTL_MS or age_ms < -_CLOCK_SLACK_SECONDS * 1000:
+        raise AuthError("unauthorized")
+    return user_id, issued_at
 
 
 # ---------- passwords ----------

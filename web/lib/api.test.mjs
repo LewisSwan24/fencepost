@@ -14,7 +14,7 @@
 // handle is cached in a module-level variable, and sharing one would have each case
 // measuring the state the last one left behind.
 
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 let seq = 0;
@@ -179,7 +179,10 @@ function stubFetch(responses = {}) {
   globalThis.fetch = async (url, init) => {
     const path = String(url).replace(/^https?:[/][/][^/]+/, "");
     const body = init?.body ? JSON.parse(init.body) : null;
-    const entry = { path, body, ok: true };
+    // The Authorization header is recorded too. Before 2026-09-18 it was dropped, so no test
+    // could see which token a request carried: a sign-out that sent none, or a retry that
+    // resent the refused one, passed every case here. Found by the pre-deploy review.
+    const entry = { path, body, ok: true, auth: init?.headers?.authorization || null };
     calls.push(entry);
     let answer = responses[path];
     if (typeof answer === "function") answer = answer(calls);
@@ -484,4 +487,355 @@ test("a dashboard that already has something is left alone", async () => {
   await api.dashboard();
   assert.equal(redeems(calls).length, 0, "a working visitor was made to redeem again");
   assert.deepEqual(marks(store), ["jt-one|u_guest"], "their marks were thrown away");
+});
+
+// ── An expired or revoked token ──────────
+//
+// Tokens now have a thirty-day life and can be revoked by signing out (proxy/auth.py, and
+// users.tokens_valid_from). Before 2026-09-18 neither happened, so a 401 from a stored
+// token meant the secret had been rotated or the row was gone — rare enough that showing
+// an error was fine. Now it is an ordinary event with two different right answers, and
+// telling them apart is the whole point of these.
+
+const UNAUTHORIZED = { status: 401,
+                       payload: { error: { code: "unauthorized", message: "Sign in again." } } };
+
+function storedAccount(store, token = "acct-tok") {
+  store["fencepost.handle"] = "ada_l";
+  store["fencepost.session"] = JSON.stringify(
+    { user_id: "u_ada", handle: "ada_l", token, account: true });
+}
+
+test("a guest whose token has expired is given another, and never sees it", async () => {
+  // A guest's token is exchangeable again from the handle in localStorage, for the same
+  // handle and therefore the same person and the same entries. So an expiry a guest reaches
+  // is nobody's business but the client's: fetch another and carry on. Showing an error for
+  // something that can be fixed without asking is the thing this avoids.
+  const store = {};
+  const api = await freshApi({ store });
+  let refusals = 0;
+  const calls = stubFetch({
+    "/api/session": SESSION,
+    "/api/dashboard": () => (refusals++ === 0 ? UNAUTHORIZED : HELD),
+  });
+
+  const home = await api.dashboard();
+  assert.deepEqual(home, HELD, "the visitor got an error for an expiry we could have fixed");
+  assert.equal(calls.filter((c) => c.path === "/api/session").length, 2,
+               "it did not exchange a fresh token");
+  assert.equal(calls.filter((c) => c.path === "/api/dashboard").length, 2);
+});
+
+test("an account whose token has expired is signed out, not quietly turned into a guest", async () => {
+  // The opposite answer, and the reason the two cases cannot share one. An account's token
+  // cannot be re-obtained without the password, so retrying would sign them in as the guest
+  // identity beside it and carry on acting under a different name — on a screen still
+  // showing theirs. Much worse than an error.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store);
+  const calls = stubFetch({ "/api/session": SESSION, "/api/dashboard": UNAUTHORIZED });
+
+  await assert.rejects(() => api.dashboard(), (e) => e.status === 401);
+  assert.equal(calls.filter((c) => c.path === "/api/session").length, 0,
+               "it became somebody else rather than saying the session had ended");
+  assert.equal(store["fencepost.session"], undefined, "the dead session was left in place");
+});
+
+test("signing out tells the server, with the token it is about to throw away", async () => {
+  // Until 2026-09-18 this function cleared localStorage and nothing else, so the token it
+  // dropped stayed valid for ever and the button was a gesture.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store);
+  const calls = stubFetch({ "/api/sessions/revoke": { signed_out: true } });
+
+  await api.signOut();
+  const revoke = calls.filter((c) => c.path === "/api/sessions/revoke");
+  assert.equal(revoke.length, 1, "signing out never reached the server");
+  assert.equal(store["fencepost.session"], undefined);
+  assert.equal(store["fencepost.handle"], "ada_l",
+               "the guest handle went too, so signing out minted a new person");
+});
+
+test("signing out still signs you out of this browser when the server cannot be reached", async () => {
+  // The local half is certain and the server half is best effort. A network that is down
+  // must not leave somebody signed in while looking at a screen that says otherwise, and it
+  // must not throw at a caller whose next line is to navigate away.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store);
+  stubFetch({ "/api/sessions/revoke": new TypeError("Failed to fetch") });
+
+  await api.signOut();
+  assert.equal(store["fencepost.session"], undefined, "a failed revoke kept them signed in");
+});
+
+test("signing out with nothing to sign out of asks the server nothing", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  const calls = stubFetch({});
+  await api.signOut();
+  assert.deepEqual(calls, [], "it revoked a token it did not have");
+});
+
+// ── What the pre-deploy review found in the token lifecycle ──
+
+test("signing out sends the token it is revoking", async () => {
+  // The earlier test only counted the call. Dropping the credential from it passed, and in
+  // production that is a 401 swallowed by signOut's catch: the button back to a gesture.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "acct-tok");
+  const calls = stubFetch({ "/api/sessions/revoke": { signed_out: true } });
+  await api.signOut();
+  const revoke = calls.filter((c) => c.path === "/api/sessions/revoke");
+  assert.deepEqual(revoke.map((c) => c.auth), ["Bearer acct-tok"]);
+});
+
+test("a guest's retry carries the token it was just given, not the one refused", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  let issued = 0;
+  let refusals = 0;
+  const calls = stubFetch({
+    "/api/session": () => ({ ...SESSION, token: "tok-" + (++issued) }),
+    "/api/dashboard": () => (refusals++ === 0 ? UNAUTHORIZED : HELD),
+  });
+  await api.dashboard();
+  assert.deepEqual(calls.filter((c) => c.path === "/api/dashboard").map((c) => c.auth),
+                   ["Bearer tok-1", "Bearer tok-2"], "the retry resent the refused token");
+});
+
+test("once an account's sign-in has ended, later calls do not quietly become the guest", async () => {
+  // The first version refused exactly one call. It cleared the session and threw; the very
+  // next call found no session, exchanged the guest handle, and went through as the guest -
+  // on a screen still showing the account's name. A storyboard created that way belonged to
+  // somebody else. Found by the pre-deploy review.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store);
+  const calls = stubFetch({ "/api/session": SESSION, "/api/dashboard": UNAUTHORIZED });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended" && e.status === 401);
+  }
+  assert.equal(calls.filter((c) => c.path === "/api/session").length, 0,
+               "a later call exchanged the guest handle and acted as the guest");
+  assert.equal(calls.filter((c) => c.path === "/api/dashboard").length, 1,
+               "calls after the first still went out with the dead token");
+});
+
+test("signing in again after the sign-in ended works straight away", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "dead-tok");
+  const calls = stubFetch({
+    "/api/login": { user_id: "u_ada", handle: "ada_l", token: "new-tok" },
+    "/api/dashboard": (seen) => (seen.at(-1).auth === "Bearer new-tok" ? HELD : UNAUTHORIZED),
+  });
+  await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended");
+  await api.signIn("ada_l", "correct horse battery staple");
+  assert.deepEqual(await api.dashboard(), HELD, "the ended state outlived signing back in");
+  assert.equal(calls.filter((c) => c.path === "/api/session").length, 0);
+});
+
+test("a stale tab takes the newer sign-in rather than wiping it", async () => {
+  // Two tabs on one account. In the other tab the person signs out - every token of theirs
+  // is revoked - and signs straight back in, which writes a new session to storage. This tab
+  // still holds the old token in memory. Its next call is refused, and it used to clear
+  // storage without looking: the new sign-in was wiped, and every tab was the guest again.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "old-tok");
+  let otherTabSignedIn = false;
+  stubFetch({
+    "/api/dashboard": (seen) => {
+      const auth = seen.at(-1).auth;
+      if (!otherTabSignedIn) return HELD;
+      return auth === "Bearer new-tok" ? HELD : UNAUTHORIZED;
+    },
+  });
+  await api.dashboard();                               // this tab now holds old-tok in memory
+  store["fencepost.session"] = JSON.stringify(
+    { user_id: "u_ada", handle: "ada_l", token: "new-tok", account: true });
+  otherTabSignedIn = true;
+  assert.deepEqual(await api.dashboard(), HELD, "the stale tab did not pick up the new sign-in");
+  assert.match(store["fencepost.session"] || "", /new-tok/, "the newer sign-in was wiped");
+});
+
+test("Sign out does not wait on a server that never answers", async () => {
+  // request() has no timeout, and the account screen awaits signOut before it navigates. A
+  // slow API left the tap looking dead. The wait is bounded; the revoke itself carries on.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store);
+  globalThis.fetch = () => new Promise(() => {});
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    let finished = false;
+    const done = api.signOut().then(() => { finished = true; });
+    await Promise.resolve();
+    assert.equal(finished, false);
+    mock.timers.tick(api.REVOKE_WAIT_MS);
+    await done;
+    assert.equal(finished, true);
+    assert.equal(store["fencepost.session"], undefined);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// ── The pre-deploy recheck ──
+
+function fetchScript(handlers) {
+  // A hand-driven fetch: each path answers from its handler, which may hold the answer back.
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url).replace(/^https?:[/][/][^/]+/, "");
+    const auth = init?.headers?.authorization || null;
+    calls.push({ path, auth });
+    const answer = await (handlers[path] || (() => ({})))({ path, auth, calls });
+    if (answer && answer.status) {
+      return { ok: false, status: answer.status, json: async () => answer.payload };
+    }
+    return { ok: true, status: 200, json: async () => answer };
+  };
+  return calls;
+}
+
+test("a stale tab never takes up another person's sign-in", async () => {
+  // The first fix took up ANY newer stored session. ada's stale tab, after bob signed in in
+  // another tab on the same device, replayed ada's request as bob.
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "ada-tok");
+  let bobSignedIn = false;
+  const calls = fetchScript({
+    "/api/dashboard": ({ auth }) => (!bobSignedIn || auth === "Bearer bob-tok" ? HELD : UNAUTHORIZED),
+  });
+  await api.dashboard();
+  store["fencepost.session"] = JSON.stringify(
+    { user_id: "u_bob", handle: "bob", token: "bob-tok", account: true });
+  bobSignedIn = true;
+  await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended");
+  assert.ok(!calls.some((c) => c.auth === "Bearer bob-tok"), "ada's request went out as bob");
+  assert.match(store["fencepost.session"], /bob-tok/, "bob's sign-in was wiped by ada's tab");
+});
+
+test("a taken-up session that is also dead ends like any other", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "old-tok");
+  let rotated = false;
+  fetchScript({ "/api/dashboard": () => (rotated ? UNAUTHORIZED : HELD) });
+  await api.dashboard();
+  store["fencepost.session"] = JSON.stringify(
+    { user_id: "u_ada", handle: "ada_l", token: "new-tok", account: true });
+  rotated = true;
+  await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended",
+                       "the second 401 escaped as the server's own unauthorized");
+});
+
+test("after the sign-in ended, the same person signing in elsewhere is picked up here", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "dead-tok");
+  fetchScript({ "/api/dashboard": ({ auth }) => (auth === "Bearer new-tok" ? HELD : UNAUTHORIZED) });
+  await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended");
+  store["fencepost.session"] = JSON.stringify(
+    { user_id: "u_ada", handle: "ada_l", token: "new-tok", account: true });
+  assert.deepEqual(await api.dashboard(), HELD, "the new sign-in needed a reload to be seen");
+});
+
+test("a 401 that arrives after Sign out does not end the guest that follows", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "acct-tok");
+  let release;
+  let first = true;
+  const calls = fetchScript({
+    "/api/dashboard": () => {
+      if (!first) return HELD;
+      first = false;
+      return new Promise((resolve) => { release = () => resolve(UNAUTHORIZED); });
+    },
+    "/api/session": () => SESSION,
+    "/api/sessions/revoke": () => ({ signed_out: true }),
+  });
+  const inFlight = api.dashboard().catch((e) => e);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await api.signOut();
+  release();
+  await inFlight;
+  assert.deepEqual(await api.dashboard(), HELD, "the late 401 left the guest locked out");
+  assert.ok(calls.some((c) => c.path === "/api/session"));
+});
+
+test("Sign out after the sign-in ended does not revoke somebody else's", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "ada-tok");
+  const calls = fetchScript({
+    "/api/dashboard": () => UNAUTHORIZED,
+    "/api/sessions/revoke": () => ({ signed_out: true }),
+  });
+  await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended");
+  store["fencepost.session"] = JSON.stringify(
+    { user_id: "u_bob", handle: "bob", token: "bob-tok", account: true });
+  await api.signOut();
+  assert.ok(!calls.some((c) => c.auth === "Bearer bob-tok"), "bob was signed out by ada's tab");
+  assert.match(store["fencepost.session"], /bob-tok/);
+});
+
+test("signing out is a way out of the ended state", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  storedAccount(store, "dead-tok");
+  const calls = fetchScript({
+    "/api/dashboard": ({ auth }) => (auth === "Bearer dead-tok" ? UNAUTHORIZED : HELD),
+    "/api/session": () => SESSION,
+  });
+  await assert.rejects(() => api.dashboard(), (e) => e.code === "session_ended");
+  await api.signOut();
+  assert.deepEqual(await api.dashboard(), HELD);
+  assert.ok(calls.some((c) => c.path === "/api/session"), "sign-out did not lead back to the guest");
+});
+
+test("a 401 on a sibling call while a restore is joining does not hand back null", async () => {
+  // ensureSession used to return the module variable after awaiting joinDemo. A sibling's
+  // 401 in the meantime set it to null, and the caller hit a TypeError.
+  const store = {};
+  const api = await freshApi({ store, joinToken: "jt-hold" });
+  storedAccount(store, "acct-tok");
+  let releaseRedeem;
+  fetchScript({
+    "/api/share-links/redeem": () => new Promise((resolve) => {
+      releaseRedeem = () => resolve({ storyboard_id: "sb_demo", level: "reshare" });
+    }),
+    "/api/dashboard": () => UNAUTHORIZED,
+  });
+  const first = api.dashboard().catch((e) => e);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await api.dashboard().catch(() => {});
+  releaseRedeem();
+  const err = await first;
+  assert.equal(err?.code, "session_ended", `the restore handed back: ${err?.name}: ${err?.message}`);
+});
+
+test("a guest's retry never takes up an account that appeared in storage", async () => {
+  const store = {};
+  const api = await freshApi({ store });
+  let refused = false;
+  const calls = fetchScript({
+    "/api/session": () => SESSION,
+    "/api/dashboard": () => {
+      if (refused) return HELD;
+      refused = true;
+      store["fencepost.session"] = JSON.stringify(
+        { user_id: "u_bob", handle: "bob", token: "bob-tok", account: true });
+      return UNAUTHORIZED;
+    },
+  });
+  assert.deepEqual(await api.dashboard(), HELD);
+  assert.ok(!calls.some((c) => c.auth === "Bearer bob-tok"), "the guest's retry went out as bob");
 });

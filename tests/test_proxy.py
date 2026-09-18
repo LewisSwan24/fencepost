@@ -88,6 +88,95 @@ class Auth(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual("Sounds like a brushtail.", payload["reply"])
 
+    # ── The issue time, added 2026-09-18 ──
+    #
+    # A token used to be `<user_id>.<signature>`: deterministic, so the same person always
+    # got the same string, and eternal, because nothing in it said when it was made. That is
+    # a permanent bearer password equal to the user id, and the only way to invalidate one
+    # was rotating the server secret, which signs out everybody at once.
+
+    def test_the_token_carries_its_issue_time_in_the_signed_material(self):
+        """Three parts, and the middle one is a number. If the stamp were outside the
+        signature anybody could edit their own expiry, which is the same as not having one.
+        """
+        user_id, stamp, signature = auth.issue("u1").split(".")
+        self.assertEqual("u1", user_id)
+        self.assertTrue(stamp.isdigit(), stamp)
+        self.assertEqual(64, len(signature))
+        # Edited to a stamp that is still comfortably inside the window, so the only thing
+        # that can refuse it is the signature. An earlier version of this test moved the
+        # stamp a month forward, which the clock check refuses on its own — so it passed
+        # even with the stamp left out of the signed material entirely. Caught by mutation,
+        # not by reading.
+        for shift in (-1000, +1000):
+            with self.subTest(shift=shift):
+                edited = f"{user_id}.{int(stamp) + shift}.{signature}"
+                status, _ = handle(chat(), edited, deps_for(FakeClient("hi")))
+                self.assertEqual(401, status,
+                                 "the stamp is outside the signature, so the holder sets "
+                                 "their own expiry and their own revocation cutoff")
+
+    def test_an_expired_token_is_refused(self):
+        old = auth.issue("u1", auth.now_ms() - auth.TTL_MS - 1)
+        status, payload = handle(chat(), old, deps_for(FakeClient("hi")))
+        self.assertEqual(401, status)
+        self.assertEqual("unauthorized", payload["error"]["code"])
+
+    def test_a_token_from_just_inside_the_window_still_works(self):
+        """The boundary in the direction that matters. An off-by-one the wrong way here
+        signs everybody out a month early and looks like the server being broken."""
+        fresh = auth.issue("u1", auth.now_ms() - auth.TTL_MS + 60_000)
+        status, _ = handle(chat(), fresh, deps_for(FakeClient("hi")))
+        self.assertEqual(200, status)
+
+    def test_a_token_dated_far_ahead_is_refused_but_small_drift_is_not(self):
+        """Several instances issue these and one can run a little fast, so a minute ahead
+        has to pass or a fast instance's token is refused by a slow one. An hour ahead is
+        either a broken clock or somebody granting themselves an extension."""
+        status, _ = handle(chat(), auth.issue("u1", auth.now_ms() + 60_000),
+                           deps_for(FakeClient("hi")))
+        self.assertEqual(200, status, "a minute of clock drift locked somebody out")
+        status, _ = handle(chat(), auth.issue("u1", auth.now_ms() + 3_600_000),
+                           deps_for(FakeClient("hi")))
+        self.assertEqual(401, status, "a token could be dated into next hour")
+
+    def test_a_rolled_back_verifier_refuses_the_new_tokens(self):
+        """If the API is rolled back past 2026-09-18, the old verifier meets new tokens. It
+        split on the LAST dot, so without a version tag it read "<uid>.<ms>" as a user id,
+        signed that, matched - and admitted a user with no row, who then got 200s and 500s
+        and never the 401 that makes a client recover. Found by the pre-deploy review.
+        This is the old verify in effect, pointed at a new token."""
+        import hashlib, hmac
+        secret = os.environ["FENCEPOST_TOKEN_SECRET"].encode()
+
+        def old_verify(token):
+            user_id, dot, signature = token.rpartition(".")
+            expected = hmac.new(secret, user_id.encode(), hashlib.sha256).hexdigest()
+            return bool(dot) and hmac.compare_digest(signature, expected)
+
+        self.assertFalse(old_verify(auth.issue("u1")),
+                         "a rolled-back API would accept a new token as a phantom user")
+
+    def test_a_token_in_the_old_two_part_shape_is_refused(self):
+        """Deploying this signs out everyone holding an old token, which is the intended
+        cost: the alternative is accepting the unbounded shape for a grace period, and the
+        unbounded shape is the defect. Guests are re-issued silently under open sign-up."""
+        status, _ = handle(chat(), f"u1.{auth._sign('u1')}", deps_for(FakeClient("hi")))
+        self.assertEqual(401, status)
+
+    def test_nothing_about_which_part_failed_leaves_the_server(self):
+        """A tampered signature, an expired stamp and a malformed token all say the same
+        word. Distinguishing them tells a forger which half to work on."""
+        said = set()
+        # The last two carry characters outside ASCII in the signature, which compare_digest
+        # on str raised TypeError for - a 500, not a 401, from a header anybody can send.
+        for bad in (TOKEN[:-1] + "0", auth.issue("u1", 0), "u1.notanumber.x", "", "u1",
+                    "u1.1.\u00e9", TOKEN[:-1] + "\u00e9"):
+            status, payload = handle(chat(), bad, deps_for(FakeClient("hi")))
+            self.assertEqual(401, status, bad[:20])
+            said.add(payload["error"]["message"])
+        self.assertEqual(1, len(said), f"the refusals differ: {said}")
+
 
 class Screener(unittest.TestCase):
     def test_fail_open_when_upstream_dies(self):

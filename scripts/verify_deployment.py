@@ -212,11 +212,18 @@ def main():
     # The dashboard. This walk had never once loaded the first screen of the product, so
     # a deployment could answer every check below and still open blank. It is also the only
     # endpoint that computes entry_count and latest_species, two correlated subqueries that
-    # nothing else exercises: the timeline returns entries, not counts, and the cover on the
-    # list screen is the only reader of the species.
+    # nothing else exercises — the cover on the list screen is the only reader of the species.
+    #
+    # entry_count is no longer the only count, though: since the timeline was paged it sends
+    # `sightings` as well, so the header can state the whole while showing one page. Two
+    # counts from the same predicate in two endpoints is a thing that drifts, and both are in
+    # hand right here, so they get compared.
     status, home = client.send("/api/dashboard", token=token)
     mine_now = [b for b in home.get("active", []) if b.get("id") == storyboard]
     row = mine_now[0] if mine_now else {}
+    record("the two counts agree",
+           view.get("sightings") == row.get("entry_count"),
+           f'timeline {view.get("sightings")} vs dashboard {row.get("entry_count")}')
     record("it is on my dashboard",
            status == 200 and len(mine_now) == 1 and row.get("level") == "reshare",
            f"HTTP {status}, {len(home.get('active', []))} active, level {row.get('level')}")

@@ -179,6 +179,19 @@ class Entrypoint(unittest.TestCase):
         self.assertEqual({"done": True}, frames[-1])
 
 
+class DeployCheckCoversEveryRoute(unittest.TestCase):
+    """scripts/check_deploy.py lists every route by hand, and the list drifted: it never
+    learned /api/sessions/revoke, so it reported green against an API that had not been
+    redeployed. Found by the pre-deploy review. Compared with the dispatch table here, so
+    the next route added is either listed or this fails."""
+
+    def test_every_dispatched_route_is_probed(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import check_deploy
+        self.assertEqual(sorted(entry.POST_ROUTES), sorted(check_deploy.POST_ROUTES))
+        self.assertEqual(sorted(entry.GET_ROUTES), sorted(check_deploy.GET_ROUTES))
+
+
 class Cors(unittest.TestCase):
     """Two Vercel projects means cross-origin, and a browser sends a preflight first."""
 

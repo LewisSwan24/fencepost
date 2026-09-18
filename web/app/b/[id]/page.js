@@ -11,7 +11,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { storyboard, isArchived, castVote, me, editEntry, deleteEntry, removeEntry, isOwner } from "../../../lib/api";
+import { storyboard, timeline, isArchived, castVote, me, editEntry, deleteEntry, removeEntry, isOwner } from "../../../lib/api";
 import { SPECIES_LABEL } from "../../../lib/fixtures";
 import { COPY, reasonSentence } from "../../../lib/copy";
 import { stamp, countLabel, monthDay } from "../../../lib/format";
@@ -19,6 +19,7 @@ import { BackButton, Sheet, ui } from "../../../components/ui";
 import Chat from "../../../components/Chat";
 import Shot from "../../../components/Shot";
 import { frameFor } from "../../../lib/frames";
+import { appendPage, fillTo } from "../../../lib/paging";
 import styles from "./page.module.css";
 
 export default function Storyboard({ params }) {
@@ -42,8 +43,15 @@ export default function Storyboard({ params }) {
   const [note, setNote] = useState(null);
   const [owner, setOwner] = useState(false);
 
-  function load() {
-    storyboard(id).then(setView, (e) => setError(e.message));
+  // `keep` is how many entries were showing: a reload after an edit or a delete fetches at
+  // least that many again rather than collapsing to page one, and on arrival from posting it
+  // keeps going until the new sighting is in the list. See lib/paging.js for what went wrong
+  // without either. Returns its promise, so the callers below can wait for it.
+  function load(keep = 0) {
+    return storyboard(id)
+      .then((first) => fillTo(first, (after) => timeline(id, after),
+                              { atLeast: keep, containing: justPosted }))
+      .then(setView, (e) => setError(e.message));
   }
 
   useEffect(() => {
@@ -75,7 +83,41 @@ export default function Storyboard({ params }) {
   const level = view?.level;
   const canContribute = !archived && level !== "view";
   const canShare = level === "reshare";
-  const people = [...new Set(entries.map((e) => e.handle))];
+  // From the server now, not deduplicated out of the entries on screen. /api/timeline is
+  // paged, so counting what has loaded would answer "who is in the part you have read" and
+  // present it as "who is in this story". Same reason the count and the date come from the
+  // response rather than the array: see TIMELINE_PAGE in proxy/app.py.
+  // Each of the three falls back to what this screen used to compute for itself. Not
+  // defensiveness for its own sake: a `git push` rebuilds fencepost-web and does nothing to
+  // the API, so between the two deploys this page runs against a server that has never heard
+  // of these fields. Without the fallbacks that window shows a storyboard with no
+  // contributors and no date — quietly, and on the live site. CLAUDE.md working rule 7.
+  const people = view?.participants || [...new Set(entries.map((e) => e.handle))];
+  // The server names at most PARTICIPANT_LIMIT contributors and counts them all.
+  const morePeople = Math.max(0, (view?.contributors ?? people.length) - people.length);
+  const sightings = view?.sightings ?? entries.length;
+  const firstSeen = view?.first_seen || entries.map((e) => e.created_at).sort()[0];
+
+  // The next page, appended. `view.next` is the cursor the server handed back, or null when
+  // the list is finished, so the button exists only when there is really more to fetch.
+  // Appending into `view` rather than into a second piece of state means load() resets the
+  // list on any refetch, which is what every other mutation on this screen already relies on.
+  async function loadMore() {
+    if (!view?.next || busy) return;
+    setBusy(true);
+    try {
+      const cursor = view.next;
+      const page = await timeline(id, cursor);
+      // Only onto the list it was fetched for. If a reload replaced the list while this page
+      // was on its way, the page belongs to a list that no longer exists, and appending it
+      // repeated a card. appendPage also drops anything already held, for the same reason.
+      setView((prev) => (prev?.next === cursor ? appendPage(prev, page) : prev));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function vote(entryId, choice) {
     setVoted((prev) => ({ ...prev, [entryId]: choice }));
@@ -116,7 +158,7 @@ export default function Storyboard({ params }) {
       }
       setEditing(null);
       setNote(result.unchanged ? COPY.noChanges : null);
-      load();
+      await load(entries.length);
     } catch (err) {
       setError(err.message);
     }
@@ -130,7 +172,9 @@ export default function Storyboard({ params }) {
       await deleteEntry(confirming);
       setConfirming(null);
       setNote(COPY.deleted);
-      load();          // the count, the participants and the cover all follow this refetch
+      // Awaited, and as long as it was: busy stays set until the list is back, so Show more
+      // cannot fetch a page for the list that is about to be replaced.
+      await load(entries.length);   // the count, the participants and the cover all follow
     } catch (err) {
       setError(err.message);
     }
@@ -144,7 +188,7 @@ export default function Storyboard({ params }) {
       await removeEntry(clearing);
       setClearing(null);
       setNote(COPY.removed);
-      load();
+      await load(entries.length);
     } catch (err) {
       setError(err.message);
     }
@@ -178,27 +222,31 @@ export default function Storyboard({ params }) {
                 is the only one; on this page the pictures belong to the entries. */}
             <h1 className={styles.title}>{view.title}</h1>
             <div className={styles.meta}>
-              <span>{countLabel(entries.length, "sighting", "sightings")}</span>
+              <span>{countLabel(sightings, "sighting", "sightings")}</span>
               {/* The collective half: what this street has kept together, with nobody's
                   name on it. A shared total characterises no individual, and it is the one
-                  number that points at what the product is actually about. Computed from
-                  the entries already on screen, so it costs no request. */}
-              {entries.length ? (
-                <span className={styles.since}>
-                  since {monthDay(entries.map((e) => e.created_at).sort()[0])}
-                </span>
+                  number that points at what the product is actually about. Which is why it
+                  is the storyboard's total and not this page's: /api/timeline sends
+                  `sightings` and `first_seen` counted over every live entry, because a page
+                  of twenty cannot answer either and guessing from the array would put two
+                  confident wrong numbers in the one place that says what this is for. */}
+              {firstSeen ? (
+                <span className={styles.since}>since {monthDay(firstSeen)}</span>
               ) : null}
             </div>
-            {/* Participants are the deduplicated authors from the timeline.
-                /api/dashboard does not return participants, so following the prototype and
-                reading view.participants would leave this permanently empty — and this is
-                "who is in this story", not "who has access" (that list is on the share
-                screen, and needs reshare to see). */}
+            {/* "Who is in this story", not "who has access" — that list is on the share
+                screen and needs reshare to see. This used to deduplicate the authors of the
+                entries on screen, because /api/dashboard does not return participants and
+                the prototype's view.participants was permanently empty. /api/timeline
+                returns them now, in first-appearance order, which is the order that
+                deduplication produced; it has to come from the server because the entries on
+                screen are one page of them. */}
             {people.length ? (
               <div className={styles.people}>
                 {people.map((h) => (
                   <span key={h} className={styles.who}>@{h}</span>
                 ))}
+                {morePeople ? <span className={styles.who}>+{morePeople} more</span> : null}
               </div>
             ) : null}
 
@@ -369,6 +417,18 @@ export default function Storyboard({ params }) {
                 );
               })
             )}
+
+            {/* Drawn only when the server says there is another page. `next` is a cursor or
+                null, so this is never a button that could be pressed for nothing — the rule
+                in web/README.md. It loads later sightings, because the timeline runs oldest
+                first, and it appends rather than replacing: somebody reading down a long
+                storyboard should not lose their place to find out how it ends. */}
+            {view.next ? (
+              <button type="button" className={styles.closeRow} disabled={busy}
+                      onClick={loadMore}>
+                {busy ? "Loading…" : COPY.moreSightings}
+              </button>
+            ) : null}
 
             {/* Closing sits at the end of the timeline rather than in the footer: it is
                 rare, owner-only and irreversible, and does not belong beside "Add your

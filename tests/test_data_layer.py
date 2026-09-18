@@ -20,7 +20,7 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 from proxy import auth                                               # noqa: E402
 from proxy import db as db_module                                   # noqa: E402
-from proxy.app import Deps, handle, _record_screening               # noqa: E402
+from proxy.app import TIMELINE_PAGE, Deps, handle, _record_screening  # noqa: E402
 from proxy import roles                                             # noqa: E402
 from proxy.db import (Database, SqliteContext, SqliteHistory,        # noqa: E402
                       SqliteRateLimiter, SqliteScreeningLog)
@@ -391,7 +391,8 @@ class Retention(Fixture):
         self.history.append(self.guest, self.storyboard, "user", "their question")
         self.screening_row(self.guest, "reject", 1)
         self.db.delete_account(self.guest)
-        self.assertEqual(["mine"], [e["story"] for e in self.db.timeline(self.storyboard)])
+        self.assertEqual(["mine"],
+                         [e["story"] for e in self.db.timeline(self.storyboard, TIMELINE_PAGE)])
         self.assertEqual(0, self.remaining())
         self.assertEqual(0, self.db.conn.execute(
             "SELECT COUNT(*) AS c FROM chat_messages WHERE user_id = ?",
@@ -413,7 +414,7 @@ class Retention(Fixture):
         self.assertEqual(1, removed["votes_on_my_entries"])
         self.assertEqual(0, self.db.conn.execute(
             "SELECT COUNT(*) AS c FROM review_votes").fetchone()["c"])
-        self.assertEqual([], [e["story"] for e in self.db.timeline(self.storyboard)])
+        self.assertEqual([], [e["story"] for e in self.db.timeline(self.storyboard, TIMELINE_PAGE)])
 
     def test_deleting_an_account_leaves_an_anonymous_tombstone(self):
         self.db.delete_account(self.guest)
@@ -739,7 +740,8 @@ class StoredFrame(Fixture):
     def test_the_masked_frame_reaches_the_timeline(self):
         self.db.add_entry(self.storyboard, self.guest, "ringtail", story="on the fence",
                           still=self.FRAME)
-        self.assertEqual([self.FRAME], [e["still"] for e in self.db.timeline(self.storyboard)])
+        self.assertEqual([self.FRAME],
+                         [e["still"] for e in self.db.timeline(self.storyboard, TIMELINE_PAGE)])
 
     def test_the_frame_never_enters_the_assistant_context(self):
         """The one that matters most, and the reason this class exists.
@@ -765,7 +767,7 @@ class StoredFrame(Fixture):
         entry = self.db.add_entry(self.storyboard, self.guest, "ringtail", story="mine",
                                   still=self.FRAME)
         self.db.remove_entry(entry, self.owner)
-        self.assertEqual([], self.db.timeline(self.storyboard))
+        self.assertEqual([], self.db.timeline(self.storyboard, TIMELINE_PAGE))
         # Still in the row, and unreachable — which is what a soft delete is. The 30-day
         # purge is what removes the bytes; see operations 1.
         row = self.db.conn.execute("SELECT still, deleted_at FROM entries WHERE id = ?",
@@ -786,7 +788,8 @@ class StoredFrame(Fixture):
         """None is not a failure. The placeholder path has no clip behind it, and a browser
         that would not decode one arrives here the same way."""
         self.db.add_entry(self.storyboard, self.guest, "brushtail", story="no clip")
-        self.assertEqual([None], [e["still"] for e in self.db.timeline(self.storyboard)])
+        self.assertEqual([None],
+                         [e["still"] for e in self.db.timeline(self.storyboard, TIMELINE_PAGE)])
 
 
 class Timestamps(Fixture):

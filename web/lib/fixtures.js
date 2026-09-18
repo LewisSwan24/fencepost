@@ -10,6 +10,10 @@
 // that crosses a red line, and in the room there is no second chance. See CLAUDE.md. The
 // CRUD half runs against the real backend.
 
+// The one import in this file. copy.js imports nothing, so this cannot become a cycle; the
+// extension is kept because node --test resolves only the spelled-out path.
+import { DEFAULT_EXPIRY_DAYS } from "./copy.js";
+
 export const PROMPT_VERSION = "v0.11";
 
 export const SPECIES = [
@@ -390,11 +394,41 @@ export function boardAccess(id) {
   return { level: board?.level || null, status: board?.status || null };
 }
 
-export function timeline(storyboardId) {
+// Matches TIMELINE_PAGE in proxy/app.py. Offline mode has to page the same way the server
+// does or it is not standing in for the server — and the difference would only show up on a
+// storyboard long enough to need a second page, which is exactly where nobody looks.
+const PAGE = 20;
+
+export function timeline(storyboardId, after) {
+  const all = (TIMELINES[storyboardId] || []).map((e) => ({ ...e }));
+  const at = after ? all.findIndex((e) => e.id === after) : -1;
+  // The server answers 400 to a cursor this storyboard never issued, rather than starting
+  // again at page one; findIndex's -1 used to do exactly that here. Offline has to refuse it
+  // the same way or it is not standing in for the server.
+  if (after && at === -1) {
+    throw Object.assign(new Error("The assistant could not read that request."),
+                        { status: 400, code: "bad_request" });
+  }
+  const start = at + 1;
+  const page = all.slice(start, start + PAGE);
   return {
     storyboard_id: storyboardId,
     ...STORYBOARDS[storyboardId],
-    entries: (TIMELINES[storyboardId] || []).map((e) => ({ ...e })),
+    entries: page,
+    next: start + PAGE < all.length ? page[page.length - 1].id : null,
+    // Counted over the whole list, not the page: the header says how many sightings there
+    // are and what date the storyboard runs from, and neither is a fact about a page.
+    sightings: all.length,
+    // Worked out from the entries, oldest first as the server orders them, rather than the
+    // prototype's hand-written list on STORYBOARDS - which never changed, so a storyboard
+    // made a moment ago showed a contributor with no sightings, and deleting somebody's last
+    // one left their name up. Found by the pre-deploy review.
+    participants: [...new Set([...all].reverse().map((e) => e.handle))],
+    // The last element rather than a sort of the stamps. These arrays run newest first and
+    // submitEntry unshifts, so the oldest is always at the end — and the fixture stamps carry
+    // a +10:00 offset while a freshly posted one is written in Z, which a string sort gets
+    // right only by accident.
+    first_seen: all.length ? all[all.length - 1].created_at : null,
   };
 }
 
@@ -421,7 +455,12 @@ export function submitEntry(body) {
     fun_fact: body.fun_fact || null,
     story: body.story,
     being_checked: 0,
-    created_at: new Date().toISOString(),
+    // Offset by the sequence number so two entries posted in the same millisecond do not
+    // share a stamp. The server does not need this — it writes to the second and breaks ties
+    // on rowid — but a fixture row has no rowid, so identical stamps leave this list with no
+    // defined order at all. It surfaced as a test that could not tell a whole-storyboard
+    // first_seen from a per-page one, because every row was stamped alike.
+    created_at: new Date(Date.now() + entrySeq).toISOString(),
   };
   const list = TIMELINES[body.storyboard_id] || (TIMELINES[body.storyboard_id] = []);
   list.unshift(entry);
@@ -708,7 +747,7 @@ export function revokeGrant({ storyboardId, userId }) {
 }
 
 export function issueShareLink({ storyboardId, level, expiresInDays }) {
-  const days = expiresInDays || 7;
+  const days = expiresInDays || DEFAULT_EXPIRY_DAYS;
   const id = "sl_" + Math.random().toString(36).slice(2, 8);
   const expires_at = new Date(Date.now() + days * 86400000).toISOString();
   // The share screen loads the code list again as soon as a code is issued, so a code that

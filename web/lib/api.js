@@ -191,6 +191,20 @@ export const assistantIsLive = MODE === "live";
 // sign-up, and putting a bearer token in localStorage is asking for trouble.
 let session = null;
 let pending = null;
+// Set when an account's token is refused and there is no other signed-in session in this
+// browser to take its place. While it is set, calls refuse rather than quietly exchanging the
+// guest handle for a token: the screen may still be showing the account's name, and acting as
+// somebody else under it is the one outcome worse than an error. Cleared by signing in,
+// registering or signing out, and by a reload - which is where carrying on as the guest is a
+// choice the person can see they are making. Found by the pre-deploy review: the old guard
+// covered exactly one call, and the next one posted as the guest.
+let ended = null;
+// Bumped by every sign-in and sign-out. A request sent under one generation that comes back
+// 401 under another belongs to a session that has already been replaced or signed out, and
+// must not decide anything about the current one: a late 401 used to set `ended` again just
+// after Sign out cleared it, and the guest then saw "Your sign-in has ended". Found by the
+// pre-deploy recheck.
+let gen = 0;
 
 // The whole session is kept, not only the token: the interface needs user_id to tell
 // whether an entry is its own (your own entry shows no vote buttons, and the server answers
@@ -198,6 +212,16 @@ let pending = null;
 // can revoke access).
 async function ensureSession() {
   if (session) return session;
+  if (ended) {
+    // The same person signing in again in another tab is the way out that "Sign in again"
+    // promises, and it has to reach this tab without a reload. Anybody else's session in
+    // storage is not ours to pick up while this screen still shows the person who ended.
+    const stored = readSession();
+    if (!(stored && stored.user_id === ended.user_id && stored.token !== ended.token)) {
+      throw new ApiError(COPY.sessionEnded, 401, "session_ended");
+    }
+    ended = null;
+  }
   // Somebody who signed in stays signed in across a refresh. Nothing is verified here:
   // a token that has stopped working answers 401 on the first call that uses it, and
   // that is where it gets cleared. Checking up front would cost a round trip on every
@@ -215,8 +239,18 @@ async function ensureSession() {
     // It costs nothing when there is nothing to do: joinDemo compares the mark first and
     // returns without a request.
     await joinDemo(saved.token, saved.user_id);
-    return session;
+    // The local value, not the module's. joinDemo awaits a request, and a sibling call's 401
+    // can clear `session` in the meantime; returning the variable then handed the caller
+    // null, and the You page showed a raw TypeError.
+    return saved;
   }
+  return exchangeGuest();
+}
+
+// The guest's token, exchanged from the handle this browser keeps. Separate from
+// ensureSession so the guest's 401 retry can use it directly: going through ensureSession
+// would restore whatever account is in storage, which may be somebody else's.
+function exchangeGuest() {
   const handle = visitorHandle();
   // No handle means this browser cannot keep one, and asking the server for a token anyway
   // would write a person into the database who can never come back as themselves. Said in
@@ -225,9 +259,10 @@ async function ensureSession() {
   if (!pending) {
     pending = request("/api/session", { body: { handle } })
       .then(async (got) => {
-        session = { ...got, account: false };
+        const fresh = { ...got, account: false };
+        session = fresh;
         await joinDemo(got.token, got.user_id);
-        return session;
+        return fresh;          // as above: never the module variable after an await
       })
       .finally(() => (pending = null));
   }
@@ -341,19 +376,51 @@ export class ApiError extends Error {
   }
 }
 
-async function call(path, options = {}) {
+async function call(path, options = {}, adopted = false) {
   const current = await ensureSession();
+  const generation = gen;
   try {
     return await request(path, { ...options, auth: current.token });
   } catch (err) {
-    // A stored token stops working if the server secret is rotated or the row goes. Left
-    // in place it fails every call for ever, and the interface reads as broken rather
-    // than as signed out. Dropped here, the next page load starts again as a guest.
-    if (err && err.status === 401) {
-      session = null;
-      saveSession(null);
+    // A stored token stops working if the server secret is rotated, the row goes, somebody
+    // signed out, or — since 2026-09-18 — it simply reached its thirty days. Left in place
+    // it fails every call for ever, and the interface reads as broken rather than as
+    // signed out. Dropped here, the next page load starts again as a guest.
+    if (!err || err.status !== 401) throw err;
+    // A session signed out or replaced while this was in flight: nothing to decide here.
+    if (generation !== gen) throw err;
+    // Only what belongs to the token that failed. Another tab may have signed out and back in
+    // since this one loaded, and storage now holds that newer session: clearing it wiped a
+    // sign-in that was working. So a newer stored session is taken up - but only when it is
+    // the SAME person. The first version took any, and the pre-deploy recheck showed what
+    // that meant: ada's stale tab, after bob signed in in another tab on the same device,
+    // replayed ada's request as bob while the screen still said ada. The retry goes back
+    // through call(), once, so a taken-up token that is also dead is handled like any other.
+    const stored = readSession();
+    if (!adopted && stored && stored.token !== current.token
+        && stored.user_id === current.user_id) {
+      session = stored;
+      return call(path, options, true);
     }
-    throw err;
+    if (stored && stored.token === current.token) saveSession(null);
+    if (session === current) session = null;
+    const wasAccount = !!current.account;
+    // A guest's token can be exchanged again from the handle in localStorage, for the same
+    // handle and so the same person and the same content. So an expiry a guest hits is
+    // nobody's business but ours: get another and carry on, rather than showing an error
+    // for something we can fix without asking. A 401 did no work — it was refused before
+    // the handler ran — so retrying is not retrying the effect, which matters because some
+    // of these are posts.
+    //
+    // An account is the opposite. Its token cannot be re-obtained without the password, so
+    // re-exchanging would quietly sign them in as the guest identity beside it and carry on
+    // acting under a different name. Far worse than an error. They get the error.
+    if (wasAccount) {
+      ended = { user_id: current.user_id, token: current.token };
+      throw new ApiError(COPY.sessionEnded, 401, "session_ended");
+    }
+    const retried = await exchangeGuest();
+    return request(path, { ...options, auth: retried.token });
   }
 }
 
@@ -364,10 +431,13 @@ async function call(path, options = {}) {
 // "sign out" to a person who has an account and "sign in" to one who does not.
 async function becomeAccount(path, handle, password) {
   const got = await request(path, { body: { handle, password } });
-  session = { ...got, account: true };
-  saveSession(session);
+  const fresh = { ...got, account: true };
+  gen += 1;
+  session = fresh;
+  ended = null;
+  saveSession(fresh);
   await joinDemo(got.token, got.user_id);
-  return session;
+  return fresh;
 }
 
 // Offline, the whole fixture dataset belongs to u_mel. Signing in therefore takes the name
@@ -376,7 +446,9 @@ async function becomeAccount(path, handle, password) {
 // shown with the network down. There is no password to check, because there is nothing to
 // check it against; the screen is there to be walked, not to guard anything.
 function becomeOffline(handle) {
+  gen += 1;
   session = { user_id: "u_mel", handle, token: "offline", account: true };
+  ended = null;
   saveSession(session);
   return session;
 }
@@ -391,12 +463,55 @@ export async function signIn(handle, password) {
   return becomeAccount("/api/login", handle, password);
 }
 
-export function signOut() {
+// How long Sign out waits for the server before moving on. Enough for a warm API; a cold one
+// finishes in the background.
+export const REVOKE_WAIT_MS = 3000;
+
+export async function signOut() {
   // The guest handle beside this is deliberately left alone. Signing out returns you to
   // being the guest you were before, rather than minting a new person on the server
   // every time somebody signs out.
+  //
+  // Until 2026-09-18 that was the whole function, and it was a button that did not sign
+  // anybody out: the token it dropped stayed valid, and stayed valid for ever, because a
+  // token carried no issue time and nothing but rotating the server secret revoked one.
+  // For an account — whose token lives in localStorage, on a device that may not be theirs
+  // alone, with no password reset to fall back on — that is the difference between a
+  // remedy and a gesture. /api/sessions/revoke is the server agreeing.
+  //
+  // Local state is cleared first and the request goes out with the token captured before
+  // it. The other order needs the session in order to revoke it, and a hung request would
+  // then leave somebody signed in while looking at a screen that says they are not. So the
+  // local half is certain, and the server half is best effort: if it fails, the token is
+  // still out there but it now expires, which is the guarantee this change bought.
+  // Whose sign-out this is. With a live session, that one. With none because the sign-in
+  // ended, only the stored session of that same person: after somebody else signs in in
+  // another tab, storage is theirs, and revoking it signed them out on every device. Found by
+  // the pre-deploy recheck.
+  const stored = readSession();
+  const mine = session || (stored && (!ended || stored.user_id === ended.user_id) ? stored : null);
+  const token = mine?.token;
+  gen += 1;
   session = null;
-  saveSession(null);
+  ended = null;
+  if (stored && mine && stored.token === mine.token) saveSession(null);
+  if (!usesNetwork || !token) return;
+  let timer;
+  try {
+    // Raced against a short wait. request() has no timeout, and the account screen awaits
+    // this before it navigates, so a slow API - a cold start and a database read - left the
+    // Sign out tap looking dead. The revoke carries on in the background either way; only
+    // the waiting for it is bounded. Found by the pre-deploy review.
+    await Promise.race([
+      request("/api/sessions/revoke", { body: {}, auth: token }),
+      new Promise((resolve) => { timer = setTimeout(resolve, REVOKE_WAIT_MS); }),
+    ]);
+  } catch {
+    // Nothing to tell them. They are signed out of this browser either way, and the one
+    // thing they could do about a failed revoke is sign out again, which is this.
+  } finally {
+    clearTimeout(timer);   // an answered revoke no longer leaves a 3 s timer behind
+  }
 }
 
 export async function whoAmI() {
@@ -453,9 +568,20 @@ export async function createStoryboard(title) {
   return call("/api/storyboards", { body: { title } });
 }
 
-export async function timeline(storyboardId) {
-  if (!usesNetwork) return fixtures.timeline(storyboardId);
-  return call("/api/timeline?storyboard_id=" + encodeURIComponent(storyboardId));
+// One page of the timeline. `after` is the id of the last entry already held — the `next`
+// field of the previous page — and undefined asks for the first page.
+//
+// The endpoint is paged because every entry carries a base64 frame, and an unbounded list
+// walks into the platform's 4.5 MB cap on a response body: past it the answer is a 413, not a
+// slow page. The page size is the server's, deliberately not ours to pass; see TIMELINE_PAGE
+// in proxy/app.py for the arithmetic.
+//
+// `sightings`, `participants` and `first_seen` describe the whole storyboard rather than this
+// page, because the header states all three and a page of twenty cannot answer them.
+export async function timeline(storyboardId, after) {
+  if (!usesNetwork) return fixtures.timeline(storyboardId, after);
+  return call("/api/timeline?storyboard_id=" + encodeURIComponent(storyboardId)
+              + (after ? "&after=" + encodeURIComponent(after) : ""));
 }
 
 // Status is active | readonly | archived — there is no past value. The prototype wrote
@@ -488,6 +614,16 @@ export async function boardAccess(id) {
   } catch {
     return { level: null, status: null };
   }
+}
+
+// The storyboard's own attributes - title, level, status, closing note - without its timeline.
+// The close and review screens need exactly those, and used to call storyboard(id) for them,
+// which also fetched the first page of the timeline: twenty entries, each carrying its frame.
+// Unlike boardAccess this throws on failure, because both screens show the error.
+export async function boardRow(id) {
+  if (!usesNetwork) return fixtures.timeline(id);
+  const boards = await dashboard();
+  return [...boards.active, ...boards.past].find((b) => b.id === id) || {};
 }
 
 // The timeline carries nothing about the storyboard itself; dashboard does. Fetch both.

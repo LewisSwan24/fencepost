@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { assistantReply, assistantFrames, writer, suggestedSpecies, PROMPT_VERSION,
          createThread, createPost, boardAccess, editEntry, deleteEntry,
          timeline, dashboard, closeStoryboard, reviewQueue, castVote, disposeEntry,
+         createStoryboard, submitEntry,
          shareLinks, revokeShareLink, issueShareLink, grants,
          BLOCKED_TRIGGER } from "./fixtures.js";
 
@@ -398,4 +399,122 @@ test("every time 1300 ANIMAL is given, the hours and the after-hours list come w
     assert.match(reply, /7\s*am to 7\s*pm/i, `no hours with the number: ${ask}`);
     assert.match(reply, /after-hours/i, `no after-hours alternative: ${ask}`);
   }
+});
+
+// ── The timeline is paged, offline as well as on ──
+//
+// /api/timeline stopped returning every entry on 2026-09-17: each one carries a base64 frame
+// and an unbounded list walks into the platform's 4.5 MB cap on a response body, where the
+// answer is a 413 rather than a slow page. Offline mode has to page the same way or it is not
+// standing in for the server — and the difference would only appear on a storyboard long
+// enough to need a second page, which is exactly where nobody looks. Hence these.
+
+function boardOf(count) {
+  const { storyboard_id } = createStoryboard("Long fence");
+  for (let i = 0; i < count; i += 1) {
+    submitEntry({ storyboard_id, species: "ringtail", story: `sighting ${i}` });
+  }
+  return storyboard_id;
+}
+
+test("a short storyboard comes back whole, and does not offer a page that is not there", () => {
+  const view = timeline("sb_jacaranda");
+  assert.equal(view.next, null, "a finished list still offered another page");
+  assert.equal(view.sightings, view.entries.length);
+});
+
+test("a page is never longer than the server's page size", () => {
+  // 20, matching TIMELINE_PAGE in proxy/app.py. Written out rather than imported because
+  // that constant is Python; the comment in fixtures.js is the other half of the pairing.
+  const view = timeline(boardOf(27));
+  assert.equal(view.entries.length, 20);
+  assert.ok(view.next, "there are 27 and it did not offer the rest");
+});
+
+test("the pages add up to the whole list, in order and without repeats", () => {
+  const board = boardOf(27);
+  const seen = [];
+  let cursor = null;
+  for (let guard = 0; guard < 10; guard += 1) {
+    const page = timeline(board, cursor);
+    seen.push(...page.entries.map((e) => e.id));
+    cursor = page.next;
+    if (!cursor) break;
+  }
+  assert.equal(seen.length, 27, "the pages did not add up to the list");
+  assert.equal(new Set(seen).size, 27, "an entry came back on two pages");
+  // Newest first, which is this array's own order: submitEntry unshifts. Checked against the
+  // sequence the ids were minted in rather than against the pager's own output, so a pager
+  // that reshuffled across the page seam could not agree with itself and pass.
+  const minted = seen.map((id) => Number(id.replace("e_new_", "")));
+  assert.deepEqual(minted, [...minted].sort((a, b) => b - a),
+                   "paging reordered the list across the seam");
+});
+
+test("the header counts the storyboard and not the page it is looking at", () => {
+  // The screen says how many sightings there are and what date the storyboard runs from.
+  // Both are facts about the storyboard, and a page of twenty cannot answer either; leaving
+  // the screen to count its array would put two confident wrong numbers in the header.
+  const board = boardOf(27);
+  const view = timeline(board);
+  assert.equal(view.entries.length, 20);
+  assert.equal(view.sightings, 27);
+  // The oldest sighting is the first one posted, and it is on the second page — so a
+  // first_seen taken from the page on screen would name the wrong date.
+  const oldest = timeline(board, view.next).entries.at(-1);
+  assert.equal(oldest.story, "sighting 0", "the last page did not end at the first sighting");
+  assert.equal(view.first_seen, oldest.created_at,
+               "first_seen described the page rather than the storyboard");
+});
+
+test("a cursor from the last page closes the list rather than looping", () => {
+  const board = boardOf(21);
+  const second = timeline(board, timeline(board).next);
+  assert.equal(second.entries.length, 1);
+  assert.equal(second.next, null, "the last page offered another one");
+});
+
+// ── The share code's default life ──
+//
+// proxy/app.py SHARE_LINK_DAYS says why it is seven. tests/test_resources.py pins the server
+// and this constant together; these pin the constant to the screen that uses it.
+
+test("the default life is one of the chips the owner can see", async () => {
+  // Otherwise the share screen opens with nothing selected and sends a number the owner was
+  // never shown — a code whose expiry nobody chose.
+  const { EXPIRY, DEFAULT_EXPIRY_DAYS } = await import("./copy.js");
+  assert.ok(EXPIRY.some((option) => option.id === DEFAULT_EXPIRY_DAYS),
+            `DEFAULT_EXPIRY_DAYS (${DEFAULT_EXPIRY_DAYS}) is not an option on the share screen`);
+});
+
+test("offline, a code with no stated life lasts the default too", async () => {
+  // fixtures.js had its own literal 7 until this was single-sourced. Offline mode stands in
+  // for the server, so it has to agree with the server about what an unstated life means.
+  const { DEFAULT_EXPIRY_DAYS } = await import("./copy.js");
+  const before = Date.now();
+  const made = issueShareLink({ storyboardId: "sb_jacaranda", level: "view" });
+  const life = new Date(made.expires_at).getTime() - before;
+  assert.ok(Math.abs(life - DEFAULT_EXPIRY_DAYS * 86400000) < 5000,
+            `offline default was ${Math.round(life / 86400000)} days`);
+});
+
+// ── The offline pager, as the pre-deploy review found it ──
+
+test("offline, contributors are worked out from the sightings that exist", () => {
+  // They used to come from the prototype's hand-written list, which never changed: a brand-new
+  // storyboard showed a contributor and no sightings, and deleting somebody's last sighting
+  // left their name up. The server counts live entries, so this has to as well.
+  const { storyboard_id } = createStoryboard("Just made");
+  assert.deepEqual(timeline(storyboard_id).participants, [], "an empty storyboard had a contributor");
+  const made = submitEntry({ storyboard_id, species: "ringtail", story: "first one" });
+  assert.deepEqual(timeline(storyboard_id).participants, ["mel_k"]);
+  deleteEntry(made.entry_id);
+  assert.deepEqual(timeline(storyboard_id).participants, [], "a deleted sighting kept its author listed");
+});
+
+test("offline, a cursor the storyboard never issued is refused, not restarted", () => {
+  // The server answers 400. findIndex's -1 used to turn it into page one, which looks
+  // exactly like the rest of the list having gone.
+  assert.throws(() => timeline("sb_jacaranda", "no-such-entry"),
+                (e) => e.status === 400 && e.code === "bad_request");
 });

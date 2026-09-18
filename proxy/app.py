@@ -3,6 +3,7 @@ rate limiting, fail-open, Writer validation, and never leaking an error outward.
 """
 
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -26,7 +27,26 @@ CALLER_SUBJECTS = {"submission"}
 SPECIES = {"brushtail", "ringtail", "other", "unknown"}
 WRITE_LEVELS = {"contribute", "reshare"}          # view can only look
 LEVEL_RANK = {"view": 0, "contribute": 1, "reshare": 2}
-SHARE_LINK_DAYS = int(os.getenv("SHARE_LINK_DAYS", "7"))
+# How long a share code lasts when the request does not say. Decided 2026-09-18.
+#
+# A code is handed over in person — shown on a phone at the fence, or sent to a neighbour to
+# scan that evening. Seven days covers that with a weekend of slack, and a code that is
+# photographed, forwarded or left on a screenshot goes stale inside a week instead of standing
+# as an open invitation for a season. Twenty-four hours is the safer number and breaks the
+# ordinary case, the neighbour who scans it next weekend; thirty is a month of somebody else's
+# screenshot being a way in. The owner can pick any of 1, 7, 30 or 90 on the share screen, so
+# this only decides what they are offered first.
+#
+# This used to read a SHARE_LINK_DAYS environment variable, and that variable could not do
+# what its name said. The share screen always sends expires_in_days, so the server default
+# only ever reached callers that omit the field, which in practice meant nobody: setting it
+# on the deployment would have changed nothing a person sees. A knob that silently does
+# nothing is worse than no knob, so it is gone. The same number lives in web/lib/copy.js as
+# DEFAULT_EXPIRY_DAYS — two languages, so two places — and test_resources pins them together.
+#
+# scripts/issue_join_code.py defaults to 90 on purpose: the demo join code has to outlive the
+# exhibit it is printed for (operations.md). That is an exception, not drift.
+SHARE_LINK_DAYS = 7
 
 # Length caps for the two fields on an entry. A story is the same kind of free text as a
 # forum body, which is already capped at 4000, so it takes the same number. A fun fact is
@@ -41,6 +61,32 @@ STORY_LIMIT = 4000
 # entry on a timeline carries one, and a storyboard opened on a phone at the fence pays for
 # all of them at once.
 STILL_LIMIT = 120_000
+# The standard alphabet with its padding, which is exactly what lib/stills.js base64Of emits.
+# Every character in it is ASCII, so a still's length in characters is its size in bytes in
+# the JSON - the assumption TIMELINE_PAGE's arithmetic rests on.
+_BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
+
+# How many entries one /api/timeline response carries.
+#
+# This number is not a taste in page length, it is arithmetic. A Vercel function's response
+# body is capped at 4.5 MB and over it the platform answers 413 FUNCTION_PAYLOAD_TOO_LARGE
+# (vercel.com/docs/functions/limitations, read 2026-09-17) — so an unbounded timeline does not
+# get slow as a storyboard fills up, it stops working, and the cliff is invisible until a real
+# storyboard walks off it. Measured on this schema: 25.4 kB per entry at the size the mask
+# screen actually produces, 117.6 kB at STILL_LIMIT. That is 181 entries to the cliff in the
+# ordinary case and 39 from a client sending frames at the ceiling.
+#
+# 20 rows is therefore about 500 kB in the ordinary case and 2.4 MB in the worst one, which
+# leaves most of the budget unspent even against a client gone wrong. The client does not get
+# to choose it: a page size is a constraint the server knows and the caller does not, and a
+# limit somebody may pass is one somebody may pass 10,000 to. test_resources pins
+# TIMELINE_PAGE * STILL_LIMIT against the platform cap so the two cannot drift apart quietly.
+#
+# The real fix for the underlying shape is to stop putting images in JSON at all — a URL into
+# object storage, fetched by the browser and cached by a CDN, which would make the page size a
+# UX question again instead of a payload one. That is a migration, not a patch; this bounds the
+# damage in the meantime.
+TIMELINE_PAGE = 20
 
 # What may be handed to the model, in characters.
 #
@@ -90,6 +136,9 @@ COPY = {
     "link_used_up": "That link has been used as many times as it allows.",
     "cannot_share": "You cannot hand out access to this storyboard.",
     "not_the_owner": "Only the storyboard owner can do that.",
+    # Never reached from the interface, which offers Sign out only to an account. It exists
+    # for a caller who asks anyway: a guest identity has no sign-in to end.
+    "not_an_account": "There is nothing to sign out of: this is a guest identity, not an account.",
     "not_your_call": "You cannot vote on your own entry.",
     "frame_consent_missing": "The frame needs the consent step before it can be sent.",
     "upstream_unavailable": "The assistant is offline right now. Writing and posting work as normal.",
@@ -178,10 +227,9 @@ def _admit(body: dict, token: str, deps: Deps):
 
     Allowed returns (user_id, None); blocked returns (None, (status, payload)).
     """
-    try:
-        user_id = auth.verify(token)
-    except auth.AuthError:
-        return None, (401, _error("unauthorized"))
+    user_id, refusal = _identify(token, deps)
+    if refusal:
+        return None, refusal
 
     role = body.get("role")
     if role not in SCOPE:
@@ -380,7 +428,7 @@ def register(body: dict, deps: Deps):
     user_id = deps.db.create_account(handle, auth.hash_password(password))
     if user_id is None:
         return 409, _error("handle_taken")
-    return 200, {"user_id": user_id, "handle": handle, "token": auth.issue(user_id)}
+    return 200, {"user_id": user_id, "handle": handle, "token": _mint(deps, user_id)}
 
 
 def login(body: dict, deps: Deps):
@@ -410,7 +458,7 @@ def login(body: dict, deps: Deps):
     if not auth.check_password(password, record["password_hash"] if record else None):
         return 401, _error("bad_credentials")
     return 200, {"user_id": record["id"], "handle": record["handle"],
-                 "token": auth.issue(record["id"])}
+                 "token": _mint(deps, record["id"])}
 
 
 def create_session(body: dict, deps: Deps):
@@ -440,7 +488,7 @@ def create_session(body: dict, deps: Deps):
     if existing is not None and existing["password_hash"]:
         return 403, _error("use_password")
     user_id = deps.db.ensure_user(handle)
-    return 200, {"user_id": user_id, "handle": handle, "token": auth.issue(user_id)}
+    return 200, {"user_id": user_id, "handle": handle, "token": _mint(deps, user_id)}
 
 
 def my_record(params: dict, token: str, deps: Deps):
@@ -450,17 +498,16 @@ def my_record(params: dict, token: str, deps: Deps):
     decision this is allowed to exist under is that it characterises nobody, and an endpoint
     that took a user id would be the thing CLAUDE.md rules out wearing a different name.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     return 200, deps.db.my_record(user_id)
 
 
 def create_storyboard(body: dict, token: str, deps: Deps):
-    try:
-        user_id = auth.verify(token)
-    except auth.AuthError:
-        return 401, _error("unauthorized")
+    user_id, refusal = _identify(token, deps)
+    if refusal:
+        return refusal
     # The title never reaches the Screener, so this layer judges everything no model is
     # needed for: type, length, control characters, and "a few spaces". Reasons and
     # trade-offs in operations.md §1.1.
@@ -499,12 +546,100 @@ def _purge(deps: Deps) -> None:
         deps.db.purge_screening()
 
 
-def _identify(token: str):
-    """Allowed gives (user_id, None); unrecognised gives (None, (401, payload))."""
+def _identify(token: str, deps: Deps):
+    """(user_id, None) or (None, refusal). See _identify_stamped for what it checks."""
+    user_id, _, refusal = _identify_stamped(token, deps)
+    return user_id, refusal
+
+
+def _identify_stamped(token: str, deps: Deps):
+    """Allowed gives (user_id, issued_at, None); unrecognised (None, None, (401, payload)).
+
+    Two checks, in two layers on purpose. auth.verify has no database dependency and answers
+    what the token says about itself: the signature, and whether it is inside
+    TOKEN_TTL_SECONDS. Revocation is the part that cannot be answered from the token alone —
+    somebody signed out after it was issued — so it is read here, where there is a database.
+
+    The cost is one SELECT on an indexed primary key per authenticated request. Every one of
+    these already reads access_grants a line or two later, so it is another small read on a
+    path that was never dependency-free, not a new kind of work.
+    """
     try:
-        return auth.verify(token), None
+        user_id, issued_at = auth.verify(token)
     except auth.AuthError:
-        return None, (401, _error("unauthorized"))
+        return None, None, (401, _error("unauthorized"))
+    # Deps.db is None on the assistant-only path, which is a configuration this module
+    # supports on purpose (see the field, and ports.py). A deployment with no store has no
+    # revocation list to consult and no sign-out endpoint that could write one, so the token
+    # stands on its signature and its age. api/index.py always provides a database, so this
+    # is not the shape anything is actually served from.
+    if deps.db is not None:
+        cutoff = deps.db.tokens_valid_from(user_id)
+        # None is "no such person": a token signed for a row that has since gone, most
+        # plausibly after scripts/teardown_demo.py. Refusing it is what lets the client's
+        # 401 recovery run; admitting it produced a ghost that could read nothing and write
+        # nothing and was never told why.
+        if cutoff is None or issued_at < cutoff:
+            return None, None, (401, _error("unauthorized"))
+    return user_id, issued_at, None
+
+
+def _mint(deps: Deps, user_id: str) -> str:
+    """Issue a token that is guaranteed to be on the right side of this person's cutoff.
+
+    sign_out writes its cutoff past the token that asked, and that cutoff can be ahead of
+    this instance's clock - it may have been written by a faster instance, or be one past a
+    token that a faster instance stamped. A token stamped with plain now() could then land
+    below it and be refused the moment it was handed over: signing back in after signing
+    out would fail for as long as the drift lasted. Stamping at max(now, cutoff) puts it on
+    or above the line, and _identify admits equality. That holds on any instance whose clock
+    is within verify's five minutes of the one that wrote the cutoff - the assumption verify
+    makes of every token anyway. An earlier version of this said "always good"; beyond that
+    skew a minted token reads as from the future. NTP keeps real skew to milliseconds.
+    """
+    floor = deps.db.tokens_valid_from(user_id) if deps.db is not None else 0
+    return auth.issue(user_id, max(auth.now_ms(), floor or 0))
+
+
+def sign_out(body: dict, token: str, deps: Deps):
+    """Sign out: refuse every token this person holds, including the one used to ask.
+
+    Until 2026-09-18 signing out was a front-end act only — it cleared localStorage and the
+    token stayed valid, unbounded, for ever. So the button said something the server had
+    never agreed to. This is the server agreeing.
+
+    All of this person's tokens, not this one. There is no session table and no device list
+    to be selective with, and "sign out" on the only button the product has is fairly read
+    as all of them. A signed-in account is the case that matters: its token lives in
+    localStorage, there is no password reset, and before this nothing at all took it back.
+
+    Idempotent in effect. A second call arrives with a token the first one refused, so it is
+    a 401 - signed out either way, which is the state the caller wanted.
+
+    The cutoff is written past the token that asked, not at this instance's "now". Tokens
+    are minted on whichever instance answers, and one can run fast: a token stamped a minute
+    ahead of this clock would otherwise be later than the cutoff, survive, and leave its
+    holder told signed_out while still signed in - every time they tried. The same goes for
+    two readings inside one tick of a coarse clock. max(now, issued_at + 1) kills the asking
+    token whatever the clocks do, and _mint stamps the next sign-in on or above the line.
+    It is the asking token that is clock-proof: another device's token, stamped by an instance
+    running ahead of this one, outlives the cutoff by at most that instance's lead.
+
+    Accounts only. Under FENCEPOST_OPEN_SIGNUP anybody who reads a guest's @handle off a
+    storyboard can exchange it for a token, and so could revoke that guest's tokens - in a
+    loop, faster than the client's one retry - and lock them out of their own identity. A
+    guest gains nothing from signing out anyway: the same handle re-exchanges at once. An
+    account's token needs its password to obtain, so only its holder can reach this.
+    """
+    # The stamp comes back from the one check. A second verify, here, could see a token that
+    # had expired in the moment between them and escape as a 500. Found by the pre-deploy recheck.
+    user_id, issued_at, refusal = _identify_stamped(token, deps)
+    if refusal:
+        return refusal
+    if not deps.db.is_account(user_id):
+        return 403, _error("not_an_account")
+    deps.db.revoke_tokens(user_id, at_least=issued_at + 1)
+    return 200, {"signed_out": True}
 
 
 def _record_screening(deps: Deps, result: dict, field: str, text: str,
@@ -522,7 +657,7 @@ def _record_screening(deps: Deps, result: dict, field: str, text: str,
 
 
 def register_video(body: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storage_key = body.get("storage_key")
@@ -539,7 +674,7 @@ def submit_entry(body: dict, token: str, deps: Deps):
     as normal — including when it was marked review. The response gives no sign of review,
     because operations.md §2.3 requires that the author is never told.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = body.get("storyboard_id")
@@ -593,8 +728,17 @@ def submit_entry(body: dict, token: str, deps: Deps):
     # sighting is the point, and losing a picture should not lose somebody's account of
     # their own evening. The client sends a card-sized JPEG, so anything over the cap is a
     # fault in the client rather than a reason to fail a submission.
+    #
+    # And it has to be base64, which is what the client sends and what the column holds. That
+    # is a payload rule as much as a type rule: TIMELINE_PAGE is sized by counting a still's
+    # characters as bytes, which is true only of ASCII. A still of 120,000 emoji passed the
+    # length check, and json.dumps escapes each one to twelve bytes - 1.44 MB for a single
+    # entry, and four of them take one page past the 4.5 MB cap. Anybody holding the demo
+    # join code could have planted those, and the Screener never sees a still. Found by the
+    # pre-deploy review and measured there at 5,761,218 bytes.
     still = body.get("still")
-    if not isinstance(still, str) or not 0 < len(still) <= STILL_LIMIT:
+    if (not isinstance(still, str) or not 0 < len(still) <= STILL_LIMIT
+            or not _BASE64.fullmatch(still)):
         still = None
     entry_id = deps.db.add_entry(storyboard_id, user_id, species, fun_fact, story, video_id,
                                  still=still)
@@ -604,25 +748,55 @@ def submit_entry(body: dict, token: str, deps: Deps):
 
 
 def timeline(params: dict, token: str, deps: Deps):
-    """The storyboard timeline: entries from every contributor.
+    """One page of the storyboard timeline: entries from every contributor.
 
     A different query from the assistant's Tier 1 context.
+
+    Paged, because every entry carries a base64 frame and an unbounded list walks into the
+    platform's 4.5 MB response cap — see TIMELINE_PAGE for the arithmetic. `after` is the id
+    of the last entry the caller already has; `next` comes back with the id to pass next
+    time, or null when the list is finished. An `after` this storyboard has never heard of is
+    a 400 rather than a silent restart at the top, because a cursor the server does not
+    recognise means the client and the server disagree about where they are, and answering
+    page one to a request for page three looks like data loss.
+
+    The three summary fields are counted over every live entry, not over the page. The header
+    on the detail screen states how many sightings there are, who has contributed and what
+    date the storyboard runs from; those are facts about the storyboard, and a page of twenty
+    cannot answer them. Sending the page alone would have left the screen doing the counting
+    it used to do and reporting the page as the whole.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = params.get("storyboard_id")
     if not storyboard_id:
         return 400, _error("bad_request")
+    after = params.get("after") or None
     _settle(deps)
     if deps.db.grant_level(storyboard_id, user_id) is None:
         return 403, _error("no_access")
-    return 200, {"storyboard_id": storyboard_id, "entries": deps.db.timeline(storyboard_id)}
+    if after is not None and deps.db.entry_position(storyboard_id, after) is None:
+        return 400, _error("bad_request")
+    # One more than the page, to learn whether there is another one.
+    rows = deps.db.timeline(storyboard_id, TIMELINE_PAGE + 1, after)
+    more = len(rows) > TIMELINE_PAGE
+    rows = rows[:TIMELINE_PAGE]
+    # The base64 rule on writes cannot reach a still stored before it existed: the deployed API
+    # took any string, and the join code that lets anybody post is in the public bundle. A page
+    # of old emoji stills would still be 5.76 MB. So the rule is applied on the way out as
+    # well - a still that is not base64 is not sent. Found by the pre-deploy recheck.
+    for row in rows:
+        if row["still"] and not _BASE64.fullmatch(row["still"]):
+            row["still"] = None
+    return 200, {"storyboard_id": storyboard_id, "entries": rows,
+                 "next": rows[-1]["id"] if more else None,
+                 **deps.db.timeline_summary(storyboard_id)}
 
 
 def _own_editable_entry(body: dict, token: str, deps: Deps):
     """Fetch this entry and confirm: I wrote it, it still exists, the storyboard still takes changes."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return None, refusal
     record = deps.db.entry(body.get("entry_id") or "")
@@ -693,7 +867,7 @@ def issue_share_link(body: dict, token: str, deps: Deps):
 
     The plaintext token is returned this once; the database holds only a hash.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = body.get("storyboard_id")
@@ -724,7 +898,7 @@ def issue_share_link(body: dict, token: str, deps: Deps):
 
 
 def redeem_share_link(body: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     link = deps.db.share_link_by_hash(auth.hash_share_token(body.get("token") or ""))
@@ -761,7 +935,7 @@ def redeem_share_link(body: dict, token: str, deps: Deps):
 
 
 def revoke_share_link(body: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     link = deps.db.share_link(body.get("share_link_id") or "")
@@ -775,7 +949,7 @@ def revoke_share_link(body: dict, token: str, deps: Deps):
 
 def revoke_grant(body: dict, token: str, deps: Deps):
     """Revoke somebody's access. Immediate: context, history and timeline are gone on the next call."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id, target = body.get("storyboard_id"), body.get("user_id")
@@ -801,7 +975,7 @@ def list_share_links(params: dict, token: str, deps: Deps):
     something withheld: an endpoint that could fetch a code back afterwards would be a
     redeemable grant left hanging on a screen.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = params.get("storyboard_id")
@@ -822,7 +996,7 @@ def list_grants(params: dict, token: str, deps: Deps):
     to show the revoke control — only an owner can revoke (see revoke_grant), and without
     that field the interface could only show everybody a button certain to 403.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = params.get("storyboard_id")
@@ -837,7 +1011,7 @@ def list_grants(params: dict, token: str, deps: Deps):
 
 def dashboard(params: dict, token: str, deps: Deps):
     """The storyboards I can reach, active and past kept apart (user-flow §9)."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     _settle(deps)
@@ -848,7 +1022,7 @@ def dashboard(params: dict, token: str, deps: Deps):
 
 def close_storyboard(body: dict, token: str, deps: Deps):
     """The owner closing it deliberately, with an optional closing line. Archived is not deleted."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = body.get("storyboard_id")
@@ -875,7 +1049,7 @@ def delete_post(body: dict, token: str, deps: Deps):
     still takes changes. No grant is required, for the same reason it is not there — what
     you wrote stays yours to withdraw even after somebody has revoked your access.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     record = deps.db.post(body.get("post_id") or "")
@@ -921,7 +1095,7 @@ def remove_entry(body: dict, token: str, deps: Deps):
     to do it: that is the platform judging content, this is the owner of one storyboard
     tidying their own.
     """
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     record = deps.db.entry(body.get("entry_id") or "")
@@ -936,7 +1110,7 @@ def remove_entry(body: dict, token: str, deps: Deps):
 
 def remove_post(body: dict, token: str, deps: Deps):
     """The same for a post in the discussion on a storyboard you own."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     record = deps.db.post(body.get("post_id") or "")
@@ -974,7 +1148,7 @@ def _screen_forum_body(body_text: str, user_id: str, deps: Deps):
 
 
 def create_thread(body: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = body.get("storyboard_id")
@@ -1010,7 +1184,7 @@ def create_thread(body: dict, token: str, deps: Deps):
 
 
 def create_post(body: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     thread_id = body.get("thread_id")
@@ -1038,7 +1212,7 @@ def create_post(body: dict, token: str, deps: Deps):
 
 
 def list_threads(params: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = params.get("storyboard_id")
@@ -1051,7 +1225,7 @@ def list_threads(params: dict, token: str, deps: Deps):
 
 
 def read_thread(params: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     thread_id = params.get("thread_id")
@@ -1076,7 +1250,7 @@ DISPOSITIONS = {"kept", "labelled", "removed"}
 
 def review_queue(params: dict, token: str, deps: Deps):
     """Entries awaiting a second look, for the other contributors. Never your own."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     storyboard_id = params.get("storyboard_id")
@@ -1096,7 +1270,7 @@ def review_queue(params: dict, token: str, deps: Deps):
 
 
 def cast_review_vote(body: dict, token: str, deps: Deps):
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     entry_id, vote = body.get("entry_id"), body.get("vote")
@@ -1124,7 +1298,7 @@ def cast_review_vote(body: dict, token: str, deps: Deps):
 
 def dispose_entry(body: dict, token: str, deps: Deps):
     """The owner's final say: keep, label, or remove."""
-    user_id, refusal = _identify(token)
+    user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
     entry_id, action = body.get("entry_id"), body.get("action")

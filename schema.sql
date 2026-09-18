@@ -4,6 +4,7 @@ CREATE TABLE users (
   id             TEXT PRIMARY KEY,
   handle         TEXT NOT NULL UNIQUE,   -- display name; a real name never enters the database
   password_hash  TEXT,                   -- NULL means this identity has no password (see below)
+  tokens_valid_from INTEGER,             -- ms since epoch; tokens issued before this are refused; NULL = never revoked (see 1.2)
   created_at     TIMESTAMP NOT NULL
 );
 
