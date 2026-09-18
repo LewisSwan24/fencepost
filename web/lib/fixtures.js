@@ -314,18 +314,21 @@ const STORYBOARDS = {
   },
 };
 
+// These arrays run oldest first: the order /api/timeline returns (ORDER BY created_at,
+// rowid). They used to run newest first while the server ran oldest first, so live and
+// offline showed users opposite timelines and "Show more" loaded opposite ends of the
+// story; settled 2026-09-18 on the server's direction. submitEntry therefore appends.
 const TIMELINES = {
   sb_jacaranda: [
     {
-      id: "e5", handle: "mel_k", species: "ringtail",
-      fun_fact: "Ringtails build nests called dreys and carry the material with their tail.",
-      story: "Back again tonight. Went along the top of the fence, then sat in the jacaranda for ages pulling the flowers off the end of a branch.",
-      being_checked: 0, created_at: "2026-09-12T21:47:00+10:00",
+      id: "e1", handle: "mel_k", species: "ringtail", fun_fact: null,
+      story: "Heard the gutter go and there she was, just sitting in the jacaranda looking at me while I filmed. Didn't move the whole time.",
+      being_checked: 0, created_at: "2026-09-02T21:14:00+10:00",
     },
     {
-      id: "e4", handle: "sione_f", species: "brushtail", fun_fact: null,
-      story: "2am, roof, again. Caught him coming down the drainpipe on the side of the house. Absolutely unbothered by me standing there in my dressing gown.",
-      being_checked: 0, created_at: "2026-09-10T02:18:00+10:00",
+      id: "e2", handle: "dan_h", species: "brushtail", fun_fact: null,
+      story: "Pretty sure this is a different one, much bigger. Came over the back fence and went straight up the trunk without stopping.",
+      being_checked: 0, created_at: "2026-09-05T22:30:00+10:00",
     },
     {
       id: "e3", handle: "aroha_t", species: "ringtail",
@@ -334,21 +337,23 @@ const TIMELINES = {
       being_checked: 1, created_at: "2026-09-08T20:05:00+10:00",
     },
     {
-      id: "e2", handle: "dan_h", species: "brushtail", fun_fact: null,
-      story: "Pretty sure this is a different one, much bigger. Came over the back fence and went straight up the trunk without stopping.",
-      being_checked: 0, created_at: "2026-09-05T22:30:00+10:00",
+      id: "e4", handle: "sione_f", species: "brushtail", fun_fact: null,
+      story: "2am, roof, again. Caught him coming down the drainpipe on the side of the house. Absolutely unbothered by me standing there in my dressing gown.",
+      being_checked: 0, created_at: "2026-09-10T02:18:00+10:00",
     },
     {
-      id: "e1", handle: "mel_k", species: "ringtail", fun_fact: null,
-      story: "Heard the gutter go and there she was, just sitting in the jacaranda looking at me while I filmed. Didn't move the whole time.",
-      being_checked: 0, created_at: "2026-09-02T21:14:00+10:00",
+      id: "e5", handle: "mel_k", species: "ringtail",
+      fun_fact: "Ringtails build nests called dreys and carry the material with their tail.",
+      story: "Back again tonight. Went along the top of the fence, then sat in the jacaranda for ages pulling the flowers off the end of a branch.",
+      being_checked: 0, created_at: "2026-09-12T21:47:00+10:00",
     },
   ],
   sb_roof: [
     {
-      id: "r3", handle: "dan_h", species: "brushtail", fun_fact: null,
-      story: "Last one from me. Roof's been quiet since the tree out the back got cut right down.",
-      being_checked: 0, created_at: "2026-08-02T23:12:00+10:00",
+      id: "r1", handle: "mel_k", species: "brushtail",
+      fun_fact: "Brushtails den in tree hollows when they can get one, which is why a roof cavity suits them.",
+      story: "Started this one because of the noise. Not much to see yet, but here he is on the way up.",
+      being_checked: 0, created_at: "2026-07-25T22:55:00+10:00",
     },
     {
       id: "r2", handle: "mel_k", species: "brushtail", fun_fact: null,
@@ -356,10 +361,9 @@ const TIMELINES = {
       being_checked: 0, created_at: "2026-07-28T01:40:00+10:00",
     },
     {
-      id: "r1", handle: "mel_k", species: "brushtail",
-      fun_fact: "Brushtails den in tree hollows when they can get one, which is why a roof cavity suits them.",
-      story: "Started this one because of the noise. Not much to see yet, but here he is on the way up.",
-      being_checked: 0, created_at: "2026-07-25T22:55:00+10:00",
+      id: "r3", handle: "dan_h", species: "brushtail", fun_fact: null,
+      story: "Last one from me. Roof's been quiet since the tree out the back got cut right down.",
+      being_checked: 0, created_at: "2026-08-02T23:12:00+10:00",
     },
   ],
 };
@@ -419,16 +423,18 @@ export function timeline(storyboardId, after) {
     // Counted over the whole list, not the page: the header says how many sightings there
     // are and what date the storyboard runs from, and neither is a fact about a page.
     sightings: all.length,
-    // Worked out from the entries, oldest first as the server orders them, rather than the
-    // prototype's hand-written list on STORYBOARDS - which never changed, so a storyboard
-    // made a moment ago showed a contributor with no sightings, and deleting somebody's last
-    // one left their name up. Found by the pre-deploy review.
-    participants: [...new Set([...all].reverse().map((e) => e.handle))],
-    // The last element rather than a sort of the stamps. These arrays run newest first and
-    // submitEntry unshifts, so the oldest is always at the end — and the fixture stamps carry
-    // a +10:00 offset while a freshly posted one is written in Z, which a string sort gets
-    // right only by accident.
-    first_seen: all.length ? all[all.length - 1].created_at : null,
+    // Worked out from the entries in the order they happened, first sighting first: the
+    // server orders the header's names by MIN(created_at), and this array now runs oldest
+    // first, so first appearance in the list is first appearance on the board. Rather than
+    // the prototype's hand-written list on STORYBOARDS - which never changed, so a
+    // storyboard made a moment ago showed a contributor with no sightings, and deleting
+    // somebody's last one left their name up. Found by the pre-deploy review.
+    participants: [...new Set(all.map((e) => e.handle))],
+    // The first element rather than a sort of the stamps. These arrays run oldest first and
+    // submitEntry appends, so the oldest is always at the front — and the fixture stamps
+    // carry a +10:00 offset while a freshly posted one is written in Z, which a string sort
+    // gets right only by accident.
+    first_seen: all.length ? all[0].created_at : null,
   };
 }
 
@@ -463,7 +469,7 @@ export function submitEntry(body) {
     created_at: new Date(Date.now() + entrySeq).toISOString(),
   };
   const list = TIMELINES[body.storyboard_id] || (TIMELINES[body.storyboard_id] = []);
-  list.unshift(entry);
+  list.push(entry);
   const board = STORYBOARDS[body.storyboard_id];
   if (board) {
     board.entry_count = list.length;
@@ -620,7 +626,9 @@ export function deleteEntry(entryId) {
     const board = STORYBOARDS[boardId];
     if (board) {
       board.entry_count = list.length;
-      board.latest_species = list[0]?.species ?? null;
+      // The cover follows the most recent sighting: the last row of an oldest-first
+      // list, mirroring the server's ORDER BY created_at DESC LIMIT 1.
+      board.latest_species = list.at(-1)?.species ?? null;
     }
     return { entry_id: entryId, deleted: true };
   }
