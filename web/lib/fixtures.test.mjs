@@ -155,14 +155,14 @@ test("when it can be changed, it really is changed", () => {
 test("deleting one moves the count and the cover species with it", () => {
   const boardBefore = dashboard().active.find((b) => b.id === "sb_jacaranda");
   const countBefore = boardBefore.entry_count;
-  const newest = timeline("sb_jacaranda").entries[0];
+  const newest = timeline("sb_jacaranda").entries.at(-1);
   const out = deleteEntry(newest.id);
   assert.equal(out.deleted, true);
   const view = timeline("sb_jacaranda");
   assert.ok(!view.entries.some((e) => e.id === newest.id));
   const boardAfter = dashboard().active.find((b) => b.id === "sb_jacaranda");
   assert.equal(boardAfter.entry_count, countBefore - 1);
-  assert.equal(boardAfter.latest_species, view.entries[0]?.species ?? null,
+  assert.equal(boardAfter.latest_species, view.entries.at(-1)?.species ?? null,
                "the cover follows the most recent entry, so deleting the newest has to change it");
 });
 
@@ -423,6 +423,14 @@ test("a short storyboard comes back whole, and does not offer a page that is not
   assert.equal(view.sightings, view.entries.length);
 });
 
+test("contributors are named first-sighting first, the way the server names them", () => {
+  // The server orders the header's names by MIN(created_at): whoever posted first leads.
+  // The arrays run oldest first, so first appearance in the list is that order — and the
+  // static list on STORYBOARDS, which the dashboard shows, already reads this way.
+  assert.deepEqual(timeline("sb_jacaranda").participants,
+                   ["mel_k", "dan_h", "aroha_t", "sione_f"]);
+});
+
 test("a page is never longer than the server's page size", () => {
   // 20, matching TIMELINE_PAGE in proxy/app.py. Written out rather than imported because
   // that constant is Python; the comment in fixtures.js is the other half of the pairing.
@@ -443,11 +451,11 @@ test("the pages add up to the whole list, in order and without repeats", () => {
   }
   assert.equal(seen.length, 27, "the pages did not add up to the list");
   assert.equal(new Set(seen).size, 27, "an entry came back on two pages");
-  // Newest first, which is this array's own order: submitEntry unshifts. Checked against the
+  // Oldest first, which is this array's own order: submitEntry appends. Checked against the
   // sequence the ids were minted in rather than against the pager's own output, so a pager
   // that reshuffled across the page seam could not agree with itself and pass.
   const minted = seen.map((id) => Number(id.replace("e_new_", "")));
-  assert.deepEqual(minted, [...minted].sort((a, b) => b - a),
+  assert.deepEqual(minted, [...minted].sort((a, b) => a - b),
                    "paging reordered the list across the seam");
 });
 
@@ -459,12 +467,15 @@ test("the header counts the storyboard and not the page it is looking at", () =>
   const view = timeline(board);
   assert.equal(view.entries.length, 20);
   assert.equal(view.sightings, 27);
-  // The oldest sighting is the first one posted, and it is on the second page — so a
-  // first_seen taken from the page on screen would name the wrong date.
-  const oldest = timeline(board, view.next).entries.at(-1);
-  assert.equal(oldest.story, "sighting 0", "the last page did not end at the first sighting");
+  // The oldest sighting is the first one posted, and the list runs oldest first, so it
+  // opens page one; the newest sits past the seam, on the last page. sightings still
+  // cannot be read off the page in hand — 27 behind a page of 20, asserted above.
+  const oldest = view.entries[0];
+  assert.equal(oldest.story, "sighting 0", "page one did not start at the first sighting");
   assert.equal(view.first_seen, oldest.created_at,
                "first_seen described the page rather than the storyboard");
+  const newest = timeline(board, view.next).entries.at(-1);
+  assert.equal(newest.story, "sighting 26", "the last page did not end at the newest sighting");
 });
 
 test("a cursor from the last page closes the list rather than looping", () => {

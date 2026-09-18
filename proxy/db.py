@@ -646,8 +646,9 @@ class Database:
         The ordering matches `timeline()` word for word: `created_at` only resolves to the
         second, so two entries posted in the same second are separated by `rowid`, which is
         insertion order. The id is a uuid4, so falling back to it would pick at random and
-        the card cover would point at a different entry from the top of the timeline. A test
-        forced this one out; it was not foreseen.
+        the card cover would point at a different entry from the newest sighting — the row
+        the oldest-first timeline ends on, which is what the cover shows. A test forced
+        this one out; it was not foreseen.
 
         `closed_note` comes back here too. The line an owner writes when closing used to be
         written and never read — stored, echoed once in the response to the close itself,
