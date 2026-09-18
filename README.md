@@ -23,8 +23,9 @@ Create a `.env` in the repository root. It is git-ignored.
 
 | Variable | Required | What it does |
 |---|---|---|
-| `DASHSCOPE_API_KEY` | yes | Model access. Must be an **international (Singapore) console** key: the endpoint is `dashscope-intl.aliyuncs.com` and mainland keys are refused there. |
-| `FENCEPOST_TOKEN_SECRET` | yes | Signs the request tokens. Any long random string; `python -c "import secrets; print(secrets.token_hex(32))"` will do. |
+| `DASHSCOPE_API_KEY` | yes | Model access. **The key and `DASHSCOPE_BASE_URL` are a pair** — a key is valid against one gateway and refused by the others, so changing one without the other produces a 401 that reads like a bad key. The deployment currently uses a Token Plan key (`sk-sp-…`) against `token-plan.ap-southeast-1.maas.aliyuncs.com`; an ordinary international console key goes with `dashscope-intl.aliyuncs.com`. Mainland and international are not interchangeable in either direction — measured 2026-09-17: an international Token Plan key is refused by `cn-beijing` and by both `dashscope` hosts. |
+| `DASHSCOPE_BASE_URL` | with a Token Plan key | The OpenAI-compatible root. Defaults to `dashscope-intl.aliyuncs.com/compatible-mode/v1` (`proxy/model.py`), which is **not** where a Token Plan key works — that needs `https://token-plan.<region>.maas.aliyuncs.com/compatible-mode/v1`, with the region following the account rather than the Bailian docs' `cn-beijing` default. The `/compatible-mode/v1` suffix is required; the bare host answers 404. To find the right one without spending a call, POST to a candidate with no key at all: 401 means the path exists, 404 means it does not. |
+| `FENCEPOST_TOKEN_SECRET` | yes | Signs the request tokens. Any long random string; `python -c "import secrets; print(secrets.token_hex(32))"` will do. A token is `<user_id>.<issued_at>.<signature>` and lasts 30 days (`TOKEN_TTL_SECONDS`). Rotating this signs out **everybody** at once, which is the blunt instrument; `POST /api/sessions/revoke` is the per-person one. |
 | `FENCEPOST_OPEN_SIGNUP` | no | Opens `POST /api/session`. Leave it unset anywhere real: with it on, anyone holding a handle can impersonate its owner. **The course deployment sets it deliberately** — it is this prototype's entire login model, and the `hybrid` frontend cannot obtain a token without it, so removing it blanks the site. It widens who can *write*, not who can *read*: visibility still runs through `access_grants`. Reasoning in `web/README.md`. |
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | on Vercel | The hosted libSQL database. `vercel integration add turso` injects both. Required for any real deployment — see Deploying. |
 | `FENCEPOST_DB` | no | Database address, and it wins over `TURSO_DATABASE_URL`. A local SQLite path, or a `libsql://` URL to point a script at the hosted database. Defaults to `fencepost.db` in the repo, or `/tmp` on Vercel — and `/tmp` is a last resort, not a deployment. |
@@ -42,7 +43,7 @@ python tests/test_entrypoint.py && python tests/test_resources.py &&
 python tests/test_store.py && python tests/test_teardown.py
 ```
 
-323 tests. The last two were missing from the line above until 2026-09-17, so
+369 tests. The last two were missing from the line above until 2026-09-17, so
 thirty-one of them were never run by the documented command. The data layer ones
 matter most: they pin the three access invariants — other people's entries never
 enter the assistant's context, a soft-deleted entry disappears on the next call, and
@@ -71,18 +72,19 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 | Path | What it does |
 |---|---|
 | `POST /api/session` | Exchange a handle for a token, creating the user on first use. Off unless `FENCEPOST_OPEN_SIGNUP` is set. |
+| `POST /api/sessions/revoke` | Sign out: refuse every token this person holds, the one making the call included. All of them, not one device — there is no session table to be selective with. **Accounts only**: a guest's handle is public and exchanges for a token under open sign-up, so anybody could otherwise sign a guest out, in a loop; a guest gets 403 `not_an_account`, and loses nothing by it. |
 | `POST /api/storyboards` | Create a storyboard and grant its owner access. |
 | `POST /api/storyboards/close` | Close a storyboard with a note. Archiving is not deletion: the QR still works. |
 | `POST /api/videos` | Register a clip. Only a storage key is kept — there is no field for EXIF to land in. |
 | `POST /api/entries` | Submit an entry. Screened first, created only if nothing was rejected. Needs `contribute` or `reshare`. |
 | `POST /api/entries/edit` | Change your own entry. Changed fields go back through the Screener; a rejected edit leaves the original alone. |
 | `POST /api/entries/delete` | Soft delete your own entry. The assistant stops seeing it on the next call. |
-| `POST /api/share-links` | Issue a permissioned link. The plain token comes back once; only its hash is stored. |
+| `POST /api/share-links` | Issue a permissioned link. The plain token comes back once; only its hash is stored. Lasts `expires_in_days` (1–90), seven if unstated — reasoning above `SHARE_LINK_DAYS`. |
 | `GET /api/share-links?storyboard_id=` | The codes this storyboard has issued, revoked ones included so a revoke is visibly done. Needs `reshare`. Never returns a token — only the hash is stored, so it could not. |
 | `POST /api/share-links/redeem` | Turn a token into a grant. Upgrades only — a view link never demotes anyone. |
 | `POST /api/share-links/revoke` | Turn a link off. |
 | `POST /api/grants/revoke` | Take someone's access away. Effective on the next call, with no cache in between. |
-| `GET /api/timeline?storyboard_id=` | Every contributor's entries. Deliberately a different query from what the assistant sees. |
+| `GET /api/timeline?storyboard_id=[&after=]` | Every contributor's entries, twenty at a time. Deliberately a different query from what the assistant sees. Paged because each entry carries a base64 frame and an unbounded list crosses the platform's 4.5 MB response cap, where the answer is a 413 rather than a slow page — arithmetic in `TIMELINE_PAGE`. `after` is the previous page's `next` (an entry id, not an offset, so a sighting posted mid-scroll cannot shift the window); a cursor this storyboard never issued is a 400, not a silent restart. `sightings`, `participants` and `first_seen` are counted over every live entry, because the header states all three and one page cannot answer them. |
 | `POST /api/forum/threads` | Start a thread. The body is screened first; a rejection creates nothing. |
 | `POST /api/forum/posts` | Reply to a thread, screened the same way. |
 | `GET /api/forum?storyboard_id=` | Threads on a storyboard. Reading needs any grant, posting needs `contribute`. |
@@ -95,6 +97,22 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 
 Every response carries `prompt_version`, which belongs in the database next to whatever the call
 produced. Errors are fixed copy: upstream text, prompt content and the key never leave the server.
+
+**Tokens expire, and deploying the change that gave them an expiry signs everyone out once.**
+Before 2026-09-18 a token was `<user_id>.<signature>`: deterministic, so one string per person
+for ever, with no issue time to expire and nothing but rotating the secret to revoke. Old
+two-part tokens are not accepted, so the first deploy of that change ends every existing
+session. In a tab running the new front end, accounts see "Your sign-in has ended" and sign
+in again; in a tab still on the old code, an account sees the assistant's "Sign in again" line
+once and its next action runs as the guest until the page is reloaded - so deploy when nobody
+is signed in, or ask account holders to reload. Guests are re-issued a token
+against the same handle without noticing — **but only in a tab running the new front end**. A
+tab opened before `fencepost-web` rebuilt still runs the old code, which shows one error and
+recovers on the next click. Deploy order narrows that window; nothing closes it for a tab that
+stays open across both deploys. Reasoning in `docs/data-model.md` §1.2.
+
+**The signed material carries a version tag, `v2|`,** so an API rolled back to a build from
+before that change refuses new tokens outright instead of reading them as phantom user ids.
 
 ## Running it locally
 
@@ -157,6 +175,12 @@ Two things came out of that, and they are why this section is longer than the co
   either is not serving. A green deployment status cannot tell you whether what got deployed
   is what you meant to deploy; this can. It is not `scripts/verify_deployment.py`, which walks
   ten authenticated chains and leaves a `verify-*` user in the production database each run.
+
+**Order, when a change touches both sides:** push first, so `fencepost-web` rebuilds against
+an API that is still the old one — the front end is written to tolerate that. Then run
+`check_deploy.py`: after a change that adds a route it reports the API as stale, which is what
+it should say at that point. Then deploy the API and run the check again. The other order puts
+the new API in front of old front-end code for as long as the web build takes.
 
 ```bash
 vercel deploy

@@ -12,11 +12,16 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import auth
 from .ports import DEFAULT_LIMITS, PermissionDenied, RateLimited
 from .store import open_store
 
 SCHEMA = Path(__file__).resolve().parent.parent / "schema.sql"
 HISTORY_TURNS = 6
+# How many contributors /api/timeline names. The list was unbounded, and a page's size is the
+# point of paging: 5,001 guests with 24-emoji handles took one page past the 4.5 MB cap in the
+# pre-deploy recheck. The screen shows these as chips; beyond fifty it says how many more.
+PARTICIPANT_LIMIT = 50
 
 
 def now() -> str:
@@ -31,6 +36,11 @@ def now() -> str:
     stamp some other way — a bare Z suffix, a local offset, microseconds — silently breaks
     ordering in those four places rather than failing outright. tests/test_data_layer.py pins
     the shape so a change here has to be deliberate.
+
+    One column does not come from here: users.tokens_valid_from, which holds milliseconds
+    from auth.now_ms. It is not read as a date — it is compared against the issue time inside
+    a bearer token, so it has to be in the token's units and at the token's resolution, and a
+    second is too coarse for it (see auth.now_ms). That is the exception, and it is one.
     """
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -281,6 +291,70 @@ class Database:
         row = self.conn.execute("SELECT id FROM users WHERE handle = ?", (handle,)).fetchone()
         return row["id"] if row else self.add_user(handle)
 
+    def revoke_tokens(self, user_id: str, at_least: int = 0) -> int:
+        """Refuse every token this person currently holds. Returns the cutoff written.
+
+        This is what makes Sign out sign anything out. Until 2026-09-18 that button only
+        cleared the browser, so the token it discarded stayed valid for the rest of its
+        life — and its life was unbounded. One column does the whole job: a cutoff, and
+        anything issued before it is not honoured again.
+
+        It is deliberately not per-session. There is no session table and no device list, so
+        "sign out" means all of them, which is also the honest reading of the only button
+        the product has. The token being used to make this call is included; the caller is
+        signing out, so that is the point rather than an edge case.
+        """
+        # `at_least` is how the token that asked is guaranteed to die. The local clock alone
+        # cannot promise it: a token stamped by an instance running a minute fast is later
+        # than "now" here, so a cutoff of now would let it through - and the caller would be
+        # told signed_out while still signed in. See app.sign_out.
+        cutoff = max(auth.now_ms(), int(at_least))
+        # Never lower. Two sign-outs of one account in flight at once - one asking with a
+        # token from a fast instance, one with an ordinary token - used to race, and the
+        # second write could land below the first and bring back a token already told
+        # signed_out. Found by the pre-deploy recheck, with the interleaving forced.
+        self.conn.execute("UPDATE users SET tokens_valid_from = "
+                          "MAX(COALESCE(tokens_valid_from, 0), ?) WHERE id = ?",
+                          (cutoff, user_id))
+        self.conn.commit()
+        row = self.conn.execute("SELECT tokens_valid_from FROM users WHERE id = ?",
+                                (user_id,)).fetchone()
+        return row["tokens_valid_from"] if row else cutoff
+
+    def is_account(self, user_id: str) -> bool:
+        """An identity with a password - the only kind nobody else can obtain a token for."""
+        row = self.conn.execute("SELECT password_hash FROM users WHERE id = ?",
+                                (user_id,)).fetchone()
+        return bool(row and row["password_hash"])
+
+    def tokens_valid_from(self, user_id: str):
+        """The cutoff in milliseconds since the epoch, or None when nobody has revoked.
+
+        The one column in this schema that is not an ISO stamp, and deliberately: it is
+        compared against the issue time carried inside a bearer token, so the two have to
+        agree exactly and at a resolution finer than a second. auth.now_ms says why a
+        second is not fine enough. Storing a stamp and converting on every read was the first
+        attempt and it is worse — it puts a units conversion on the authentication path for
+        the sake of a value nobody reads as a date.
+
+        Three answers, and they have to stay three. 0 means this person exists and has never
+        signed out. A number is the cutoff. None means there is no such person at all - and
+        _identify refuses that.
+
+        It used to answer None for both "never signed out" and "no such user", and this
+        docstring promised the second would be "refused a moment later on its merits". It was
+        not: reads answered 200 with nothing in them, writes failed a foreign key and came
+        back as a 500 saying the assistant was offline, and sign-out answered signed_out. The
+        case is real - scripts/teardown_demo.py deletes every users row, and a browser still
+        holding a token from before it would have carried on as a ghost with no 401 to
+        recover on.
+        """
+        row = self.conn.execute("SELECT tokens_valid_from FROM users WHERE id = ?",
+                                (user_id,)).fetchone()
+        if row is None:
+            return None
+        return row["tokens_valid_from"] or 0
+
     def add_storyboard(self, owner_id: str, title: str = None) -> str:
         """Creating a storyboard also hands the owner a grant.
 
@@ -410,23 +484,86 @@ class Database:
                                 (storyboard_id,)).fetchone()
         return row["status"] if row else None
 
-    def timeline(self, storyboard_id: str) -> list[dict]:
-        """The storyboard timeline: entries from every contributor.
+    def timeline(self, storyboard_id: str, limit: int, after: str | None = None) -> list[dict]:
+        """One page of the storyboard timeline: entries from every contributor.
 
         Not the same thing as SqliteContext.build(), which returns only the requester's own
         content. The platform sees all of it, the assistant does not — the two queries are
         deliberately separate, and merging them would repeal Tier 1. Authors appear as a
         handle only, never a real name.
+
+        `limit` has no default on purpose. Every row carries a base64 frame in `still`, so
+        the length of this list *is* the size of the response; a caller who forgets to bound
+        it is the defect this parameter exists to make unwriteable. Ask for one more row than
+        you mean to show and that is how you learn another page exists, without a COUNT.
+
+        `after` is an entry id, not an offset. The cursor is a position in the same
+        (created_at, rowid) order the list is sorted by, so an entry posted while somebody is
+        paging cannot shift the window and make a row appear twice or vanish — which
+        LIMIT/OFFSET would. An entry id also survives its own soft delete: the row stays in
+        the table with deleted_at set, so it can still say where page two starts even though
+        it has left page one. Resolve it with entry_position() and refuse an unknown cursor
+        there; this method assumes a real one.
         """
-        rows = self.conn.execute(
-            "SELECT e.id, e.author_id, u.handle, e.species, e.fun_fact, e.story, e.video_id, "
-            "e.still, e.created_at, EXISTS (SELECT 1 FROM screening_results s "
-            "  WHERE s.subject_type = 'entry' AND s.subject_id = e.id "
-            "  AND s.disposition = 'labelled') AS being_checked "
-            "FROM entries e JOIN users u ON u.id = e.author_id "
+        sql = ("SELECT e.id, e.author_id, u.handle, e.species, e.fun_fact, e.story, "
+               "e.video_id, e.still, e.created_at, "
+               "EXISTS (SELECT 1 FROM screening_results s "
+               "  WHERE s.subject_type = 'entry' AND s.subject_id = e.id "
+               "  AND s.disposition = 'labelled') AS being_checked "
+               "FROM entries e JOIN users u ON u.id = e.author_id "
+               "WHERE e.storyboard_id = ? AND e.deleted_at IS NULL ")
+        params: list = [storyboard_id]
+        if after is not None:
+            position = self.entry_position(storyboard_id, after)
+            if position is None:
+                raise ValueError(f"no such entry on this storyboard: {after}")
+            # Spelled out rather than as a row-value comparison: (a, b) > (?, ?) needs SQLite
+            # 3.15, and store.py deliberately holds this data layer to spellings both
+            # backends are known to take.
+            sql += "AND (e.created_at > ? OR (e.created_at = ? AND e.rowid > ?)) "
+            params += [position["created_at"], position["created_at"], position["seq"]]
+        sql += "ORDER BY e.created_at, e.rowid LIMIT ?"
+        params.append(limit)
+        return [dict(row) for row in self.conn.execute(sql, tuple(params)).fetchall()]
+
+    def entry_position(self, storyboard_id: str, entry_id: str):
+        """Where an entry sits in this storyboard's timeline order, for use as a cursor.
+
+        Scoped to the storyboard, so a cursor from somewhere else is not a valid position
+        here. Deliberately does not filter deleted_at: a cursor is a coordinate, not content,
+        and an entry deleted between two page fetches must still be able to say where the
+        next page began. None means there is no such entry, which is the caller's 400.
+        """
+        return self.conn.execute(
+            "SELECT created_at, rowid AS seq FROM entries WHERE id = ? AND storyboard_id = ?",
+            (entry_id, storyboard_id)).fetchone()
+
+    def timeline_summary(self, storyboard_id: str) -> dict:
+        """The whole-storyboard facts the header states, which one page of entries cannot.
+
+        The detail screen says how many sightings there are, who has contributed and what
+        date the storyboard runs from. It used to derive all three from the entry list, so
+        bounding that list would have quietly turned them into "how many have loaded so
+        far" — three confident numbers, all wrong, which is worse than a slow page. They are
+        counted over every live entry here instead, and the page reads them.
+
+        Participants come back in first-appearance order rather than alphabetically, because
+        that is the order the screen showed before this query existed. The MIN(e.rowid)
+        tiebreak is the one timeline() and dashboard() already use, for the same reason:
+        created_at resolves only to the second.
+        """
+        totals = self.conn.execute(
+            "SELECT COUNT(*) AS sightings, MIN(created_at) AS first_seen, "
+            "COUNT(DISTINCT author_id) AS contributors FROM entries "
+            "WHERE storyboard_id = ? AND deleted_at IS NULL", (storyboard_id,)).fetchone()
+        people = self.conn.execute(
+            "SELECT u.handle FROM entries e JOIN users u ON u.id = e.author_id "
             "WHERE e.storyboard_id = ? AND e.deleted_at IS NULL "
-            "ORDER BY e.created_at, e.rowid", (storyboard_id,)).fetchall()
-        return [dict(row) for row in rows]
+            "GROUP BY e.author_id ORDER BY MIN(e.created_at), MIN(e.rowid) LIMIT ?",
+            (storyboard_id, PARTICIPANT_LIMIT)).fetchall()
+        return {"sightings": totals["sightings"], "first_seen": totals["first_seen"],
+                "contributors": totals["contributors"],
+                "participants": [row["handle"] for row in people]}
 
     # ---------- share links ----------
 

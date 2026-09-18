@@ -8,6 +8,7 @@ Vercel has one entrypoint, every path lands in the same handler, and the routing
 
 import json
 import os
+import re
 import sys
 import threading
 import unittest
@@ -22,9 +23,12 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 
 import api.index as entry                                          # noqa: E402
-from proxy.app import COPY, FUN_FACT_LIMIT, STORY_LIMIT, Deps      # noqa: E402
-from proxy.db import (Database, SqliteContext, SqliteHistory,      # noqa: E402
-                      SqliteScreeningLog)
+from unittest import mock                                          # noqa: E402
+from proxy import auth                                             # noqa: E402
+from proxy.app import (COPY, FUN_FACT_LIMIT, SHARE_LINK_DAYS,      # noqa: E402
+                       STILL_LIMIT, STORY_LIMIT, TIMELINE_PAGE, Deps)
+from proxy.db import (PARTICIPANT_LIMIT, Database, SqliteContext,  # noqa: E402
+                      SqliteHistory, SqliteScreeningLog)
 
 OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
 REVIEW_JSON = '{"verdict":"review","codes":["fact_conflict"],"note":"off"}'
@@ -209,7 +213,7 @@ class Entries(Fixture):
         self.assertFalse(payload["published"])
         self.assertEqual(["pii"], payload["reason_codes"])
         self.assertNotIn("entry_id", payload)
-        self.assertEqual([], self.db.timeline(board))
+        self.assertEqual([], self.db.timeline(board, TIMELINE_PAGE))
         self.assertEqual("submission", self.rows()[0]["subject_type"])
 
     def test_a_flagged_entry_looks_exactly_like_a_clean_one(self):
@@ -280,6 +284,247 @@ class Entries(Fixture):
         self.assertEqual("no_access", payload["error"]["code"])
 
 
+class TimelinePaging(Fixture):
+    """/api/timeline is bounded, and the bound is arithmetic rather than taste.
+
+    Until 2026-09-17 it returned every entry on a storyboard, each with a base64 frame in
+    `still`. Measured on this schema that is 25.4 kB an entry at the size the mask screen
+    produces and 117.6 kB at STILL_LIMIT, against a 4.5 MB platform cap on a function's
+    response body — so the endpoint had a cliff at roughly 181 ordinary entries, or 39 from a
+    client sending frames at the ceiling, and past it the answer is not a slow page but a 413.
+    Every test in this file passed throughout, because no storyboard in the suite has twenty
+    entries in it. That is the shape of green that ships a defect.
+
+    The paging is keyset, not LIMIT/OFFSET, and these check the property that buys: pages
+    taken while the storyboard is being written to still add up to the list.
+    """
+
+    def storyboard_of(self, count, handle="owner"):
+        """`count` entries by one author, inserted directly. Going through /api/entries would
+        mean a screener round trip each, and what is under test is the reading."""
+        who, board = self.board(handle)
+        ids = [self.db.add_entry(board, who["user_id"], "ringtail", story=f"sighting {i}",
+                                 still="A" * 40) for i in range(count)]
+        return who, board, ids
+
+    def page(self, token, board, after=None):
+        query = f"/api/timeline?storyboard_id={board}"
+        if after:
+            query += f"&after={after}"
+        status, payload = self.get(query, token=token)
+        self.assertEqual(200, status, payload)
+        return payload
+
+    def walk(self, token, board):
+        """Every page, followed to the end. Returns the ids in the order they arrived."""
+        seen, cursor, pages = [], None, 0
+        while True:
+            payload = self.page(token, board, cursor)
+            seen += [e["id"] for e in payload["entries"]]
+            cursor, pages = payload["next"], pages + 1
+            self.assertLess(pages, 20, "the cursor never finished")
+            if cursor is None:
+                return seen
+
+    def test_a_short_storyboard_fits_in_one_page_and_says_so(self):
+        who, board, ids = self.storyboard_of(3)
+        payload = self.page(who["token"], board)
+        self.assertEqual(ids, [e["id"] for e in payload["entries"]])
+        self.assertIsNone(payload["next"], "a finished list still offered another page")
+
+    def test_a_page_is_never_longer_than_the_page_size(self):
+        who, board, _ = self.storyboard_of(TIMELINE_PAGE + 7)
+        self.assertEqual(TIMELINE_PAGE, len(self.page(who["token"], board)["entries"]))
+
+    def test_the_pages_add_up_to_the_whole_list_in_order(self):
+        """The one that matters. Inserted in a burst, so every entry shares a created_at to
+        the second and the rowid half of the cursor is carrying the whole ordering."""
+        who, board, ids = self.storyboard_of(TIMELINE_PAGE * 2 + 3)
+        walked = self.walk(who["token"], board)
+        self.assertEqual(ids, walked)
+        self.assertEqual(len(set(walked)), len(walked), "an entry came back on two pages")
+
+    def test_the_pages_add_up_when_the_stamps_differ_too(self):
+        """The other branch of the cursor. A burst exercises `created_at = ? AND rowid > ?`
+        and never the plain `created_at > ?`, so a comparison broken there would pass every
+        other test in this class."""
+        who, board, ids = self.storyboard_of(TIMELINE_PAGE + 5)
+        for minute, entry in enumerate(ids):
+            self.db.conn.execute("UPDATE entries SET created_at = ? WHERE id = ?",
+                                 (f"2026-09-01T09:{minute:02d}:00+00:00", entry))
+        self.db.conn.commit()
+        self.assertEqual(ids, self.walk(who["token"], board))
+
+    def test_an_entry_posted_between_two_pages_does_not_shift_the_window(self):
+        """Why the cursor is a position and not an offset. With OFFSET, a row arriving before
+        the window moves everything down one and the reader is handed the entry they just
+        read again — or, on a delete, skips one entirely and never knows."""
+        who, board, ids = self.storyboard_of(TIMELINE_PAGE + 4)
+        first = self.page(who["token"], board)
+        self.db.add_entry(board, who["user_id"], "brushtail", story="posted mid-scroll")
+        rest = self.page(who["token"], board, first["next"])["entries"]
+        self.assertEqual(ids[:TIMELINE_PAGE], [e["id"] for e in first["entries"]])
+        self.assertEqual(ids[TIMELINE_PAGE:], [e["id"] for e in rest][:4],
+                         "the second page repeated or skipped a sighting")
+
+    def test_a_cursor_survives_its_own_entry_being_deleted(self):
+        """The cursor entry is a coordinate, not content. Somebody deleting their sighting
+        while a neighbour is part-way down the list must not strand that neighbour, so
+        entry_position deliberately does not filter deleted_at."""
+        who, board, ids = self.storyboard_of(TIMELINE_PAGE + 4)
+        cursor = self.page(who["token"], board)["next"]
+        self.post("/api/entries/delete", {"entry_id": cursor}, token=who["token"])
+        rest = self.page(who["token"], board, cursor)["entries"]
+        self.assertEqual(ids[TIMELINE_PAGE:], [e["id"] for e in rest],
+                         "deleting the cursor entry lost the rest of the list")
+
+    def test_a_cursor_this_storyboard_never_issued_is_refused(self):
+        """Not a silent restart at the top. A cursor the server does not recognise means the
+        two of them disagree about where they are, and answering page one to a request for
+        page three looks exactly like the rest of the list having been deleted."""
+        who, board, _ = self.storyboard_of(2)
+        _, _, other = self.storyboard_of(2, handle="neighbour-b")
+        for bad in ("no-such-entry", other[0]):
+            with self.subTest(cursor=bad[:12]):
+                status, payload = self.get(
+                    f"/api/timeline?storyboard_id={board}&after={bad}", token=who["token"])
+                self.assertEqual(400, status)
+                self.assertEqual("bad_request", payload["error"]["code"])
+
+    def test_a_cursor_is_not_an_existence_oracle_without_a_grant(self):
+        """The grant is checked before the cursor. Otherwise the difference between 400 and
+        403 would answer "does this entry id exist on that storyboard" for somebody who
+        cannot read a word of it."""
+        _, board, ids = self.storyboard_of(2)
+        stranger = self.session("stranger")
+        for cursor in (ids[0], "no-such-entry"):
+            with self.subTest(cursor=cursor[:12]):
+                status, payload = self.get(
+                    f"/api/timeline?storyboard_id={board}&after={cursor}",
+                    token=stranger["token"])
+                self.assertEqual(403, status)
+                self.assertEqual("no_access", payload["error"]["code"])
+
+    def test_the_header_counts_the_storyboard_and_not_the_page(self):
+        """The detail screen says how many sightings there are, who has contributed and what
+        date the storyboard runs from. It used to count the entry list it was handed, so
+        bounding that list without these three fields would have turned all of them into
+        "how many have loaded so far" — three confident numbers, all wrong, which is worse
+        than the slow page it fixed."""
+        who, board, ids = self.storyboard_of(TIMELINE_PAGE + 5)
+        payload = self.page(who["token"], board)
+        self.assertEqual(TIMELINE_PAGE, len(payload["entries"]))
+        self.assertEqual(len(ids), payload["sightings"])
+        self.assertEqual(["owner"], payload["participants"])
+
+    def test_the_header_lists_every_contributor_in_the_order_they_arrived(self):
+        """First-appearance order, not alphabetical: that is the order the screen showed when
+        it was deduplicating handles itself, and this query replaced that."""
+        who, board, _ = self.storyboard_of(2)
+        second = self.session("neighbour-b")
+        self.db.grant(board, second["user_id"], "contribute", who["user_id"])
+        self.db.add_entry(board, second["user_id"], "ringtail", story="mine too")
+        self.db.add_entry(board, who["user_id"], "ringtail", story="and another")
+        self.assertEqual(["owner", "neighbour-b"],
+                         self.page(who["token"], board)["participants"])
+
+    def test_the_header_ignores_deleted_sightings(self):
+        """A soft delete is immediate everywhere, which has to include the count. A header
+        reading one more than the list is a reader looking for a sighting nobody removed."""
+        who, board, ids = self.storyboard_of(3)
+        self.post("/api/entries/delete", {"entry_id": ids[0]}, token=who["token"])
+        payload = self.page(who["token"], board)
+        self.assertEqual(2, payload["sightings"])
+        self.assertEqual(ids[1], payload["entries"][0]["id"])
+        self.assertEqual(payload["entries"][0]["created_at"], payload["first_seen"],
+                         "first_seen still pointed at the deleted sighting")
+
+    def test_the_timeline_count_and_the_dashboard_count_agree(self):
+        """Two endpoints now report the same number from the same predicate, and two counts
+        that must agree are a thing that drifts. /api/dashboard has computed entry_count since
+        it existed, to save the list screen pulling a whole timeline per storyboard;
+        /api/timeline gained `sightings` so a page of twenty could state the whole. Both read
+        entries WHERE storyboard_id = ? AND deleted_at IS NULL, and this is what says so.
+        """
+        who, board, ids = self.storyboard_of(TIMELINE_PAGE + 5)
+        self.post("/api/entries/delete", {"entry_id": ids[0]}, token=who["token"])
+        _, home = self.get("/api/dashboard", token=who["token"])
+        row = [b for b in home["active"] if b["id"] == board][0]
+        self.assertEqual(TIMELINE_PAGE + 4, row["entry_count"])
+        self.assertEqual(row["entry_count"], self.page(who["token"], board)["sightings"],
+                         "the header and the list card would show different totals")
+
+    def test_the_page_size_cannot_outgrow_the_platform_cap(self):
+        """The two constants are in a relationship, so a change to either has to be
+        deliberate. Vercel answers 413 FUNCTION_PAYLOAD_TOO_LARGE over 4.5 MB on a response
+        body, and the worst case one page can produce is every row at STILL_LIMIT."""
+        worst_case = TIMELINE_PAGE * STILL_LIMIT
+        self.assertLess(worst_case, 4.5 * 1024 * 1024 * 0.75,
+                        "a full page of frames at the cap leaves no room for the rest of "
+                        "the response; lower TIMELINE_PAGE or STILL_LIMIT")
+
+    def test_the_worst_page_anybody_can_build_is_measured_under_the_cap(self):
+        """Measured, not multiplied. The arithmetic test beside this one counts characters,
+        and characters are bytes only for ASCII - which is how a page of emoji stills got past
+        it. Every field here is at its limit and every free-text character is outside the
+        Basic Multilingual Plane, the most json.dumps can inflate one: stills at STILL_LIMIT
+        of base64, stories and fun facts at their caps in emoji. The body the server actually
+        sends has to fit."""
+        who, board = self.board()
+        still = ("A" * (STILL_LIMIT - 2)) + "=="
+        wide = "\U0001F994"
+        for _ in range(TIMELINE_PAGE):
+            self.db.add_entry(board, who["user_id"], "ringtail", fun_fact=wide * FUN_FACT_LIMIT,
+                              story=wide * STORY_LIMIT, still=still)
+        request = urllib.request.Request(f"{self.base}/api/timeline?storyboard_id={board}",
+                                         headers={"authorization": "Bearer " + who["token"]})
+        body = urllib.request.urlopen(request).read()
+        self.assertEqual(TIMELINE_PAGE, len(json.loads(body)["entries"]))
+        self.assertLess(len(body), 4.5 * 1024 * 1024,
+                        f"the worst page is {len(body):,} bytes, over the platform cap")
+
+    def test_the_contributor_list_is_capped_and_the_rest_are_counted(self):
+        """The participants list was not paged. 5,001 guests with 24-emoji handles took one
+        page past the cap in the pre-deploy recheck. Named up to PARTICIPANT_LIMIT, counted
+        in full."""
+        who, board = self.board()
+        extra = PARTICIPANT_LIMIT + 10
+        for i in range(extra):
+            author = self.db.add_user(f"{i:04d}" + "\U0001F994" * 20)
+            self.db.add_entry(board, author, "ringtail", story="one each")
+        payload = self.page(who["token"], board)
+        self.assertEqual(PARTICIPANT_LIMIT, len(payload["participants"]))
+        self.assertEqual(extra, payload["contributors"])
+
+    def test_a_still_stored_before_the_base64_rule_is_not_sent(self):
+        """The rule on writes cannot reach stills the deployed API already took. The pre-deploy
+        recheck pointed out a page of those would still be 5.76 MB, so it applies on read."""
+        who, board = self.board()
+        self.db.add_entry(board, who["user_id"], "ringtail", story="old", still="\U0001F994" * 50)
+        self.db.add_entry(board, who["user_id"], "ringtail", story="good", still="QUJD")
+        stills = {e["story"]: e["still"] for e in self.page(who["token"], board)["entries"]}
+        self.assertEqual({"old": None, "good": "QUJD"}, stills)
+
+    def test_the_offline_pager_uses_the_same_page_size(self):
+        """fixtures.js pages the offline timeline the way the server does, and like the share
+        default it holds its own copy of the number. Read out of the source, the way the
+        schema test reads the document, so the two cannot part quietly."""
+        source = (ROOT / "web" / "lib" / "fixtures.js").read_text(encoding="utf-8")
+        found = re.findall(r"^const PAGE = (\d+);", source, re.M)
+        self.assertEqual([str(TIMELINE_PAGE)], found)
+
+    def test_an_empty_storyboard_answers_with_an_empty_list(self):
+        """Not an error and not a missing key. Nought sightings is the state every storyboard
+        starts in, and the screen has copy for it."""
+        who, board = self.board()
+        payload = self.page(who["token"], board)
+        self.assertEqual([], payload["entries"])
+        self.assertIsNone(payload["next"])
+        self.assertEqual(0, payload["sightings"])
+        self.assertEqual([], payload["participants"])
+        self.assertIsNone(payload["first_seen"])
+
+
 class TheMaskedFrameOnAnEntry(Fixture):
     """An entry carries the frame its author masked, so a storyboard shows the street's own
     footage rather than a stock photograph. data-model.md §1 entries.still.
@@ -316,8 +561,16 @@ class TheMaskedFrameOnAnEntry(Fixture):
         """Somebody's account of their own evening does not get refused because the image
         beside it was the wrong shape. The client sends about 25 kB; anything over the cap
         is a fault in the client, not a reason to lose what they wrote."""
-        from proxy.app import STILL_LIMIT
-        for bad in ("x" * (STILL_LIMIT + 1), 12345, ["not", "a", "string"], "", None):
+        # The last two are the pre-deploy review's. A still of emoji passed the length check
+        # and json.dumps escaped each character to twelve bytes, so four of them took one
+        # timeline page past the platform's 4.5 MB cap.
+        #
+        # The row is read as well as the timeline. The timeline filters bad stills on the way
+        # out too, so on its own it could not see the check on the way in stop working: taking
+        # that check out passed this test until the row was asked. Found by re-running the
+        # mutations against the finished tree before it was squashed.
+        for bad in ("x" * (STILL_LIMIT + 1), 12345, ["not", "a", "string"], "", None,
+                    "\U0001F994" * 1000, "not base64 at all!"):
             with self.subTest(kind=type(bad).__name__):
                 owner, board, status, made = self.entry(still=bad, story="it came back")
                 self.assertEqual(200, status, "a bad still refused the whole sighting")
@@ -326,6 +579,9 @@ class TheMaskedFrameOnAnEntry(Fixture):
                 mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
                 self.assertIsNone(mine["still"])
                 self.assertEqual("it came back", mine["story"])
+                row = self.db.conn.execute("SELECT still FROM entries WHERE id = ?",
+                                           (made["entry_id"],)).fetchone()
+                self.assertIsNone(row["still"], "a bad still was stored, only hidden on read")
 
     def test_deleting_the_entry_takes_the_frame_with_it(self):
         owner, board, _, made = self.entry(still=self.JPEG)
@@ -509,6 +765,33 @@ class Sharing(Fixture):
 
     def links(self, token, storyboard_id):
         return self.get(f"/api/share-links?storyboard_id={storyboard_id}", token=token)
+
+    def test_a_code_with_no_stated_life_lasts_the_default(self):
+        """Seven days, per the note above SHARE_LINK_DAYS. Checked against the stamp the
+        server writes rather than the constant, so a default that stopped reaching the
+        stored row would fail here even with the constant untouched."""
+        owner, board = self.board()
+        before = datetime.now(timezone.utc)
+        status, issued = self.link(owner["token"], board)
+        self.assertEqual(200, status)
+        life = datetime.fromisoformat(issued["expires_at"]) - before
+        self.assertAlmostEqual(SHARE_LINK_DAYS * 86400, life.total_seconds(), delta=5)
+
+    def test_the_share_screen_opens_on_the_same_default_as_the_server(self):
+        """Two languages, so two places, and nothing else holds them together.
+
+        Until 2026-09-18 the server read an undocumented SHARE_LINK_DAYS variable and the share
+        screen started on a literal 7 of its own. The screen always sends expires_in_days, so
+        the variable never reached a real request: set to 14 on the deployment, it would have
+        changed nothing a person sees, and nobody would have been told. This reads the client
+        constant out of the source the way the schema test reads the document, and fails the
+        moment the two part.
+        """
+        source = (ROOT / "web" / "lib" / "copy.js").read_text(encoding="utf-8")
+        found = re.findall(r"export const DEFAULT_EXPIRY_DAYS = (\d+);", source)
+        self.assertEqual(1, len(found), "DEFAULT_EXPIRY_DAYS is missing or defined twice")
+        self.assertEqual(SHARE_LINK_DAYS, int(found[0]),
+                         "the share screen offers one default and the server applies another")
 
     def test_the_listing_never_carries_the_token(self):
         """The database holds only a hash; the plaintext existed once, at issue time.
@@ -1467,6 +1750,258 @@ class Grants(Fixture):
         target = payload["grants"][0]
         # Revoke straight from the user_id in the list, with no second lookup
         self.assertEqual(owner["user_id"], target["user_id"])
+
+
+class SigningOut(Fixture):
+    """POST /api/sessions/revoke — the server agreeing to what the button already said.
+
+    Until 2026-09-18 signing out was a front-end act only: api.js cleared localStorage and
+    the token it discarded stayed valid. And it stayed valid for ever, because a token was
+    `<user_id>.<signature>` with no issue time in it, so there was nothing to expire and
+    nothing but rotating the server secret — which signs out everybody — to revoke. A
+    signed-in account keeps its token in localStorage by design, and there is no password
+    reset, so a captured one was permanent access to that account and the product's only
+    remedy did nothing about it.
+
+    One column carries the fix. users.tokens_valid_from is a cutoff; anything issued before
+    it is refused. See data-model.md §1.2.
+    """
+
+    GOOD = "correct horse battery staple"
+
+    def account(self, handle="ada_l"):
+        status, out = self.post("/api/register", {"handle": handle, "password": self.GOOD})
+        self.assertEqual(200, status, out)
+        return out
+
+    def works(self, token):
+        """Does this token still open anything? Uses a route that needs nothing but identity."""
+        status, _ = self.get("/api/dashboard", token=token)
+        return status == 200
+
+    def test_signing_out_stops_the_token_that_asked(self):
+        """The one the whole thing is for. Before this the answer was "no, it works for ever"."""
+        who = self.account()
+        self.assertTrue(self.works(who["token"]))
+        status, payload = self.post("/api/sessions/revoke", {}, token=who["token"])
+        self.assertEqual(200, status)
+        self.assertTrue(payload["signed_out"])
+        self.assertFalse(self.works(who["token"]), "the token outlived signing out")
+
+    def test_it_stops_every_token_that_person_holds_and_not_only_the_newest(self):
+        """Two browsers, one account. Signing out of one signs out of both, because there is
+        no session table to be selective with and "sign out" on the only button the product
+        has is fairly read as all of them."""
+        who = self.account()
+        _, second = self.post("/api/login", {"handle": "ada_l", "password": self.GOOD})
+        self.assertTrue(self.works(second["token"]))
+        self.post("/api/sessions/revoke", {}, token=who["token"])
+        self.assertFalse(self.works(second["token"]), "the other browser stayed signed in")
+
+    def test_signing_in_again_works_straight_afterwards(self):
+        """The cutoff must not lock the account out of itself. A token minted after the
+        cutoff is later than it, including one minted in the same second — which is why the
+        comparison admits equality rather than demanding strictly later."""
+        who = self.account()
+        self.post("/api/sessions/revoke", {}, token=who["token"])
+        _, back = self.post("/api/login", {"handle": "ada_l", "password": self.GOOD})
+        self.assertTrue(self.works(back["token"]), "signing back in did not work")
+
+    def test_it_signs_out_nobody_else(self):
+        first = self.account("ada_l")
+        second = self.account("neighbour-b")
+        self.post("/api/sessions/revoke", {}, token=first["token"])
+        self.assertTrue(self.works(second["token"]), "it signed out the wrong person")
+
+    def test_it_needs_a_token_of_its_own(self):
+        """Not _tokenless: you cannot sign somebody else out, and there is no user id in the
+        body that could name them."""
+        for token in (None, "nonsense", "u1.1.deadbeef"):
+            with self.subTest(token=str(token)[:12]):
+                status, payload = self.post("/api/sessions/revoke", {}, token=token)
+                self.assertEqual(401, status)
+                self.assertEqual("unauthorized", payload["error"]["code"])
+
+    def test_signing_out_twice_is_not_an_error_for_the_first_one(self):
+        """A client retrying on a dropped connection must not get a 500. The second call
+        arrives with a token the first one already refused, so it is a 401 — signed out
+        either way, which is the state the caller wanted."""
+        who = self.account()
+        self.assertEqual(200, self.post("/api/sessions/revoke", {}, token=who["token"])[0])
+        status, _ = self.post("/api/sessions/revoke", {}, token=who["token"])
+        self.assertEqual(401, status)
+
+    def test_a_guest_cannot_be_signed_out_by_whoever_holds_its_handle(self):
+        """This test used to be test_a_guest_can_sign_out_too, and it pinned the hole.
+
+        Under FENCEPOST_OPEN_SIGNUP anybody who reads @wanderer off a storyboard can exchange
+        that handle for a token of their own - the same user id - and a revoke with it would
+        sign the real guest out. In a loop, faster than the client's single retry, that is a
+        remote lockout of somebody's identity. Found by the pre-deploy review. A guest gains
+        nothing from signing out anyway: the handle re-exchanges at once.
+        """
+        guest = self.session("wanderer")
+        stranger = self.session("wanderer")              # same handle, so the same person
+        self.assertEqual(guest["user_id"], stranger["user_id"])   # as far as the server knows
+        status, payload = self.post("/api/sessions/revoke", {}, token=stranger["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("not_an_account", payload["error"]["code"])
+        self.assertTrue(self.works(guest["token"]), "a stranger signed the guest out")
+
+    def test_the_cutoff_is_the_only_thing_written(self):
+        """Signing out is not a delete. What somebody wrote stays theirs and stays on the
+        storyboard; this ends a session, and reading it as anything more would lose content
+        nobody asked to remove."""
+        who = self.account()
+        board = self.db.add_storyboard(who["user_id"], "Mine")
+        self.db.grant(board, who["user_id"], "reshare", who["user_id"])
+        self.db.add_entry(board, who["user_id"], "ringtail", story="still mine afterwards")
+        self.post("/api/sessions/revoke", {}, token=who["token"])
+        _, back = self.post("/api/login", {"handle": "ada_l", "password": self.GOOD})
+        view = self.get(f"/api/timeline?storyboard_id={board}", token=back["token"])[1]
+        self.assertEqual(["still mine afterwards"], [e["story"] for e in view["entries"]])
+        row = self.db.conn.execute("SELECT password_hash, tokens_valid_from FROM users "
+                                   "WHERE id = ?", (who["user_id"],)).fetchone()
+        self.assertIsNotNone(row["password_hash"], "signing out cleared the password")
+        self.assertIsNotNone(row["tokens_valid_from"])
+
+    def test_the_cutoff_is_in_the_token_own_units_and_not_a_stamp(self):
+        """The one column in this schema that is not an ISO stamp, and the reason is the
+        reason this class exists twice over: it is compared against the issue time inside a
+        bearer token, so it has to be in that number's units and at finer than a second.
+        The first attempt stored a TIMESTAMP and converted on read — which passed a suite
+        happily while making signing out in the second you signed in do nothing at all."""
+        who = self.account()
+        before = self.db.revoke_tokens(who["user_id"])
+        stored = self.db.conn.execute("SELECT tokens_valid_from FROM users WHERE id = ?",
+                                      (who["user_id"],)).fetchone()["tokens_valid_from"]
+        self.assertIsInstance(stored, int)
+        self.assertEqual(before, stored)
+        self.assertEqual(stored, self.db.tokens_valid_from(who["user_id"]))
+        # Milliseconds, not seconds: a second-resolution value here is roughly 1.8e9, and
+        # the difference is the whole bug. Pinned so a "tidy-up" to seconds cannot pass.
+        self.assertGreater(stored, 1_600_000_000_000)
+
+    def test_a_token_issued_in_the_same_second_as_the_sign_out_is_refused(self):
+        """The case that second resolution could not express, and the case that matters
+        most: somebody realises they are on a shared computer and signs out at once. With a
+        cutoff to the second, the token they had just been given was not older than the
+        cutoff, so it survived — and the button reported success."""
+        who = self.account()
+        self.assertTrue(self.works(who["token"]))
+        self.post("/api/sessions/revoke", {}, token=who["token"])
+        self.assertFalse(self.works(who["token"]),
+                         "signing out in the same second did nothing")
+
+    def test_never_signed_out_and_no_such_person_are_different_answers(self):
+        """NULL in the column, so no backfill; 0 out of the accessor, so "exists and never
+        signed out" cannot be mistaken for "does not exist". They used to be the same None,
+        and the second was admitted as a ghost."""
+        who = self.account()
+        self.assertEqual(0, self.db.tokens_valid_from(who["user_id"]))
+        self.assertIsNone(self.db.tokens_valid_from("no-such-user"))
+
+    def test_a_token_for_somebody_who_no_longer_exists_is_refused(self):
+        """scripts/teardown_demo.py deletes every users row. A browser still holding a token
+        from before it used to carry on as a ghost: reads answered 200 and empty, writes
+        failed a foreign key and came back as a 500 saying the assistant was offline, and
+        the client's 401 recovery never ran because no 401 ever came. Found by the
+        pre-deploy review."""
+        who = self.account()
+        self.assertTrue(self.works(who["token"]))
+        self.db.conn.execute("DELETE FROM users WHERE id = ?", (who["user_id"],))
+        self.db.conn.commit()
+        status, payload = self.get("/api/dashboard", token=who["token"])
+        self.assertEqual(401, status, "a token outlived the person it was issued to")
+        self.assertEqual("unauthorized", payload["error"]["code"])
+
+    # -- TOK-1, TOK-2, TOK-6: the clock ----------------------------------------------------
+    #
+    # The first version compared the asking token with a cutoff read from this instance's
+    # clock. A token stamped by a faster instance - within the five minutes of slack verify
+    # allows - was later than that cutoff and survived its own sign-out, and a coarse clock
+    # (15.6 ms on Python 3.12 under Windows) made the same thing happen inside one tick. The
+    # tie rule that decides it was never exercised by any test: flipping < to <= passed the
+    # whole suite, although it had been reported as pinned. Found by the pre-deploy review.
+
+    def test_a_token_stamped_ahead_of_this_clock_is_still_signed_out(self):
+        """A token from an instance running a minute fast. It asks to sign out, is told
+        signed_out, and must actually stop working."""
+        who = self.account()
+        ahead = auth.issue(who["user_id"], auth.now_ms() + 60_000)
+        self.assertTrue(self.works(ahead), "the drifted token should work before sign-out")
+        self.assertEqual(200, self.post("/api/sessions/revoke", {}, token=ahead)[0])
+        self.assertFalse(self.works(ahead), "a fast instance's token survived its sign-out")
+        _, back = self.post("/api/login", {"handle": "ada_l", "password": self.GOOD})
+        self.assertTrue(self.works(back["token"]),
+                        "after that sign-out, signing back in was refused until the drift passed")
+
+    def test_sign_out_and_sign_in_inside_one_tick_of_the_clock(self):
+        """The clock frozen, so every reading is the same millisecond: the coarsest clock
+        there could be. The asking token must die, and a sign-in in the same instant must
+        still be good - possible only because the cutoff is written past the asking token and
+        the next token is minted at or above it."""
+        who = self.account()
+        frozen = auth.now_ms()
+        with mock.patch.object(auth, "now_ms", lambda: frozen):
+            token = auth.issue(who["user_id"])
+            self.assertTrue(self.works(token))
+            self.assertEqual(200, self.post("/api/sessions/revoke", {}, token=token)[0])
+            self.assertFalse(self.works(token), "sign-out did nothing inside one tick")
+            _, back = self.post("/api/login", {"handle": "ada_l", "password": self.GOOD})
+            self.assertTrue(self.works(back["token"]), "signing back in inside the tick failed")
+
+    def test_a_later_sign_out_never_lowers_the_cutoff(self):
+        """Two sign-outs of one account at once, one asking with a token from a fast
+        instance. Whichever lands second must not bring the other's token back. Found by the
+        pre-deploy recheck with the interleaving forced; this is that order, without HTTP."""
+        who = self.account()
+        high = self.db.revoke_tokens(who["user_id"], at_least=auth.now_ms() + 60_000)
+        self.assertEqual(high, self.db.revoke_tokens(who["user_id"]),
+                         "the second sign-out moved the cutoff backwards")
+
+    def test_a_token_expiring_during_sign_out_is_a_refusal_not_a_500(self):
+        """sign_out used to verify the token a second time to read its stamp. One that
+        expired between the two checks escaped as a 500 saying the assistant was offline.
+        The clock here ticks a millisecond per reading, starting on the expiry line."""
+        who = self.account()
+        start = auth.now_ms()
+        token = auth.issue(who["user_id"], start - auth.TTL_MS)
+        ticks = iter(range(start, start + 10_000))
+        with mock.patch.object(auth, "now_ms", lambda: next(ticks)):
+            status, payload = self.post("/api/sessions/revoke", {}, token=token)
+        self.assertNotEqual(500, status, payload)
+
+    def test_the_cutoff_admits_equality_and_nothing_below_it(self):
+        """The tie rule itself, pinned directly rather than hoped for through /api/login,
+        which runs scrypt first and so never reaches a tie."""
+        who = self.account()
+        line = auth.now_ms() - 1000
+        self.db.conn.execute("UPDATE users SET tokens_valid_from = ? WHERE id = ?",
+                             (line, who["user_id"]))
+        self.db.conn.commit()
+        self.assertTrue(self.works(auth.issue(who["user_id"], line)), "equal was refused")
+        self.assertFalse(self.works(auth.issue(who["user_id"], line - 1)), "below was admitted")
+
+    def test_a_signed_out_token_cannot_reach_the_model_either(self):
+        """The assistant is the one route that costs money, and the one the "Sign in again"
+        copy is named after. Every other test here checks revocation through /api/dashboard,
+        and every assistant test elsewhere runs with no database, so a refactor that let
+        _admit skip the cutoff passed all 356 of them. Found by the pre-deploy review.
+        JSON and SSE both, because they share _admit and only one of them had been probed."""
+        who = self.account()
+        _, made = self.post("/api/storyboards", {"title": "Mine"}, token=who["token"])
+        ask = {"role": "neighbour", "storyboard_id": made["storyboard_id"], "message": "hello"}
+        self.assertEqual(200, self.post("/api/assistant", ask, token=who["token"])[0])
+        calls = len(self.client.calls)
+        self.post("/api/sessions/revoke", {}, token=who["token"])
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                status, payload = self.post("/api/assistant", {**ask, "stream": stream},
+                                            token=who["token"])
+                self.assertEqual(401, status)
+                self.assertEqual("unauthorized", payload["error"]["code"])
+        self.assertEqual(calls, len(self.client.calls), "a signed-out token reached the model")
 
 
 class Accounts(Fixture):

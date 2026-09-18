@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from proxy.app import TIMELINE_PAGE                                        # noqa: E402
 from proxy.db import Database                                              # noqa: E402
 from proxy.store import LibsqlStore, Result, SqliteStore, open_store       # noqa: E402
 
@@ -211,7 +212,7 @@ class TheRealDriverRunsTheRealDataLayer(unittest.TestCase):
         # add_storyboard also hands the owner a grant, through ON CONFLICT DO UPDATE
         self.assertEqual("reshare", self.db.grant_level(board, owner))
         self.db.add_entry(board, owner, "ringtail", None, "sat in the jacaranda")
-        rows = self.db.timeline(board)                            # join + EXISTS + rowid ordering
+        rows = self.db.timeline(board, TIMELINE_PAGE)   # join + EXISTS + rowid ordering
         self.assertEqual(1, len(rows))
         self.assertEqual("mel_k", rows[0]["handle"])
         self.assertEqual(0, rows[0]["being_checked"])

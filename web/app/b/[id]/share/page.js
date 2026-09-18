@@ -13,7 +13,7 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { grants, issueShareLink, revokeGrant, shareLinks, revokeShareLink, me }
   from "../../../../lib/api";
-import { COPY, LEVELS, EXPIRY } from "../../../../lib/copy";
+import { COPY, LEVELS, EXPIRY, DEFAULT_EXPIRY_DAYS } from "../../../../lib/copy";
 import { until } from "../../../../lib/format";
 import { BackButton, ui } from "../../../../components/ui";
 import QrPlaceholder from "../../../../components/QrPlaceholder";
@@ -25,7 +25,7 @@ export default function Share({ params }) {
   const { id } = use(params);
   const router = useRouter();
   const [level, setLevel] = useState("contribute");
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);   // proxy/app.py SHARE_LINK_DAYS
   const [issued, setIssued] = useState(null);
   const [access, setAccess] = useState(null);
   const [links, setLinks] = useState(null);

@@ -94,6 +94,11 @@ export const COPY = {
   guestBody:
     "This browser made you a name so you could try things out. An account is a separate identity: what you posted as a guest stays with the guest, and signing out brings you back to it.",
   signOut: "Sign out",
+  // ux-copy.md 5.8. Shown when an account's sign-in stops working - it expired, or Sign out
+  // was pressed somewhere else. Not the server's "unauthorized" line, which is about the
+  // assistant; and deliberately not a silent switch to the guest identity, which is what
+  // happened before and posted under a different name.
+  sessionEnded: "Your sign-in has ended. Sign in again, or reload the page to carry on as a guest.",
   accessTitle: "What you can reach",
   accessEmpty: "Nothing yet. A storyboard you make, or a code somebody shares with you, turns up here.",
 
@@ -197,6 +202,10 @@ export const COPY = {
   blockedKept: "Your writing is still there, exactly as you left it.",
   backToEditing: "Back to editing",
   addSighting: "Add your sighting",
+  // ux-copy.md 5.7. Drawn only when the server says there is another page: it hands back
+  // `next`, and a button that could be pressed for nothing is the thing web/README.md
+  // says not to draw.
+  moreSightings: "Show more sightings",
   askAssistant: "Ask Possum Help",
   discussion: "Discussion",
   newThread: "Start a thread",
@@ -340,6 +349,12 @@ export const EXPIRY = [
   { id: 30, label: "30 days" },
   { id: 90, label: "90 days" },
 ];
+
+// Which of those the share screen starts on. Must match SHARE_LINK_DAYS in proxy/app.py,
+// where the reason for seven is written down; tests/test_resources.py reads this line and
+// fails if the two part. It must also be one of the ids above, or the screen opens with no
+// chip selected and sends a number the owner never saw — lib/fixtures.test.mjs checks that.
+export const DEFAULT_EXPIRY_DAYS = 7;
 
 // The Screener returns only reason_codes. What an author sees is these sentences; they
 // never see the verdict or the note.

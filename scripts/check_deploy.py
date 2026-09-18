@@ -49,6 +49,11 @@ POST_ROUTES = [
     "/api/forum/threads", "/api/forum/posts", "/api/forum/posts/delete",
     "/api/forum/posts/remove",
     "/api/review/vote", "/api/review/dispose", "/api/assistant",
+    # The one route an unauthenticated probe can use to tell a current API from one deployed
+    # before 2026-09-18. It was missing, so this script passed against a stale API after a
+    # push - the exact state it exists to catch. tests/test_entrypoint.py now compares this
+    # list with the dispatch table.
+    "/api/sessions/revoke",
 ]
 GET_ROUTES = [
     "/api/timeline", "/api/dashboard", "/api/record",

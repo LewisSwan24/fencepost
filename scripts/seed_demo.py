@@ -63,10 +63,22 @@ globalThis.window = { localStorage: { getItem: () => null, setItem: () => {},
 const f = await import('./lib/fixtures.js');
 const home = f.dashboard();
 const out = { boards: [], forum: {} };
+// timeline() is paged — one page is 20 entries. The fixture boards are well short of that,
+// so a single call would seed the whole demo today and quietly seed a truncated one the day
+// somebody adds a twenty-first sighting. Follow the cursor instead.
+const wholeTimeline = (id) => {
+  const rows = [];
+  for (let cursor = null, guard = 0; guard < 100; guard += 1) {
+    const page = f.timeline(id, cursor);
+    rows.push(...page.entries);
+    if (!(cursor = page.next)) break;
+  }
+  return rows;
+};
 for (const b of [...home.active, ...home.past]) {
   out.boards.push({ id: b.id, title: b.title, status: b.status,
                     closed_note: b.closed_note ?? null,
-                    entries: f.timeline(b.id).entries });
+                    entries: wholeTimeline(b.id) });
   out.forum[b.id] = (f.forumThreads(b.id).threads || []).map(t => ({
     title: t.title, handle: t.handle, posts: f.readThread(t.id).posts }));
 }

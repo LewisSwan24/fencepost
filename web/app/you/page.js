@@ -26,23 +26,37 @@ export default function You() {
   const [boards, setBoards] = useState(null);
   const [record, setRecord] = useState(null);
   const [error, setError] = useState(null);
+  // An account whose sign-in has stopped working - it expired, or Sign out was pressed on
+  // another device. This page used to swallow both of its failing calls and go on saying
+  // "Signed in" over an empty list: found by walking it in a browser on 2026-09-18, against
+  // a token revoked from outside. who still resolves, from memory, so it is not a signal.
+  const [ended, setEnded] = useState(false);
 
   useEffect(() => {
+    const notice = (e) => {
+      if (e?.code === "session_ended") {
+        setEnded(true);
+        setError(e.message);
+      }
+    };
     whoAmI().then(setWho, (e) => setError(e.message));
     // The same call the dashboard makes. What it adds here is the level on each one, which
     // is the only place a person can see what they are actually allowed to do and where.
     dashboard().then(
       (view) => setBoards([...(view.active || []), ...(view.past || [])]),
-      () => setBoards([])
+      (e) => { notice(e); setBoards([]); }
     );
     // Only ever your own, and this is the only screen it appears on. No storyboard shows
     // it, because the moment somebody else can read a count it has become a way of
     // measuring a neighbour, which is what the decision table rules out.
-    myRecord().then(setRecord, () => {});
+    myRecord().then(setRecord, notice);
   }, []);
 
-  function leave() {
-    signOut();
+  // Awaited, because signOut now tells the server as well as the browser. It clears the
+  // local half first and never throws, so the navigation happens either way — a network
+  // that is down must not be able to trap somebody on the screen they asked to leave.
+  async function leave() {
+    await signOut();
     router.replace("/");
   }
 
@@ -58,12 +72,19 @@ export default function You() {
           <div>
             <div className={styles.handle}>{who?.handle || " "}</div>
             <div className={styles.kind}>
-              {who ? (who.account ? "Signed in" : COPY.guestTitle) : ""}
+              {who && !ended ? (who.account ? "Signed in" : COPY.guestTitle) : ""}
             </div>
           </div>
         </div>
 
         {error ? <p className={styles.error}>{error}</p> : null}
+        {/* The copy says "Sign in again", so the way to do it has to be here. Sign out stays
+            below, for carrying on as the guest. */}
+        {ended ? (
+          <button type="button" className={ui.btn} onClick={() => router.push("/sign-in")}>
+            {COPY.signInTitle}
+          </button>
+        ) : null}
 
         {who && !who.account ? (
           <>
@@ -97,8 +118,10 @@ export default function You() {
           </>
         ) : null}
 
-        <h2 className={styles.section}>{COPY.accessTitle}</h2>
-        {boards === null ? null : boards.length === 0 ? (
+        {/* Not shown once the sign-in has ended: "Nothing yet" would be the failure talking,
+            not the person's real access. */}
+        {ended ? null : <h2 className={styles.section}>{COPY.accessTitle}</h2>}
+        {ended || boards === null ? null : boards.length === 0 ? (
           <p className={styles.body}>{COPY.accessEmpty}</p>
         ) : (
           <ul className={styles.list}>

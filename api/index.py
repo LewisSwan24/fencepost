@@ -17,7 +17,7 @@ from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, ha
                        remove_entry, remove_post,
                        review_queue,
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
-                       submit_entry, timeline)
+                       sign_out, submit_entry, timeline)
 from proxy.env import load_env
 from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
                       SqliteScreeningLog)
@@ -54,6 +54,9 @@ POST_ROUTES = {
     "/api/forum/posts": create_post,
     "/api/forum/posts/delete": delete_post,
     "/api/forum/posts/remove": remove_post,
+    # Signing out is a POST with an empty body: the identity comes from the header, and
+    # a token is what it revokes. Not _tokenless — you cannot sign out somebody else.
+    "/api/sessions/revoke": sign_out,
     "/api/review/vote": cast_review_vote,
     "/api/review/dispose": dispose_entry,
     # The assistant is the one that can stream, so do_POST still names it directly.

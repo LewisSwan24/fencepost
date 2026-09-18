@@ -21,7 +21,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { reviewQueue, castVote, disposeEntry, storyboard, isOwner } from "../../../../lib/api";
+import { reviewQueue, castVote, disposeEntry, boardRow, isOwner } from "../../../../lib/api";
 import { SPECIES_LABEL } from "../../../../lib/fixtures";
 import { COPY } from "../../../../lib/copy";
 import { stamp } from "../../../../lib/format";
@@ -55,7 +55,7 @@ export default function Review({ params }) {
 
   useEffect(() => {
     load();
-    storyboard(id).then((got) => isOwner(id, got.level).then(setOwner, () => {}), () => {});
+    boardRow(id).then((got) => isOwner(id, got.level).then(setOwner, () => {}), () => {});
   }, [id]);
 
   async function vote(entryId, choice) {

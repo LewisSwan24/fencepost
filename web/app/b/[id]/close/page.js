@@ -13,7 +13,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { storyboard, isOwner, closeStoryboard, isArchived } from "../../../../lib/api";
+import { boardRow, isOwner, closeStoryboard, isArchived } from "../../../../lib/api";
 import { COPY } from "../../../../lib/copy";
 import { BackButton, ui } from "../../../../components/ui";
 import styles from "./close.module.css";
@@ -32,7 +32,7 @@ export default function CloseStoryboard({ params }) {
 
   useEffect(() => {
     let live = true;
-    storyboard(id).then(
+    boardRow(id).then(
       async (got) => {
         if (!live) return;
         setView(got);
