@@ -529,12 +529,23 @@ class PrefixStability(unittest.TestCase):
     """
 
     def test_the_context_rides_with_the_system_prompt(self):
+        # Asserted on the dynamic block, not on literals: the static neighbour prompt
+        # itself contains "<context>" and "species_selected: unknown", so the first
+        # version of these assertions passed with the block deleted outright — the
+        # mutation run caught that. startswith/endswith pin the qwen-integration §7
+        # shape: the static prompt stays ahead (the warm part of the prefix), and the
+        # per-call block rides at the end.
         client = FakeClient("hi")
         deps = deps_for(client)
+        deps.context.entries[("u1", "s1")] = [
+            {"species": "brushtail", "fun_fact": "FACT-X9", "story": "STORY-Y9"}]
         handle(chat(), TOKEN, deps)
         sent = client.calls[0]
-        self.assertIn("<context>", sent["system"])
-        self.assertIn("species_selected", sent["system"])
+        prompt = roles.load_prompt("neighbour")[0]
+        self.assertTrue(sent["system"].startswith(prompt))
+        self.assertTrue(sent["system"].endswith("</context>"))
+        self.assertIn("species_selected: brushtail", sent["system"])
+        self.assertIn("fun_fact: FACT-X9", sent["system"])
         self.assertEqual("is this a possum?", sent["content"])
 
     def test_the_next_turn_replays_the_previous_one_byte_for_byte(self):
