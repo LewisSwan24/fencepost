@@ -4,6 +4,7 @@ import os
 import sys
 
 from .env import load_env
+from .ports import CEILINGS
 
 DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
@@ -102,3 +103,48 @@ class DashScope:
             print(f"[proxy] upstream stream {role}: {redact(str(exc))[:300]}", file=sys.stderr)
             raise UpstreamError(role) from None
         log_usage(role, usage)
+
+
+class CappedClient:
+    """Any client, behind the global ceiling on model calls (operations.md §3).
+
+    Open sign-up makes a fresh handle a fresh per-user quota, so those limits bound nothing
+    about what the model costs in total. This counts every call before it goes out — each
+    retry by the Screener and the Writer too, because each one is billed.
+
+    Reaching the ceiling raises UpstreamError, deliberately indistinguishable from an outage:
+    the Screener fails open, the Writer skips, the Neighbour answers upstream_unavailable.
+    Nobody asking did anything wrong, so nothing may tell them they did.
+    """
+
+    def __init__(self, client, ceilings, cap: int = None, window: int = None):
+        default_cap, default_window = CEILINGS["model"]
+        self._client = client
+        self._ceilings = ceilings
+        self.cap = default_cap if cap is None else cap
+        self.window = default_window if window is None else window
+
+    def __getattr__(self, name):
+        # chat_model and screener_model are read off the client when a reply is stored.
+        # Private names are refused so a half-built instance cannot recurse into itself.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._client, name)
+
+    def _claim(self, role: str) -> None:
+        if not self._ceilings.claim("model", self.cap, self.window):
+            print(f"[proxy] model ceiling reached ({self.cap} per {self.window}s)",
+                  file=sys.stderr)
+            raise UpstreamError(role)
+
+    def call(self, role: str, system: str, content, history=()) -> str:
+        self._claim(role)
+        return self._client.call(role, system, content, history=history)
+
+    def stream(self, role: str, system: str, content, history=()):
+        # Not a generator function on purpose. The slot is claimed here, when the stream is
+        # asked for, so a refusal arrives before the response has started and can still be
+        # a plain 503; a generator would defer it to the first iteration, after the SSE
+        # headers are already out.
+        self._claim(role)
+        return self._client.stream(role, system, content, history=history)

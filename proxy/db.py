@@ -1085,6 +1085,55 @@ class SqliteContext:
         }
 
 
+def _claim(db: Database, table: str, match: dict, cap: int, window: int) -> bool:
+    """Claim a slot first, then check whether the cap was passed — and give it back if so.
+    True when the slot was kept. Shared by the per-user limiter and the ceilings.
+
+    `table` and the keys of `match` are spliced into the SQL, so they come from constants in
+    this file and never from a request; only the values travel as parameters.
+
+    This used to count first and insert afterwards: DELETE expired, SELECT COUNT, compare,
+    INSERT. Serverless means several instances at once, and on one identity they all read
+    the same count before any of them has inserted, so N concurrent requests each saw
+    `used` below the cap and each added a row. The ceiling was whatever arrived between
+    two round trips.
+
+    Inserting first, committing so the other instances can see the row, and only then
+    counting makes the race safe in the direction that matters: nobody can be counted
+    out of existence, so the cap cannot be exceeded.
+
+    It can be undershot by one at the exact boundary. With nine of ten used, two requests
+    landing in the same instant both insert, both count eleven, and both hand the slot
+    back — nine used, one caller told to slow down who could have been served. Retrying
+    succeeds immediately, and refusing one extra request is the right way round for a
+    limiter. Getting it exact needs arrival order, which these tables cannot express: id is
+    a random uuid and used_at has second granularity, so almost every row ties and
+    ordering by either is ordering by nothing. An exact answer would mean a monotonic
+    column, which is a schema change and a migration for a boundary nobody has hit.
+    """
+    columns = list(match)
+    where = " AND ".join(f"{column} = ?" for column in columns)
+    values = tuple(match[column] for column in columns)
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=window)).isoformat(timespec="seconds")
+    db.conn.execute(f"DELETE FROM {table} WHERE {where} AND used_at < ?", (*values, cutoff))
+    mine = new_id()
+    db.conn.execute(
+        f"INSERT INTO {table} (id, {', '.join(columns)}, used_at) "
+        f"VALUES (?, {', '.join('?' for _ in columns)}, ?)",
+        (mine, *values, now()))
+    # Committed before counting, or the other instances' rows are invisible and the race
+    # is exactly where it was.
+    db.conn.commit()
+    used = db.conn.execute(f"SELECT COUNT(*) AS c FROM {table} WHERE {where}",
+                           values).fetchone()["c"]
+    if used > cap:
+        db.conn.execute(f"DELETE FROM {table} WHERE id = ?", (mine,))
+        db.conn.commit()
+        return False
+    return True
+
+
 class SqliteRateLimiter:
     """The three ceilings from operations.md §3, held in the rate_limits table.
 
@@ -1098,47 +1147,27 @@ class SqliteRateLimiter:
         self.limits = limits or DEFAULT_LIMITS
 
     def check_and_count(self, user_id: str, scope: str) -> None:
-        """Claim the slot first, then check whether the cap was passed — and give it back if so.
-
-        This used to count first and insert afterwards: DELETE expired, SELECT COUNT, compare,
-        INSERT. Serverless means several instances at once, and on one identity they all read
-        the same count before any of them has inserted, so N concurrent requests each saw
-        `used` below the cap and each added a row. The ceiling was whatever arrived between
-        two round trips.
-
-        Inserting first, committing so the other instances can see the row, and only then
-        counting makes the race safe in the direction that matters: nobody can be counted
-        out of existence, so the cap cannot be exceeded.
-
-        It can be undershot by one at the exact boundary. With nine of ten used, two requests
-        landing in the same instant both insert, both count eleven, and both hand the slot
-        back — nine used, one caller told to slow down who could have been served. Retrying
-        succeeds immediately, and refusing one extra request is the right way round for a
-        limiter. Getting it exact needs arrival order, which this table cannot express: id is
-        a random uuid and used_at has second granularity, so almost every row ties and
-        ordering by either is ordering by nothing. An exact answer would mean a monotonic
-        column, which is a schema change and a migration for a boundary nobody has hit.
-        """
+        """Insert, commit, count, hand back if over. Why that order: see _claim."""
         cap, window = self.limits[scope]
-        cutoff = (datetime.now(timezone.utc)
-                  - timedelta(seconds=window)).isoformat(timespec="seconds")
-        self.db.conn.execute(
-            "DELETE FROM rate_limits WHERE user_id = ? AND scope = ? AND used_at < ?",
-            (user_id, scope, cutoff))
-        mine, stamp = new_id(), now()
-        self.db.conn.execute(
-            "INSERT INTO rate_limits (id, user_id, scope, used_at) VALUES (?, ?, ?, ?)",
-            (mine, user_id, scope, stamp))
-        # Committed before counting, or the other instances' rows are invisible and the race
-        # is exactly where it was.
-        self.db.conn.commit()
-        used = self.db.conn.execute(
-            "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ? AND scope = ?",
-            (user_id, scope)).fetchone()["c"]
-        if used > cap:
-            self.db.conn.execute("DELETE FROM rate_limits WHERE id = ?", (mine,))
-            self.db.conn.commit()
+        if not _claim(self.db, "rate_limits", {"user_id": user_id, "scope": scope},
+                      cap, window):
             raise RateLimited(scope)
+
+
+class SqliteCeilings:
+    """The ceilings that belong to no user (operations.md §3), in the ceilings table.
+
+    Not rate_limits: its user_id is NOT NULL with an enforced foreign key, and the model
+    ceiling counts calls whoever made them, while the session one counts before there is a
+    user at all. Same counting, same race-safety, one shared helper.
+    """
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def claim(self, bucket: str, cap: int, window: int) -> bool:
+        """Take one slot in `bucket`. False, and nothing taken, when the cap is reached."""
+        return _claim(self.db, "ceilings", {"bucket": bucket}, cap, window)
 
 
 class SqliteScreeningLog:

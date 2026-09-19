@@ -19,14 +19,22 @@ from proxy.app import (COPY, Deps, create_session, create_storyboard, handle, ha
                        redeem_share_link, register_video, revoke_grant, revoke_share_link,
                        sign_out, submit_entry, timeline)
 from proxy.env import load_env
-from proxy.db import (Database, SqliteContext, SqliteHistory, SqliteRateLimiter,
-                      SqliteScreeningLog)
-from proxy.model import DashScope, UpstreamError, redact
+from proxy.db import (Database, SqliteCeilings, SqliteContext, SqliteHistory,
+                      SqliteRateLimiter, SqliteScreeningLog)
+from proxy.model import CappedClient, DashScope, UpstreamError, redact
 
 
 def _tokenless(fn):
     """Session, register and login take no token — they are how somebody gets one."""
     return lambda body, token, deps: fn(body, deps)
+
+
+def _addressed(fn):
+    """A tokenless handler that also needs the caller's address, which only the request
+    knows. do_POST binds it; with no address the handler is simply not limited per address."""
+    route = lambda body, token, deps, address=None: fn(body, deps, address=address)
+    route.wants_address = True
+    return route
 
 
 # Path to handler, the same shape as GET_ROUTES below. This used to be a tuple of paths
@@ -36,7 +44,7 @@ def _tokenless(fn):
 # client learns nothing — the exact lesson the comment on _deps() already records, applied
 # there and not here. A table dispatches in one line, and one line can be wrapped.
 POST_ROUTES = {
-    "/api/session": _tokenless(create_session),
+    "/api/session": _addressed(create_session),
     "/api/register": _tokenless(register),
     "/api/login": _tokenless(login),
     "/api/storyboards": create_storyboard,
@@ -123,9 +131,13 @@ def _deps() -> Deps:
         db = Database(os.getenv("FENCEPOST_DB")
                       or os.getenv("TURSO_DATABASE_URL")
                       or default_db)
-        _DEPS = Deps(client=DashScope(), limiter=SqliteRateLimiter(db),
+        # One ceilings table serves both global ceilings: the client counts every model
+        # call against it, and /api/session counts tokens minted per address.
+        ceilings = SqliteCeilings(db)
+        _DEPS = Deps(client=CappedClient(DashScope(), ceilings),
+                     limiter=SqliteRateLimiter(db),
                      history=SqliteHistory(db), context=SqliteContext(db),
-                     screening=SqliteScreeningLog(db), db=db)
+                     screening=SqliteScreeningLog(db), db=db, ceilings=ceilings)
     return _DEPS
 
 
@@ -171,7 +183,26 @@ class handler(BaseHTTPRequestHandler):
         # response the caller can read instead of a connection that closes with nothing on it.
         if path == "/api/assistant" and body.get("stream"):
             return self._sse(body, token, deps)
-        self._json(*self._run(POST_ROUTES[path], body, token, deps))
+        route = POST_ROUTES[path]
+        if getattr(route, "wants_address", False):
+            # Bound in a closure so reading the address happens inside _run, under its net.
+            bound = route
+            route = lambda b, t, d: bound(b, t, d, address=self._client_address())
+        self._json(*self._run(route, body, token, deps))
+
+    def _client_address(self) -> str:
+        """Who is asking, as far as the network says.
+
+        On Vercel the first x-forwarded-for entry: the platform overwrites that header and
+        does not pass on a value the client supplied (vercel.com/docs/headers/request-headers),
+        so it cannot be forged from outside. Anywhere else there is no such promise, but
+        locally there is no proxy either, and the socket peer is the answer.
+        """
+        if os.getenv("VERCEL"):
+            forwarded = (self.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            if forwarded:
+                return forwarded
+        return str(self.client_address[0])
 
     def _run(self, fn, body, token, deps):
         """Call a route handler and answer, whatever happens.
