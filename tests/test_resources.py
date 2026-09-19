@@ -25,10 +25,11 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 import api.index as entry                                          # noqa: E402
 from unittest import mock                                          # noqa: E402
 from proxy import auth                                             # noqa: E402
+from proxy.ports import CEILINGS                                   # noqa: E402
 from proxy.app import (COPY, FUN_FACT_LIMIT, SHARE_LINK_DAYS,      # noqa: E402
                        STILL_LIMIT, STORY_LIMIT, TIMELINE_PAGE, Deps)
-from proxy.db import (PARTICIPANT_LIMIT, Database, SqliteContext,  # noqa: E402
-                      SqliteHistory, SqliteScreeningLog)
+from proxy.db import (PARTICIPANT_LIMIT, Database, SqliteCeilings,  # noqa: E402
+                      SqliteContext, SqliteHistory, SqliteScreeningLog)
 
 OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
 REVIEW_JSON = '{"verdict":"review","codes":["fact_conflict"],"note":"off"}'
@@ -2005,6 +2006,80 @@ class SigningOut(Fixture):
                 self.assertEqual(401, status)
                 self.assertEqual("unauthorized", payload["error"]["code"])
         self.assertEqual(calls, len(self.client.calls), "a signed-out token reached the model")
+
+
+class SessionsPerAddress(Fixture):
+    """The per-address ceiling on /api/session (operations §3).
+
+    Open sign-up makes any handle a token, so a per-user limit is no limit on how many
+    identities one caller can mint. This one counts by client address instead — kept as a
+    keyed hash, never as the address itself.
+    """
+
+    CAP = 2
+
+    def setUp(self):
+        super().setUp()
+        entry._DEPS.ceilings = SqliteCeilings(self.db)
+        patcher = mock.patch.dict(CEILINGS, {"session": (self.CAP, 3600)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # x-forwarded-for is trusted only on Vercel, where the platform sets it
+        env = mock.patch.dict(os.environ, {"VERCEL": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def from_address(self, address, handle):
+        request = urllib.request.Request(
+            self.base + "/api/session", data=json.dumps({"handle": handle}).encode(),
+            headers={"content-type": "application/json", "x-forwarded-for": address})
+        try:
+            resp = urllib.request.urlopen(request)
+        except urllib.error.HTTPError as err:
+            resp = err
+        return resp.status, json.loads(resp.read())
+
+    def test_the_cap_answers_429_and_other_addresses_are_unaffected(self):
+        for n in range(self.CAP):
+            self.assertEqual(200, self.from_address("203.0.113.7", f"fresh-{n}")[0])
+        status, payload = self.from_address("203.0.113.7", "one-more")
+        self.assertEqual(429, status)
+        self.assertEqual({"code": "rate_limited", "scope": "session",
+                          "message": COPY["rate_limited_session"]}, payload["error"])
+        self.assertIsNone(self.db.user_by_handle("one-more"), "a refused request made a user")
+        self.assertEqual(200, self.from_address("198.51.100.4", "next-door")[0])
+
+    def test_the_first_forwarded_entry_is_the_one_counted(self):
+        for n in range(self.CAP):
+            self.from_address("203.0.113.7, 10.0.0.1", f"fresh-{n}")
+        self.assertEqual(429, self.from_address("203.0.113.7, 10.0.0.2", "again")[0])
+
+    def test_refusals_before_minting_spend_nothing(self):
+        """Only a request about to mint a token counts, so a bad handle or a handle that
+        belongs to an account cannot use up a network's allowance."""
+        self.post("/api/register", {"handle": "has-a-password", "password": "long enough pw"})
+        for _ in range(self.CAP + 2):
+            self.assertEqual(400, self.from_address("203.0.113.7", "")[0])
+            self.assertEqual(403, self.from_address("203.0.113.7", "has-a-password")[0])
+        self.assertEqual(200, self.from_address("203.0.113.7", "fresh")[0])
+
+    def test_no_raw_address_is_stored(self):
+        self.from_address("203.0.113.7", "fresh")
+        buckets = [row["bucket"] for row in
+                   self.db.conn.execute("SELECT bucket FROM ceilings").fetchall()]
+        self.assertEqual(1, len(buckets))
+        self.assertTrue(buckets[0].startswith("session:"))
+        self.assertNotIn("203.0.113.7", buckets[0])
+        self.assertEqual("session:" + auth.address_key("203.0.113.7"), buckets[0])
+
+    def test_off_vercel_the_header_is_ignored(self):
+        """Anywhere but Vercel nothing strips a client-supplied x-forwarded-for, so trusting
+        it would let one caller be a new network on every request."""
+        with mock.patch.dict(os.environ):
+            os.environ.pop("VERCEL", None)
+            for n in range(self.CAP):
+                self.from_address(f"192.0.2.{n}", f"fresh-{n}")
+            self.assertEqual(429, self.from_address("192.0.2.99", "spoofed")[0])
 
 
 class Accounts(Fixture):

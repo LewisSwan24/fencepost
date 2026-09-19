@@ -32,6 +32,8 @@ Create a `.env` in the repository root. It is git-ignored.
 | `FENCEPOST_ALLOWED_ORIGIN` | no | Origins allowed to call the API from a browser, comma-separated. Defaults to `*`. Set it on any deployment that stays up — and list **every** alias the frontend answers on, because a missing one loads blank with nothing but a CORS error to go on. |
 | `CHAT_MODEL`, `SCREENER_MODEL`, `MODEL_TIMEOUT` | no | Model overrides. Defaults are in `proxy/model.py`. |
 | `LIMIT_CHAT_PER_DAY`, `LIMIT_VISION_PER_HOUR`, `LIMIT_SUBMISSION_PER_HOUR` | no | Rate limits. Defaults match the operations doc. |
+| `LIMIT_MODEL_CALLS_PER_DAY` | no | Ceiling on model calls across **everybody**, retries included, over a sliding 24 hours. Default `1000`. Open sign-up makes a fresh handle a fresh per-user quota, so this is what actually bounds spend. Reaching it looks like an outage: the Screener fails open, the Writer skips, the assistant says it is offline. |
+| `LIMIT_SESSIONS_PER_HOUR` | no | Tokens `POST /api/session` will mint per client address per hour. Default `120`, generous on purpose — a lecture theatre can sit behind one campus NAT. The address is counted as a keyed hash, never stored. |
 
 ## Tests
 

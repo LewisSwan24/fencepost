@@ -18,6 +18,16 @@ DEFAULT_LIMITS = {
     "login": (int(os.getenv("LIMIT_LOGIN_PER_15MIN", "10")), 900),
 }
 
+# operations.md §3, the two ceilings that belong to no user. Open sign-up hands anyone a
+# fresh identity per handle, so a per-user limit bounds nothing about total spend: these do.
+# `model` counts every call to the model whoever asked, retries included. `session` counts
+# tokens minted by /api/session per client address, and is generous on purpose — a lecture
+# theatre of markers can sit behind one campus NAT.
+CEILINGS = {
+    "model": (int(os.getenv("LIMIT_MODEL_CALLS_PER_DAY", "1000")), 86400),
+    "session": (int(os.getenv("LIMIT_SESSIONS_PER_HOUR", "120")), 3600),
+}
+
 
 class RateLimited(Exception):
     def __init__(self, scope: str):
@@ -44,6 +54,26 @@ class MemoryRateLimiter:
         if len(hits) >= cap:
             raise RateLimited(scope)
         hits.append(self._now())
+
+
+class MemoryCeilings:
+    """The in-memory twin of db.SqliteCeilings, for tests. Per instance, so no ceiling at all
+    on serverless — the same caveat as MemoryRateLimiter."""
+
+    def __init__(self, now=time.time):
+        self._now = now
+        self._hits: dict[str, deque] = {}
+
+    def claim(self, bucket: str, cap: int, window: int) -> bool:
+        """Take one slot in `bucket`. False, and nothing taken, when the cap is reached."""
+        hits = self._hits.setdefault(bucket, deque())
+        cutoff = self._now() - window
+        while hits and hits[0] <= cutoff:
+            hits.popleft()
+        if len(hits) >= cap:
+            return False
+        hits.append(self._now())
+        return True
 
 
 class MemoryHistory:

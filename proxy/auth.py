@@ -35,6 +35,16 @@ def _sign(material: str) -> str:
     return hmac.new(_secret(), material.encode(), hashlib.sha256).hexdigest()
 
 
+def address_key(address: str) -> str:
+    """What the per-address session ceiling counts under, in place of the address itself.
+
+    Keyed with the token secret so the stored value cannot be turned back into an address by
+    hashing the IPv4 space, which a plain hash could be in minutes. No IP address is kept.
+    The `addr|` prefix keeps this material apart from anything a token signature covers.
+    """
+    return _sign("addr|" + address)[:32]
+
+
 def _material(user_id: str, stamp) -> str:
     """What a token's signature covers: a version tag, the user id and the issue time.
 

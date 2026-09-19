@@ -22,16 +22,16 @@ from proxy import auth                                               # noqa: E40
 from proxy import db as db_module                                   # noqa: E402
 from proxy.app import TIMELINE_PAGE, Deps, handle, _record_screening  # noqa: E402
 from proxy import roles                                             # noqa: E402
-from proxy.db import (Database, SqliteContext, SqliteHistory,        # noqa: E402
-                      SqliteRateLimiter, SqliteScreeningLog)
+from proxy.db import (Database, SqliteCeilings, SqliteContext,       # noqa: E402
+                      SqliteHistory, SqliteRateLimiter, SqliteScreeningLog)
 from proxy.model import UpstreamError                                # noqa: E402
-from proxy.ports import PermissionDenied, RateLimited                # noqa: E402
+from proxy.ports import MemoryCeilings, PermissionDenied, RateLimited  # noqa: E402
 
 VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 
 TABLES = {"users", "videos", "storyboards", "entries", "access_grants",
           "share_links", "chat_messages", "screening_results", "rate_limits",
-          "forum_threads", "forum_posts", "review_votes"}
+          "ceilings", "forum_threads", "forum_posts", "review_votes"}
 
 OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
 REVIEW_JSON = '{"verdict":"review","codes":["fact_conflict"],"note":"lifespan is off"}'
@@ -635,6 +635,66 @@ class Limits(Fixture):
         self.assertEqual(0, self.db.conn.execute(
             "SELECT COUNT(*) AS c FROM rate_limits WHERE user_id = ?",
             (self.guest,)).fetchone()["c"])
+
+
+class Ceilings(Fixture):
+    """The two ceilings that belong to no user (operations §3), in their own table.
+
+    Not rate_limits: its user_id is a NOT NULL foreign key, and neither the model ceiling nor
+    the per-address session one has a user to point at.
+    """
+
+    def count(self, bucket):
+        return self.db.conn.execute("SELECT COUNT(*) AS c FROM ceilings WHERE bucket = ?",
+                                    (bucket,)).fetchone()["c"]
+
+    def test_the_table_is_in_the_schema(self):
+        self.assertIn("ceilings", self.db.tables())
+
+    def test_the_cap_is_enforced_and_a_refusal_takes_nothing(self):
+        ceilings = SqliteCeilings(self.db)
+        for _ in range(3):
+            self.assertTrue(ceilings.claim("model", 3, 86400))
+        for _ in range(2):
+            self.assertFalse(ceilings.claim("model", 3, 86400))
+        self.assertEqual(3, self.count("model"), "a refused claim left its row behind")
+
+    def test_slots_come_back_once_the_window_has_passed(self):
+        ceilings = SqliteCeilings(self.db)
+        stale = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(timespec="seconds")
+        for _ in range(2):
+            self.db.conn.execute(
+                "INSERT INTO ceilings (id, bucket, used_at) VALUES (?, 'session:x', ?)",
+                (uuid4().hex, stale))
+        self.db.conn.commit()
+        self.assertTrue(ceilings.claim("session:x", 2, 3600))   # two hours ago does not count
+        self.assertEqual(1, self.count("session:x"), "expired rows were not cleared")
+
+    def test_buckets_are_counted_apart(self):
+        ceilings = SqliteCeilings(self.db)
+        self.assertTrue(ceilings.claim("session:a", 1, 3600))
+        self.assertFalse(ceilings.claim("session:a", 1, 3600))
+        self.assertTrue(ceilings.claim("session:b", 1, 3600))  # another network is not blocked
+        self.assertTrue(ceilings.claim("model", 1, 3600))
+
+    def test_the_count_is_shared_across_instances(self):
+        folder = Path(tempfile.mkdtemp())
+        try:
+            first = Database(str(folder / "ceilings.db"))
+            self.assertTrue(SqliteCeilings(first).claim("model", 1, 86400))
+            second = Database(str(folder / "ceilings.db"))
+            self.assertFalse(SqliteCeilings(second).claim("model", 1, 86400))
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def test_the_memory_twin_answers_the_same(self):
+        clock = [1000.0]
+        ceilings = MemoryCeilings(now=lambda: clock[0])
+        self.assertTrue(ceilings.claim("model", 1, 60))
+        self.assertFalse(ceilings.claim("model", 1, 60))
+        self.assertTrue(ceilings.claim("session:a", 1, 60))
+        clock[0] += 61
+        self.assertTrue(ceilings.claim("model", 1, 60))
 
 
 class SchemaRepairs(unittest.TestCase):

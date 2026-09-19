@@ -36,9 +36,9 @@ from proxy.db import Database
 from proxy.env import load_env
 from proxy.store import REMOTE_PREFIXES
 
-TABLES = ("screening_results", "review_votes", "rate_limits", "chat_messages", "forum_posts",
-          "forum_threads", "share_links", "access_grants", "entries", "videos", "storyboards",
-          "users")
+TABLES = ("screening_results", "review_votes", "rate_limits", "ceilings", "chat_messages",
+          "forum_posts", "forum_threads", "share_links", "access_grants", "entries", "videos",
+          "storyboards", "users")
 
 
 def counts(db: Database) -> dict:

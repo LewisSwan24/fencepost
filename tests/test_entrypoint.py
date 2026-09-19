@@ -7,6 +7,8 @@ Vercel answered with nothing but FUNCTION_INVOCATION_FAILED. This pins it down.
     python tests/test_entrypoint.py
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -24,7 +26,8 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 import api.index as entry                             # noqa: E402
 from proxy import auth                                    # noqa: E402
 from proxy.app import COPY, Deps                          # noqa: E402
-from proxy.model import UpstreamError                     # noqa: E402
+from proxy.model import CappedClient, UpstreamError       # noqa: E402
+from proxy.ports import MemoryCeilings                    # noqa: E402
 
 VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 TOKEN = auth.issue("u1")
@@ -177,6 +180,20 @@ class Entrypoint(unittest.TestCase):
         self.assertEqual({"prompt_version": VERSION}, frames[0])
         self.assertEqual("a streamed reply", "".join(f["delta"] for f in frames if "delta" in f))
         self.assertEqual({"done": True}, frames[-1])
+
+    def test_a_stream_over_the_model_ceiling_is_a_plain_refusal(self):
+        """The ceiling is claimed when the stream is asked for, so the answer is an ordinary
+        503 with the outage copy, not an SSE response that opens and then breaks."""
+        inner = FakeClient()
+        entry._DEPS.client = CappedClient(inner, MemoryCeilings(), cap=0, window=86400)
+        with contextlib.redirect_stderr(io.StringIO()):
+            resp = self.post({"role": "neighbour", "storyboard_id": "s1",
+                              "message": "hello", "stream": True})
+        self.assertEqual(503, resp.status)
+        self.assertEqual("application/json", resp.headers.get("content-type"))
+        payload = json.loads(resp.read())
+        self.assertEqual("upstream_unavailable", payload["error"]["code"])
+        self.assertEqual(COPY["upstream_unavailable"], payload["error"]["message"])
 
 
 class DeployCheckCoversEveryRoute(unittest.TestCase):

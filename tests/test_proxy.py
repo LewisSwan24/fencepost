@@ -6,6 +6,8 @@
 ImportError: Start directory is not importable.)
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -19,9 +21,9 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 from proxy import auth                                    # noqa: E402
 from proxy import app                                      # noqa: E402
 from proxy.app import COPY, Deps, handle, handle_stream    # noqa: E402
-from proxy.model import UpstreamError                     # noqa: E402
+from proxy.model import CappedClient, UpstreamError       # noqa: E402
 from proxy import roles                                   # noqa: E402
-from proxy.ports import MemoryRateLimiter                 # noqa: E402
+from proxy.ports import MemoryCeilings, MemoryRateLimiter  # noqa: E402
 
 VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 TOKEN = auth.issue("u1")
@@ -634,6 +636,93 @@ class Streaming(unittest.TestCase):
         status, payload = handle_stream(chat(), TOKEN, deps)
         self.assertEqual(429, status)
         self.assertEqual("chat", payload["error"]["scope"])
+
+
+class ModelCeiling(unittest.TestCase):
+    """The global ceiling on model calls (operations §3), which belongs to no user.
+
+    Reaching it has to look exactly like an outage from the outside: nobody asking did
+    anything wrong, so no path may answer as if they had.
+    """
+
+    def capped(self, inner, cap):
+        return CappedClient(inner, MemoryCeilings(), cap=cap, window=86400)
+
+    def spent(self, *replies):
+        """A capped client whose whole allowance is already used."""
+        inner = FakeClient(*replies)
+        client = self.capped(inner, 0)
+        return inner, client
+
+    def test_the_screener_fails_open(self):
+        inner, client = self.spent(OK_JSON, OK_JSON)
+        deps = deps_for(client)
+        with contextlib.redirect_stderr(io.StringIO()) as log:
+            status, payload = handle(screen(), TOKEN, deps)
+        self.assertEqual(200, status)
+        self.assertTrue(payload["published"])
+        self.assertEqual("review", deps.screening.records[0]["verdict"])
+        self.assertTrue(deps.screening.records[0]["fail_open"])
+        self.assertEqual([], inner.calls, "the ceiling let a call through")
+        self.assertIn("model ceiling reached (0 per 86400s)", log.getvalue())
+
+    def test_the_writer_skips(self):
+        inner, client = self.spent()
+        with contextlib.redirect_stderr(io.StringIO()):
+            status, payload = handle({"role": "writer", "species_selected": "brushtail",
+                                      "story_draft": "saw a possum at the fence"},
+                                     TOKEN, deps_for(client))
+        self.assertEqual(200, status)
+        self.assertTrue(payload["skipped"])
+        self.assertEqual([], inner.calls)
+
+    def test_the_neighbour_answers_upstream_unavailable(self):
+        inner, client = self.spent("hello")
+        with contextlib.redirect_stderr(io.StringIO()):
+            status, payload = handle(chat(), TOKEN, deps_for(client))
+        self.assertEqual(503, status)
+        self.assertEqual("upstream_unavailable", payload["error"]["code"])
+        self.assertEqual(COPY["upstream_unavailable"], payload["error"]["message"])
+        self.assertEqual([], inner.calls)
+
+    def test_a_stream_is_refused_before_it_starts(self):
+        """Claimed when the stream is asked for, not on first iteration, so the refusal is a
+        plain 503 rather than an SSE response that opens and then errors."""
+        inner, client = self.spent(["never"])
+        deps = deps_for(client)
+        with contextlib.redirect_stderr(io.StringIO()):
+            status, payload = handle_stream(chat(), TOKEN, deps)
+        self.assertEqual(503, status)
+        self.assertEqual("upstream_unavailable", payload["error"]["code"])
+        self.assertEqual([], inner.calls)
+        self.assertEqual([], deps.history.recent("u1", "s1"))
+
+    def test_under_the_ceiling_calls_pass_through(self):
+        inner = FakeClient("hello", ["a ", "stream"])
+        client = self.capped(inner, 2)
+        deps = deps_for(client)
+        status, payload = handle(chat(), TOKEN, deps)
+        self.assertEqual((200, "hello"), (status, payload["reply"]))
+        status, session = handle_stream(chat(), TOKEN, deps)
+        self.assertEqual(200, status)
+        self.assertEqual(["a ", "stream"], list(session))
+        self.assertEqual(2, len(inner.calls))
+
+    def test_each_retry_is_counted(self):
+        """The Screener's second attempt is billed like the first, so it spends a slot too.
+        With one slot left the retry is refused and the item fails open."""
+        inner = FakeClient("not json at all", OK_JSON)
+        deps = deps_for(self.capped(inner, 1))
+        with contextlib.redirect_stderr(io.StringIO()):
+            status, payload = handle(screen(), TOKEN, deps)
+        self.assertEqual(200, status)
+        self.assertEqual(1, len(inner.calls))
+        self.assertTrue(deps.screening.records[0]["fail_open"])
+
+    def test_the_model_names_still_read_through(self):
+        inner = FakeClient()
+        inner.chat_model = "fake-model"
+        self.assertEqual("fake-model", self.capped(inner, 1).chat_model)
 
 
 if __name__ == "__main__":

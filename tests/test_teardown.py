@@ -30,8 +30,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import teardown_demo                                                         # noqa: E402
 import seed_demo                                                             # noqa: E402
-from proxy.db import (Database, SqliteHistory, SqliteRateLimiter,            # noqa: E402
-                      SqliteScreeningLog, _schema_table_names, schema_sql)
+from proxy.db import (Database, SqliteCeilings, SqliteHistory,               # noqa: E402
+                      SqliteRateLimiter, SqliteScreeningLog, _schema_table_names, schema_sql)
 
 
 def references():
@@ -64,7 +64,7 @@ class TheTableListMatchesTheSchema(unittest.TestCase):
         the middle of a teardown, with some tables cleared and some not.
         """
         edges = references()
-        self.assertEqual(12, len(edges), "the schema did not parse, so this check is not "
+        self.assertEqual(13, len(edges), "the schema did not parse, so this check is not "
                                          "looking at what it thinks it is looking at")
         position = {name: i for i, name in enumerate(teardown_demo.TABLES)}
         for table, parents in edges.items():
@@ -116,6 +116,7 @@ class ClearingReallyEmptiesItOnTheRealDriver(unittest.TestCase):
         db.cast_vote(entry, guest, "worth_checking")
         SqliteHistory(db).append(owner, board, "user", "which one is this?")
         SqliteRateLimiter(db).check_and_count(owner, "chat")
+        SqliteCeilings(db).claim("model", 1000, 86400)
         SqliteScreeningLog(db).record({
             "subject_type": "entry", "subject_id": entry, "author_id": owner,
             "field": "story", "verdict": "ok", "codes": [], "prompt_version": "v0.11",

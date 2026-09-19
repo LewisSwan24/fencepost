@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 
 from . import auth, roles
 from .model import UpstreamError, redact
-from .ports import (MemoryContext, MemoryHistory, MemoryRateLimiter, MemoryScreeningLog,
-                    PermissionDenied, RateLimited)
+from .ports import (CEILINGS, MemoryContext, MemoryHistory, MemoryRateLimiter,
+                    MemoryScreeningLog, PermissionDenied, RateLimited)
 
 # Which ceiling each role counts against. operations.md §3 lists chat, vision and
 # submission and says nothing about the Writer, so it is folded into chat for now; the
@@ -156,6 +156,7 @@ COPY = {
     "not_in_review": "That post is not waiting on a second look.",
     "not_your_post": "You can only take down your own posts.",
     "rate_limited_login": "Too many sign-in attempts. Try again in a few minutes.",
+    "rate_limited_session": "Too many new sessions from this network right now. Try again in a little while.",
 }
 
 
@@ -167,6 +168,9 @@ class Deps:
     context: object = field(default_factory=MemoryContext)
     screening: object = field(default_factory=MemoryScreeningLog)
     db: object = None                            # resource endpoints write directly; the assistant path does not
+    # The ceilings that belong to no user (operations.md §3). None means /api/session is not
+    # limited per address; the model ceiling lives on the client itself, see CappedClient.
+    ceilings: object = None
 
 
 def _error(code: str, copy_key: str = None, **extra) -> dict:
@@ -395,7 +399,12 @@ def handle_stream(body: dict, token: str, deps: Deps):
         history = deps.history.recent(user_id, storyboard_id)
     except PermissionDenied:
         return 403, _error("no_access")
-    stream = roles.neighbour_stream(deps.client, context, history, message, image)
+    try:
+        stream = roles.neighbour_stream(deps.client, context, history, message, image)
+    except UpstreamError:
+        # The model ceiling refuses when the stream is asked for, before a byte of SSE has
+        # gone out, so it can still be the same plain 503 the non-streaming path gives.
+        return 503, _error("upstream_unavailable")
     return 200, StreamSession(stream, deps, user_id, storyboard_id, message)
 
 
@@ -467,12 +476,15 @@ def login(body: dict, deps: Deps):
                  "token": _mint(deps, record["id"])}
 
 
-def create_session(body: dict, deps: Deps):
+def create_session(body: dict, deps: Deps, address: str = None):
     """Demo-grade identity: hand over a handle and get a token, with no password.
 
     Which is why it is off by default. Anyone can exchange somebody else's handle for a
     token, and in a real environment that is impersonation, so turning it on means setting
     FENCEPOST_OPEN_SIGNUP explicitly.
+
+    `address` is the client's, as the entry point saw it. It only feeds the per-address
+    ceiling on minting tokens, and only ever as a keyed hash, never stored as it came.
     """
     if not os.getenv("FENCEPOST_OPEN_SIGNUP"):
         return 403, _error("signup_closed")
@@ -493,6 +505,13 @@ def create_session(body: dict, deps: Deps):
     existing = deps.db.user_by_handle(handle)
     if existing is not None and existing["password_hash"]:
         return 403, _error("use_password")
+    # Counted here, after every refusal above, so only a request that is about to mint a
+    # token spends a slot. Per address rather than per handle, because a fresh handle is
+    # exactly what an open door hands out for free.
+    if deps.ceilings is not None and address:
+        cap, window = CEILINGS["session"]
+        if not deps.ceilings.claim("session:" + auth.address_key(address), cap, window):
+            return 429, _error("rate_limited", "rate_limited_session", scope="session")
     user_id = deps.db.ensure_user(handle)
     return 200, {"user_id": user_id, "handle": handle, "token": _mint(deps, user_id)}
 

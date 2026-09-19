@@ -128,6 +128,18 @@ CREATE TABLE rate_limits (          -- the three ceilings from operations §3
 
 CREATE INDEX rate_limits_lookup ON rate_limits (user_id, scope, used_at);
 
+CREATE TABLE ceilings (             -- the two ceilings that belong to no user, operations §3
+  id          TEXT PRIMARY KEY,
+  bucket      TEXT NOT NULL,
+  used_at     TIMESTAMP NOT NULL
+  -- bucket is 'model' (every call to the model, whoever asked) or 'session:<key>', where
+  -- key is an HMAC of the client address, never the address itself. Not in rate_limits
+  -- because that table's user_id is NOT NULL with an enforced foreign key, and these
+  -- counts are taken before, or regardless of, any user. Same one-row-per-call counting.
+);
+
+CREATE INDEX ceilings_lookup ON ceilings (bucket, used_at);
+
 CREATE TABLE review_votes (
   id          TEXT PRIMARY KEY,
   entry_id    TEXT NOT NULL REFERENCES entries(id),
