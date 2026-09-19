@@ -2063,6 +2063,18 @@ class SessionsPerAddress(Fixture):
             self.assertEqual(403, self.from_address("203.0.113.7", "has-a-password")[0])
         self.assertEqual(200, self.from_address("203.0.113.7", "fresh")[0])
 
+    def test_a_returning_handle_spends_nothing(self):
+        """A guest's browser keeps its handle but not its session (web/lib/api.js,
+        exchangeGuest), so every page load exchanges the handle again. Counting those would
+        let one busy classroom behind one address lock itself out within the hour. An
+        existing handle is the same person under the same per-user limits, which is not what
+        this ceiling is for. It is for new identities."""
+        for n in range(self.CAP):
+            self.assertEqual(200, self.from_address("203.0.113.7", f"fresh-{n}")[0])
+        for _ in range(self.CAP + 3):
+            self.assertEqual(200, self.from_address("203.0.113.7", "fresh-0")[0])
+        self.assertEqual(429, self.from_address("203.0.113.7", "one-more")[0])
+
     def test_no_raw_address_is_stored(self):
         self.from_address("203.0.113.7", "fresh")
         buckets = [row["bucket"] for row in

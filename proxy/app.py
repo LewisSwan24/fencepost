@@ -484,7 +484,7 @@ def create_session(body: dict, deps: Deps, address: str = None):
     FENCEPOST_OPEN_SIGNUP explicitly.
 
     `address` is the client's, as the entry point saw it. It only feeds the per-address
-    ceiling on minting tokens, and only ever as a keyed hash, never stored as it came.
+    ceiling on new identities, and only ever as a keyed hash, never stored as it came.
     """
     if not os.getenv("FENCEPOST_OPEN_SIGNUP"):
         return 403, _error("signup_closed")
@@ -505,10 +505,13 @@ def create_session(body: dict, deps: Deps, address: str = None):
     existing = deps.db.user_by_handle(handle)
     if existing is not None and existing["password_hash"]:
         return 403, _error("use_password")
-    # Counted here, after every refusal above, so only a request that is about to mint a
-    # token spends a slot. Per address rather than per handle, because a fresh handle is
-    # exactly what an open door hands out for free.
-    if deps.ceilings is not None and address:
+    # Counted here, after every refusal above, and only for a handle nobody holds yet: a
+    # fresh handle is exactly what an open door hands out for free, so new identities are
+    # what is capped, per address rather than per handle. An existing handle is the same
+    # person under the same per-user limits. And a guest's browser keeps its handle but not
+    # its session, so every page load lands here again; counting those would lock a busy
+    # classroom behind one address out within the hour.
+    if existing is None and deps.ceilings is not None and address:
         cap, window = CEILINGS["session"]
         if not deps.ceilings.claim("session:" + auth.address_key(address), cap, window):
             return 429, _error("rate_limited", "rate_limited_session", scope="session")
