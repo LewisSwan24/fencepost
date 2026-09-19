@@ -3,6 +3,8 @@
     python tests/test_data_layer.py
 """
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -12,6 +14,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -533,6 +536,57 @@ class Retention(Fixture):
         removed = teardown_demo.clear(self.db)
         self.assertTrue(removed["entries"] >= 1)
         self.assertEqual({0}, set(teardown_demo.counts(self.db).values()))
+
+
+class TheTeardownScriptPrintsTheFailOpens(unittest.TestCase):
+    """screening_flags counts them, but the count reaches the report only if main() prints
+    it: on the dry run, and on the real run before anything is deleted, since afterwards the
+    number is gone for good. The tests above call screening_flags directly, so either print
+    could go in a refactor with all of them still green.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import teardown_demo
+        self.teardown = teardown_demo
+        self.dir = Path(tempfile.mkdtemp(prefix="fencepost_teardown_main_"))
+        self.path = self.dir / "demo.db"
+        db = Database(str(self.path))
+        author = db.add_user("owner")
+        for when in ("2026-09-18T09:00:00+00:00", "2026-09-19T21:30:00+00:00"):
+            db.conn.execute(
+                "INSERT INTO screening_results (id, subject_type, subject_id, author_id, field, "
+                "verdict, codes, original_text, fail_open, downgraded_non_english, created_at) "
+                "VALUES (?, 'submission', NULL, ?, 'fun_fact', 'review', '[]', 'their words', "
+                "1, 0, ?)", (uuid4().hex, author, when))
+        db.conn.commit()
+        db.close()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def run_main(self, *flags):
+        # load_env would pull the real .env.local into this process, hosted address and all.
+        argv = ["teardown_demo.py", "--db", str(self.path), *flags]
+        out = io.StringIO()
+        with mock.patch.object(self.teardown, "load_env"), mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stdout(out):
+            self.teardown.main()
+        return out.getvalue()
+
+    def test_the_dry_run_prints_the_count_and_the_period(self):
+        out = self.run_main()
+        self.assertRegex(out, r"fail_open = 1\s+2\s")
+        self.assertIn("earliest 2026-09-18T09:00:00+00:00", out)
+        self.assertIn("latest   2026-09-19T21:30:00+00:00", out)
+        self.assertNotIn("their words", out)
+
+    def test_the_real_run_prints_it_before_it_deletes(self):
+        out = self.run_main("--yes")
+        # Counted after the delete, this would read 0.
+        self.assertRegex(out, r"fail_open = 1\s+2\s")
+        self.assertLess(out.index("fail_open = 1"), out.index("Cleared"))
+        self.assertNotIn("their words", out)
 
 
 class Limits(Fixture):
