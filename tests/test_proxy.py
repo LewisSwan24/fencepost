@@ -168,9 +168,12 @@ class Auth(unittest.TestCase):
         """A tampered signature, an expired stamp and a malformed token all say the same
         word. Distinguishing them tells a forger which half to work on."""
         said = set()
+        # A plain + "0" is no tamper when the hex signature already ends in "0": one run in
+        # sixteen, since TOKEN is stamped at import. That run the real token got its 200.
+        tampered = TOKEN[:-1] + ("0" if TOKEN[-1] != "0" else "1")
         # The last two carry characters outside ASCII in the signature, which compare_digest
         # on str raised TypeError for - a 500, not a 401, from a header anybody can send.
-        for bad in (TOKEN[:-1] + "0", auth.issue("u1", 0), "u1.notanumber.x", "", "u1",
+        for bad in (tampered, auth.issue("u1", 0), "u1.notanumber.x", "", "u1",
                     "u1.1.\u00e9", TOKEN[:-1] + "\u00e9"):
             status, payload = handle(chat(), bad, deps_for(FakeClient("hi")))
             self.assertEqual(401, status, bad[:20])
