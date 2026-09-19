@@ -135,6 +135,9 @@ class LibsqlStore:
 
     def __init__(self, url: str):
         self.path = url
+        # file: is a local address the tests use. The driver opens it as a file on disk, not
+        # as the hosted database, and closing it takes care (see _LibsqlConn.close).
+        self.local_file = url.startswith("file:")
         self._local = threading.local()
         self._token = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("LIBSQL_AUTH_TOKEN") or ""
 
@@ -146,12 +149,10 @@ class LibsqlStore:
                 "The hosted database needs the official SDK: pip install libsql "
                 "(note: libsql-client is a different, deprecated package)"
             ) from exc
-        # file: is a local address the tests use; strip the scheme and hand the driver an
-        # ordinary path.
-        target = self.path[len("file:"):] if self.path.startswith("file:") else self.path
-        if self.path.startswith("file:"):
-            return _LibsqlConn(libsql.connect(target))
-        return _LibsqlConn(libsql.connect(target, auth_token=self._token))
+        # A file: address loses its scheme; the driver wants an ordinary path.
+        if self.local_file:
+            return _LibsqlConn(libsql.connect(self.path[len("file:"):]), local_file=True)
+        return _LibsqlConn(libsql.connect(self.path, auth_token=self._token))
 
     @property
     def conn(self):
@@ -170,8 +171,9 @@ class LibsqlStore:
 class _LibsqlConn:
     """Wrap the SDK connection in the shape db.py wants. Rows only; the driver does the rest."""
 
-    def __init__(self, conn):
+    def __init__(self, conn, local_file: bool = False):
         self._conn = conn
+        self._local_file = local_file
 
     def execute(self, sql: str, params=()) -> Result:
         return Result(self._conn.execute(sql, tuple(params)))
@@ -186,4 +188,21 @@ class _LibsqlConn:
         self._conn.rollback()
 
     def close(self) -> None:
+        if not self._local_file:
+            self._conn.close()
+            return
+        # A local file is closed with a statement still open, and the statement let go after.
+        # libsql 0.9 closes a local connection's sqlite3 handle twice when the connection is
+        # the last thing holding it: LibsqlConnection's Drop calls disconnect(), then the
+        # inner Connection's own Drop calls it again on the same, already freed, handle
+        # (tursodatabase/libsql#2251; the fix, #2282, is unmerged, and libsql-python 0.1.11 is
+        # the newest release). The second sqlite3_close_v2 reads freed memory. Linux shrugs
+        # that off. On Windows it was an access violation in about one run of
+        # test_teardown.py in ten, always inside this close(). When a statement is the last
+        # owner instead, the handle is closed exactly once, as the statement goes.
+        #
+        # The hosted database connects through other code, with no double close, and a
+        # statement there would be a round trip, so it is left alone.
+        held = self._conn.execute("SELECT 1")
         self._conn.close()
+        del held

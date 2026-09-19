@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.app import TIMELINE_PAGE                                        # noqa: E402
 from proxy.db import Database                                              # noqa: E402
-from proxy.store import LibsqlStore, Result, SqliteStore, open_store       # noqa: E402
+from proxy.store import (LibsqlStore, Result, SqliteStore, _LibsqlConn,     # noqa: E402
+                         open_store)
 
 
 class FakeCursor:
@@ -32,6 +33,58 @@ class FakeCursor:
 
     def fetchall(self):
         return self._rows
+
+
+class RecordingDriver:
+    """A driver connection that writes down what happened to it, in order."""
+
+    def __init__(self):
+        self.log = []
+
+    def execute(self, sql, params=()):
+        self.log.append("execute " + sql)
+        return _Released(self.log)
+
+    def close(self):
+        self.log.append("close")
+
+
+class _Released:
+    """A cursor that notes the moment the last reference to it goes."""
+
+    def __init__(self, log):
+        self._log = log
+
+    def __del__(self):
+        self._log.append("cursor released")
+
+
+class ClosingALocalConnectionClosesItOnce(unittest.TestCase):
+    """libsql 0.9 closes a local connection's sqlite3 handle twice when the connection is the
+    last thing holding it (tursodatabase/libsql#2251). The second close reads freed memory,
+    and on Windows that is an access violation now and then: test_teardown.py died in about
+    one run in ten, always inside close(). When a statement is the last owner instead, the
+    handle is closed exactly once, as that statement goes. So a local close holds one open
+    across the driver's close() and lets it go after.
+
+    These pin the order, because the crash itself cannot be summoned on demand.
+    """
+
+    def test_a_local_close_lets_a_statement_go_last(self):
+        driver = RecordingDriver()
+        _LibsqlConn(driver, local_file=True).close()
+        self.assertEqual(["execute SELECT 1", "close", "cursor released"], driver.log)
+
+    def test_a_remote_close_is_only_a_close(self):
+        """The hosted database has no such double close, and a statement there is a round trip."""
+        driver = RecordingDriver()
+        _LibsqlConn(driver).close()
+        self.assertEqual(["close"], driver.log)
+
+    def test_only_a_file_address_counts_as_local(self):
+        self.assertTrue(LibsqlStore("file:/tmp/x.db").local_file)
+        for url in ("libsql://demo.turso.io", "https://demo.turso.io", "http://127.0.0.1:8080"):
+            self.assertFalse(LibsqlStore(url).local_file, url)
 
 
 class PickingABackend(unittest.TestCase):
