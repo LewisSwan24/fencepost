@@ -35,22 +35,26 @@ function Seed({ apply, children }) {
 // come back within the synchronous act() that render() uses on its own — React says so, and
 // the body stays empty. Both helpers then wait for the screen's own h1, so a caller never
 // starts asserting against a fallback.
-async function mount(tree) {
+async function mount(tree, heading) {
   await act(async () => { render(tree); });
-  return screen.findByRole("heading", { level: 1 });
+  // `heading: false` for a screen that legitimately never draws one — the close screen on an
+  // archived storyboard, for instance, shows a loading line and sends you back instead. Those
+  // tests wait for what they are actually about.
+  return heading ? screen.findByRole("heading", { level: 1 }) : null;
 }
 
 // Render a page the way its route would, and wait for it to be there.
-export function renderScreen(Page, { id = "sb_1", props = {} } = {}) {
+export function renderScreen(Page, { id = "sb_1", props = {}, heading = true } = {}) {
   return mount(
     <Suspense fallback={null}>
       <Page params={Promise.resolve({ id })} {...props} />
-    </Suspense>
+    </Suspense>,
+    heading
   );
 }
 
 // The same, inside the posting flow, with the draft seeded first.
-export function renderInFlow(Page, { id = "sb_1", seed, props = {} } = {}) {
+export function renderInFlow(Page, { id = "sb_1", seed, props = {}, heading = true } = {}) {
   return mount(
     <DraftProvider storyboardId={id}>
       <Seed apply={seed}>
@@ -58,6 +62,7 @@ export function renderInFlow(Page, { id = "sb_1", seed, props = {} } = {}) {
           <Page params={Promise.resolve({ id })} {...props} />
         </Suspense>
       </Seed>
-    </DraftProvider>
+    </DraftProvider>,
+    heading
   );
 }

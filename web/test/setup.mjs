@@ -16,6 +16,13 @@ import { JSDOM } from "jsdom";
 
 register("./loader.mjs", import.meta.url);
 
+// The screens are tested in fixtures mode, against lib/fixtures.js — the same offline data
+// the demo can fall back to, and the only mode that answers without a network. lib/api.js
+// reads this once at module scope, so it is set here rather than in a test, and a screen
+// cannot be rendered in two modes in one process. What that leaves out is lib/api's own
+// request and response handling, which is api.test.mjs's subject rather than a screen's.
+process.env.NEXT_PUBLIC_FENCEPOST_MODE = "fixtures";
+
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost:3000/",
   pretendToBeVisual: true,      // requestAnimationFrame, which React 19 uses
