@@ -79,10 +79,18 @@ CREATE TABLE screening_results (
   -- Points at whatever was screened. No entry_id foreign key: a rejected submission
   -- never created an entry, and forum posts are not in entries either. The cost is no
   -- foreign-key constraint; the CHECK below covers half of it.
-  subject_type   TEXT NOT NULL CHECK (subject_type IN ('entry','forum_post','submission')),
+  -- 'storyboard' joined on 2026-09-20 with the two fields below: a title or a closing note
+  -- that passed belongs to a storyboard, and every review-queue read filters on 'entry'
+  -- (db.py review_queue, votes, dispose), so these stay out of the queue by construction
+  -- rather than by luck. Which is right — both are written by the owner, and a queue that
+  -- asked an owner to review their own title would be asking nobody.
+  subject_type   TEXT NOT NULL CHECK (subject_type IN ('entry','forum_post','submission','storyboard')),
   subject_id     TEXT,                   -- empty when subject_type='submission': no row to point at yet
   author_id      TEXT REFERENCES users(id),  -- who wrote it; a refused submission has no entry, so this is how it is found
-  field          TEXT NOT NULL CHECK (field IN ('fun_fact','story','forum_post')),
+  -- storyboard_title and closed_note joined the list on 2026-09-20 (issue #36). A database
+  -- made before that has the old CHECK and would refuse them, so _refresh_screening_fields
+  -- rebuilds the table, rows and all — unlike rate_limits, which is counters and is dropped.
+  field          TEXT NOT NULL CHECK (field IN ('fun_fact','story','forum_post','storyboard_title','closed_note')),
   verdict        TEXT NOT NULL CHECK (verdict IN ('ok','review','reject')),
   codes          TEXT NOT NULL DEFAULT '[]',   -- JSON array
   note           TEXT,

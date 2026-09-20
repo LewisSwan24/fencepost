@@ -871,6 +871,122 @@ class SchemaRepairs(unittest.TestCase):
         left = self.db.conn.execute("SELECT COUNT(*) AS c FROM rate_limits").fetchone()["c"]
         self.assertEqual(1, left, "the counters were wiped by a repair with nothing to repair")
 
+    OLD_SCREENING = (
+        "CREATE TABLE screening_results (id TEXT PRIMARY KEY, "
+        "subject_type TEXT NOT NULL CHECK (subject_type IN ('entry','forum_post','submission')), "
+        "subject_id TEXT, author_id TEXT REFERENCES users(id), "
+        "field TEXT NOT NULL CHECK (field IN ('fun_fact','story','forum_post')), "
+        "verdict TEXT NOT NULL CHECK (verdict IN ('ok','review','reject')), "
+        "codes TEXT NOT NULL DEFAULT '[]', note TEXT, original_text TEXT, model TEXT, "
+        "prompt_version TEXT, fail_open BOOLEAN NOT NULL DEFAULT 0, "
+        "downgraded_non_english BOOLEAN NOT NULL DEFAULT 0, "
+        "disposition TEXT CHECK (disposition IN ('kept','labelled','removed')), "
+        "disposed_at TIMESTAMP, created_at TIMESTAMP NOT NULL)")
+
+    def make_old_screening_table(self):
+        """screening_results as it stood before #36, with one audit row already in it."""
+        self.db.conn.execute("DROP TABLE screening_results")
+        self.db.conn.execute(self.OLD_SCREENING)
+        self.db.conn.execute("INSERT INTO users (id, handle, created_at) VALUES (?, ?, ?)",
+                             ("u_old", "mel_k", "2026-09-01T10:00:00+00:00"))
+        self.db.conn.execute(
+            "INSERT INTO screening_results (id, subject_type, subject_id, author_id, field, "
+            "verdict, codes, fail_open, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("s_old", "entry", "e_1", "u_old", "story", "review", '["safety_snake"]', 1,
+             "2026-09-14T10:00:00+00:00"))
+        self.db.conn.commit()
+
+    def rootpage(self, table):
+        """Which page the table starts on. A rebuild creates the replacement before it drops
+        the original, so the new table cannot land on the old page — which makes this the one
+        reading that says whether a rebuild happened, without mocking the connection."""
+        return self.db.conn.execute(
+            "SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,)).fetchone()["rootpage"]
+
+    def record_title(self):
+        self.db.conn.execute(
+            "INSERT INTO screening_results (id, subject_type, subject_id, field, verdict, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("s_new", "submission", None, "storyboard_title", "ok",
+             "2026-09-20T10:00:00+00:00"))
+        self.db.conn.commit()
+
+    def test_a_screening_field_added_to_the_document_reaches_an_existing_database(self):
+        """The same failure as the scopes above, one table over. #36 sends storyboard titles
+        and closing notes to the Screener, and the deployed database enumerates neither, so
+        without the repair the audit write refuses and creating a storyboard answers 500 —
+        worse than the unscreened title it set out to fix.
+        """
+        self.make_old_screening_table()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.record_title()
+        self.db.conn.rollback()
+
+        self.db._apply_schema()
+
+        self.record_title()      # the point of the whole repair
+
+    def test_the_audit_trail_survives_the_rebuild(self):
+        """What separates this repair from the rate_limits one. Those rows are counters and
+        are dropped; these are the evidence operations.md §1 counts the fail-opens out of.
+        """
+        self.make_old_screening_table()
+        before = self.rootpage("screening_results")
+
+        self.db._apply_schema()
+
+        row = self.db.conn.execute(
+            "SELECT * FROM screening_results WHERE id = 's_old'").fetchone()
+        self.assertIsNotNone(row, "the audit trail was dropped rather than carried across")
+        self.assertEqual(("entry", "u_old", "story", "review"),
+                         (row["subject_type"], row["author_id"], row["field"], row["verdict"]))
+        self.assertEqual('["safety_snake"]', row["codes"])
+        self.assertEqual(1, row["fail_open"], "the fail-open mark is what the report counts")
+        self.assertEqual("2026-09-14T10:00:00+00:00", row["created_at"])
+        self.assertNotEqual(before, self.rootpage("screening_results"),
+                            "nothing was rebuilt, so this proves nothing")
+        self.assertIsNone(
+            self.db.conn.execute("SELECT name FROM sqlite_master WHERE name = "
+                                 "'screening_results_old'").fetchone(),
+            "the half-finished rebuild left its scaffolding behind")
+
+    def test_a_current_screening_table_is_left_alone(self):
+        """Narrow trigger, same as the counters: a table copied on every open is a slower
+        start every time and a chance to lose the trail, in exchange for nothing.
+        """
+        self.make_old_screening_table()
+        self.db._apply_schema()
+        settled = self.rootpage("screening_results")
+
+        self.db._apply_schema()
+
+        self.assertEqual(settled, self.rootpage("screening_results"),
+                         "the trail was copied again by a repair with nothing to repair")
+
+    def test_a_failure_halfway_leaves_the_old_table_where_it_was(self):
+        """The reason the rebuild is one transaction. Renamed, then interrupted, and without
+        it the database has no screening_results at all — the next open would create an empty
+        one and the trail would be sitting in a table nothing reads.
+        """
+        self.make_old_screening_table()
+
+        def boom(table):
+            raise RuntimeError("the schema went away mid-rebuild")
+        self.db._table_statements = boom
+        try:
+            with self.assertRaises(RuntimeError):
+                self.db._apply_schema()
+        finally:
+            del self.db._table_statements
+
+        row = self.db.conn.execute(
+            "SELECT field FROM screening_results WHERE id = 's_old'").fetchone()
+        self.assertEqual("story", row["field"], "the rollback did not bring the table back")
+        self.assertIsNone(
+            self.db.conn.execute("SELECT name FROM sqlite_master WHERE name = "
+                                 "'screening_results_old'").fetchone())
+
 
 class StoredFrame(Fixture):
     """entries.still — what is kept, where it may be read, and when it goes.
