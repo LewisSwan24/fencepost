@@ -29,6 +29,36 @@ FENCEPOST_OPEN_SIGNUP=1 FENCEPOST_ALLOWED_ORIGIN=http://localhost:3000 \
   python ../scripts/serve_local.py --port 8802
 ```
 
+## The postcss override
+
+`package.json` carries an `overrides` block forcing `postcss` to `^8.5.28`. It is there for
+four advisories, and it should not be tidied away without reading this.
+
+Next pins postcss exactly, and every 15.x release pins `8.4.31` — including the newest,
+15.5.25, which is what the `backport` tag points at. Four advisories stand against that
+version: an XSS through an unescaped `</style>` in stringify output, and three separate
+path-traversal and information-disclosure bugs in source-map auto-loading, two of them high.
+The last of the four is not fixed until `8.5.23`. npm's own fix offers exactly one route,
+`next@16.3.5`, marked `isSemVerMajor` — the bump landed in Next 16.3.0, is not described in
+those release notes as a security fix, and has not been backported to 15.x.
+
+A framework major for a build-time dependency is the wrong trade two weeks out, and it is not
+necessary. postcss is a plain hoisted dependency here, not one of the copies vendored into
+`next/dist/compiled/`, so the build genuinely resolves `node_modules/postcss` and an override
+genuinely changes what runs rather than only quieting the report. It moves one package;
+nothing else in the lockfile changes except postcss's own declared ranges.
+
+Checked rather than assumed, on 2026-09-20: 254 tests green, a clean `npm run build` listing
+all nineteen routes, and `npm audit` at zero. The emitted CSS was compared block by block
+between a build on 8.4.31 and one on 8.5.28 — 382 rule blocks each, the same set, every one
+byte-identical. 209 of them sit at a different index, but that is Next's chunk ordering and
+not postcss: two builds on the *same* postcss produce different orderings too, which is why
+the content hash of the largest stylesheet is not a usable signal here. Class names are
+module-hashed, so their order carries no cascade meaning.
+
+Take the override out once Next 15 ships a postcss above 8.5.22, or once the project moves to
+Next 16.
+
 ## Three modes
 
 | `NEXT_PUBLIC_FENCEPOST_MODE` | CRUD | Assistant |
