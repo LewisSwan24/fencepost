@@ -25,6 +25,7 @@ import userEvent from "@testing-library/user-event";
 
 import Share from "../app/b/[id]/share/page.js";
 import { COPY, DEFAULT_EXPIRY_DAYS, EXPIRY } from "../lib/copy.js";
+import { monthDay } from "../lib/format.js";
 import { renderScreen } from "./harness.mjs";
 import { reset } from "./stubs/navigation.mjs";
 
@@ -40,6 +41,9 @@ const fresh = () => "sb_share_test_" + (n += 1);
 const codeRows = () => [...document.querySelectorAll(".code")];
 const people = () => [...document.querySelectorAll(".person")];
 const rowFor = (handle) => people().find((p) => p.textContent.includes("@" + handle));
+
+// sl_2's expiry, the one fixed date in the code list and the only one already in the past.
+const SL2_EXPIRY = "2026-09-15T09:00:00+10:00";
 
 const qr = () => screen.queryByRole("img");
 const makeCode = () => screen.getByRole("button", { name: /^Make an?o?t?h?e?r? ?code$/ });
@@ -133,6 +137,40 @@ test("the three ways a code can stop working are said separately", async () => {
   // And the level is still legible on a dead code, so the list reads as a history rather
   // than as a row of failures.
   assert.ok(said.every((t) => Object.values(COPY.levelLabel).some((l) => t.includes(l))));
+});
+
+test("a code whose date has gone says when it was good until, not Expires expired", async () => {
+  await open("sb_jacaranda");
+
+  // until() is the forward-looking formatter and answers the bare word "expired" for a date
+  // in the past, so bolting the label on in front of it read "Expires expired" — redundant
+  // next to the badge and not a sentence either way.
+  const dead = codeRows().find((r) => r.textContent.includes(COPY.codeState.expired));
+  assert.ok(dead, "the demo list has no expired code left to read");
+  assert.doesNotMatch(dead.textContent, /Expires expired/);
+  assert.ok(dead.textContent.includes(COPY.codeUntil + " " + monthDay(SL2_EXPIRY)),
+            "an expired code does not say the date it was good until");
+
+  // And the two cases either side of it are untouched: a code still working counts down,
+  // and a code with no expiry at all says so rather than being given one.
+  const live = codeRows().find((r) => r.querySelector("button"));
+  assert.ok(live.textContent.includes(COPY.codeExpires + " in "),
+            "a live code stopped counting down");
+  assert.equal(codeRows().filter((r) => r.textContent.includes(COPY.codeNoExpiry)).length, 1,
+               "the code with no expiry was given one, or given two");
+});
+
+test("a date that has gone never stands without the word that says why", async () => {
+  await open("sb_jacaranda");
+
+  // What lets the line drop the verb: a past expiry always carries a badge, because
+  // stateOf answers Turned off or Expired for every one of them. If that ever stops being
+  // true, "Until 15 Sep" is on screen with nothing saying the code is finished.
+  for (const row of codeRows()) {
+    if (!row.textContent.includes(COPY.codeUntil + " ")) continue;
+    assert.ok(Object.values(COPY.codeState).some((s) => row.textContent.includes(s)),
+              "a date in the past with nothing beside it to say the code has stopped");
+  }
 });
 
 test("a code that has stopped working offers no way to turn it off", async () => {
