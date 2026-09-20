@@ -327,6 +327,11 @@ export const COPY = {
   codeMadeByYou: "Made by you",
   codeMadeBy: "Made by",
   codeExpires: "Expires",
+  // For a date that has already gone. Not codeExpires again: until() answers the bare
+  // word "expired" for the past, so the two together read "Expires expired" — and the
+  // badge beside the level has just said Expired anyway. This clause gives the date and
+  // lets the badge carry the verb, which works because a past expiry always has one.
+  codeUntil: "Until",
   codeNoExpiry: "No expiry",
   codeUses: "Used",
   codeState: { revoked: "Turned off", expired: "Expired", used_up: "Used up" },

@@ -14,12 +14,17 @@ import { useRouter } from "next/navigation";
 import { grants, issueShareLink, revokeGrant, shareLinks, revokeShareLink, me }
   from "../../../../lib/api";
 import { COPY, LEVELS, EXPIRY, DEFAULT_EXPIRY_DAYS } from "../../../../lib/copy";
-import { until } from "../../../../lib/format";
+import { monthDay, until } from "../../../../lib/format";
 import { BackButton, ui } from "../../../../components/ui";
 import QrPlaceholder from "../../../../components/QrPlaceholder";
 import QrCode from "../../../../components/QrCode";
 import { shareUrl } from "../../../../lib/qr";
 import styles from "./share.module.css";
+
+// Has this date been and gone. One definition, because stateOf() deciding a code has
+// expired while lifetime() still counts down to it would put a countdown under a badge
+// that says Expired.
+const gone = (iso) => !!iso && new Date(iso) <= new Date();
 
 export default function Share({ params }) {
   const { id } = use(params);
@@ -89,9 +94,20 @@ export default function Share({ params }) {
   // than all collapsed into "invalid".
   function stateOf(link) {
     if (link.revoked_at) return COPY.codeState.revoked;
-    if (link.expires_at && new Date(link.expires_at) <= new Date()) return COPY.codeState.expired;
+    if (gone(link.expires_at)) return COPY.codeState.expired;
     if (link.max_uses !== null && link.used_count >= link.max_uses) return COPY.codeState.used_up;
     return null;
+  }
+
+  // How long a code has left, or how long it had. until() only looks forward and answers the
+  // word "expired" for anything behind it, so the label has to come off once the date has
+  // gone or the line reads "Expires expired". Past tense is left to the badge stateOf has
+  // already put beside the level — which is sound only because every past date has one.
+  function lifetime(link) {
+    if (!link.expires_at) return COPY.codeNoExpiry;
+    return gone(link.expires_at)
+      ? COPY.codeUntil + " " + monthDay(link.expires_at)
+      : COPY.codeExpires + " " + until(link.expires_at);
   }
 
   async function turnOff(linkId) {
@@ -186,9 +202,7 @@ export default function Share({ params }) {
                   {" · "}
                   {/* share_links has no created_at column, so it cannot say "issued three
                       days ago". All it can say is the expiry and the number of uses. */}
-                  {link.expires_at
-                    ? COPY.codeExpires + " " + until(link.expires_at)
-                    : COPY.codeNoExpiry}
+                  {lifetime(link)}
                   {link.used_count
                     ? " · " + COPY.codeUses + " " + link.used_count
                       + (link.max_uses ? "/" + link.max_uses : "")
