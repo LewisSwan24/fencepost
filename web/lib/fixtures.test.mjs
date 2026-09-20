@@ -243,6 +243,27 @@ test("an entry the owner has disposed of stops queueing", () => {
 
 // ── Codes already issued (offline) ──
 
+test("the demo arrives holding a code that still works", () => {
+  // The three codes are meant to show the three states at once: one live, one expired, one
+  // turned off. A fixed date cannot hold that. sl_1 was the live one and its expiry fell
+  // behind the clock, after which every code in the list was dead, the share screen drew no
+  // Turn off button at all, and the demo could not show the thing the paragraph of copy
+  // underneath spends its length explaining. Its expiry is relative for that reason, and
+  // this test is what stops it going stale again.
+  const { links } = shareLinks("sb_jacaranda");
+  const now = new Date();
+  const live = links.filter((l) =>
+    !l.revoked_at
+    && (!l.expires_at || new Date(l.expires_at) > now)
+    && (l.max_uses === null || l.used_count < l.max_uses));
+
+  assert.ok(live.length > 0, "every code in the demo list is dead, so none can be turned off");
+  assert.ok(links.some((l) => l.revoked_at), "no code in the list shows the turned-off state");
+  assert.ok(links.some((l) => l.expires_at && new Date(l.expires_at) <= now),
+            "no code in the list shows the expired state");
+});
+
+
 test("the code list never carries a token", () => {
   // The database holds only a hash. An interface that could fetch a code back afterwards
   // would be a redeemable grant left sitting on the screen.

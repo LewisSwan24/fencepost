@@ -724,7 +724,12 @@ export function closeStoryboard({ storyboard_id, closed_note }) {
 // the moment it has been issued.
 const LINKS = {
   sb_jacaranda: [
-    { id: "sl_1", level: "contribute", expires_at: "2026-09-19T09:00:00+10:00",
+    // The live one, and the only one of the three that is. Its expiry is relative because a
+    // written-down date stops being in the future: this one said 2026-09-19, and once the
+    // clock passed it every code in the demo was dead and the share screen offered no Turn
+    // off button at all. lib/fixtures.test.mjs holds the list to one of each state.
+    { id: "sl_1", level: "contribute",
+      expires_at: new Date(Date.now() + 5 * 86400000).toISOString(),
       max_uses: null, used_count: 2, revoked_at: null,
       created_by: "u_mel", created_by_handle: "mel_k" },
     { id: "sl_2", level: "view", expires_at: "2026-09-15T09:00:00+10:00",
