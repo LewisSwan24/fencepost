@@ -326,3 +326,7 @@ class TheNonEnglishBatchDoesNotCountASilence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             self.run_main(folder)
         self.assertEqual(before, set(archive.glob("nonenglish_report_*.md")))
+
+
+if __name__ == "__main__":
+    unittest.main()
