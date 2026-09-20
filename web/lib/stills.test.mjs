@@ -1,15 +1,70 @@
-// Frame positions and draw sizes.
+// Frame positions, draw sizes, and which path a file is sent down.
 //
-//   node --test lib/stills.test.mjs
+//   node --import ./test/setup.mjs --test lib/stills.test.mjs
 //
-// extractStills() needs a video decoder and a canvas, so it is not tested here — node has
-// neither. What is tested is the arithmetic it depends on, and that is where the failures
-// actually are: the visible way for this feature to break is eight stills that are all the
-// same black opening frame, or a portrait clip drawn as a squashed landscape one.
+// The decoding itself needs a browser and is not tested here. What is tested is the
+// arithmetic around it, which is where the failures actually are — the visible way for this
+// feature to break is eight stills that are all the same black opening frame, or a portrait
+// clip drawn as a squashed landscape one — and the dispatch in stillsFrom, which needs a
+// document to reach at all. Hence the harness in the command above.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pickTimes, drawSize, clockLabel, base64Of, stillsFrom, thin } from "./stills.js";
+
+// A file the way the picker hands one over, and a way to see whether its type was read.
+// `type` is an own getter shadowing Blob's, so the object is still a real Blob and
+// URL.createObjectURL accepts it.
+function pickedFile(name, type) {
+  const file = new File([new Uint8Array([0xff, 0xd8, 0xff])], name, { type });
+  let asked = 0;
+  Object.defineProperty(file, "type", { get() { asked += 1; return type; },
+                                        configurable: true });
+  return { file, asks: () => asked };
+}
+
+// A document that cannot decode, which is the one we have.
+//
+// Measured on 2026-09-20: jsdom loads no media, so an <img> handed a blob URL fires neither
+// load nor error, and a <video> neither loadedmetadata nor error. A real Blob on its own
+// therefore leaves the photograph path hanging for good and the clip path hanging until
+// BUDGET_MS, twelve seconds. Both elements are stood in for instead — the same move redact()
+// made when it took its drawing surface as a parameter — and each stand-in reports the
+// failure a real browser reports for a blob it cannot decode, so the promise settles at once
+// and the answer is the empty list that is the contract either way.
+//
+// What that makes observable is the routing: the photograph path is the one that makes an
+// image, the clip path the one that makes a video. Before this, neither branch was entered —
+// both returned [] on `typeof document === "undefined"` and the assertion was that nothing
+// threw.
+async function withStandInMedia(run) {
+  const made = [];
+  const RealImage = globalThis.Image;
+  const realCreate = document.createElement.bind(document);
+
+  const standIn = (kind) => {
+    const el = {
+      set src(value) {
+        made.push({ kind, url: value });
+        queueMicrotask(() => el.onerror?.());
+      },
+      removeAttribute() {},
+      load() {},
+    };
+    return el;
+  };
+
+  globalThis.Image = function Image() { return standIn("img"); };
+  document.createElement = (tag, ...rest) =>
+    (tag === "video" ? standIn("video") : realCreate(tag, ...rest));
+
+  try {
+    return { made, out: await run() };
+  } finally {
+    globalThis.Image = RealImage;
+    document.createElement = realCreate;
+  }
+}
 
 test("stills are spread across the clip, not taken from the start", () => {
   const times = pickTimes(16, 8);
@@ -119,14 +174,26 @@ test("anything that is not a data URL gives nothing to send", () => {
 // with an empty list, and the flow would silently fall back to a stock picture of somebody
 // else's possum. That failure is invisible on a laptop and only shows up at a fence in the
 // dark, so it is worth a test even though the decoding itself needs a browser.
-test("a photograph is routed by its type, not by its name", async () => {
-  let asked = 0;
-  const file = { name: "possum.jpg", get type() { asked += 1; return "image/jpeg"; } };
-  const out = await stillsFrom(file);
-  assert.equal(asked > 0, true, "the dispatcher must read file.type");
-  // node has no document, so both paths answer empty here — what is asserted is the read
-  // and that neither path throws.
-  assert.ok(Array.isArray(out));
+test("a photograph goes to the photograph path", async () => {
+  const jpeg = pickedFile("possum.jpg", "image/jpeg");
+  const { made, out } = await withStandInMedia(() => stillsFrom(jpeg.file));
+
+  assert.equal(jpeg.asks() > 0, true, "the dispatcher must read file.type");
+  assert.deepEqual(made.map((m) => m.kind), ["img"], "sent down the video decoder");
+  assert.match(made[0].url, /^blob:/, "the element was handed something other than the file");
+  assert.deepEqual(out, [], "a document that cannot decode still has to answer empty");
+});
+
+test("and it is the type that decides, not the name", async () => {
+  // The half the old test was named for and did not check. A clip saved as possum.jpg is
+  // not a photograph, and a phone photograph whose name says nothing is.
+  const lying = pickedFile("possum.jpg", "video/mp4");
+  const quiet = pickedFile("IMG_0031", "image/heic");
+
+  assert.deepEqual((await withStandInMedia(() => stillsFrom(lying.file))).made
+                     .map((m) => m.kind), ["video"]);
+  assert.deepEqual((await withStandInMedia(() => stillsFrom(quiet.file))).made
+                     .map((m) => m.kind), ["img"]);
 });
 
 test("nothing chosen is an empty list, not a crash", async () => {
@@ -135,7 +202,10 @@ test("nothing chosen is an empty list, not a crash", async () => {
 });
 
 test("a file with no type at all falls to the clip path rather than throwing", async () => {
-  assert.ok(Array.isArray(await stillsFrom({ name: "clip" })));
+  const { made, out } = await withStandInMedia(() => stillsFrom(pickedFile("clip", "").file));
+
+  assert.deepEqual(made.map((m) => m.kind), ["video"]);
+  assert.deepEqual(out, []);
 });
 
 // A clip the page recorded itself.

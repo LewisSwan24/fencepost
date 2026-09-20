@@ -162,19 +162,44 @@ live. Replacing or adding an image means doing this step too, and adding the att
 npm test
 ```
 
-Two commands, run one after the other: `node --test "lib/*.test.mjs"` for the modules, then
-`node --import ./test/setup.mjs --test "test/*.test.mjs"` for the screens. `npm run test:screens`
-is the second on its own. The patterns are quoted because cmd.exe does not expand globs, and
-they match `*.test.mjs` rather than the directory because `node --test lib/` would treat the
-ordinary `.js` modules in there as test files. A new test file is picked up without anything
-being edited, which the previous hand-written list of four filenames was not.
+One command: `node --import ./test/setup.mjs --test "lib/*.test.mjs" "test/*.test.mjs"`.
+Everything runs with a document, because everything here runs in a browser. `npm run
+test:screens` is `test/` on its own when that is all you have touched. The patterns are quoted
+because cmd.exe does not expand globs, and they match `*.test.mjs` rather than the directory
+because `node --test lib/` would treat the ordinary `.js` modules in there as test files. A new
+test file is picked up without anything being edited, which the previous hand-written list of
+four filenames was not.
 
-They stay two commands rather than one because the modules are tested without a document and
-two of them depend on that. Under the harness, `stills.test.mjs` fails twice: those tests hand
-`stillsFrom` a plain object as a File, and `extractStills` returns `[]` immediately when
-`typeof document === "undefined"`, so what they exercise today is the bail-out and not the
-routing they describe. The file says as much in a comment. Making them faithful is its own
-piece of work.
+It was two commands for a day, and the reason is worth keeping. `lib/` used to be tested
+without a document, and two tests in `stills.test.mjs` quietly depended on that: they handed
+`stillsFrom` a plain object as a File, and both `extractStills` and `stillFromImage` return
+`[]` at once when `typeof document === "undefined"`, so neither of the two paths those tests
+are named for was ever entered. The file said as much in a comment, which is what made it a
+known limit rather than a mistake — but the limit was the whole content of the test.
+
+Fixing them (#39) took more than a real Blob. Measured on 2026-09-20, jsdom loads no media at
+all: an `<img>` handed a blob URL fires neither `load` nor `error`, and a `<video>` neither
+`loadedmetadata` nor `error`. So a real Blob on its own leaves the photograph path hanging for
+good and the clip path hanging until `BUDGET_MS`, which is twelve seconds. Both elements are
+stood in for instead, the same move `redact()` made when it took its drawing surface as a
+parameter, and each stand-in reports the failure a browser reports for a blob it cannot
+decode. The routing is then observable — the photograph path is the one that makes an image,
+the clip path the one that makes a video — and both still answer `[]`, which is the contract
+either way. Five mutations, including reading `file.mimeType` instead of `file.type`, which is
+the rename that would send every phone photograph down the video decoder.
+
+That asymmetry is recorded rather than fixed: `extractStills` gives up after twelve seconds
+because "somebody looking at a spinner at a fence in the dark" is the failure it is written
+against, and `stillFromImage` has no budget at all. A blob URL is local, so a real browser
+always fires one of the two and there is no reachable hang — but the guard is on one path and
+not the other.
+
+`api.test.mjs` had the same shape of dependency, in the other direction. Its thirty-three
+cases are all about the network paths and they read `NEXT_PUBLIC_FENCEPOST_MODE` from whatever
+the process was carrying, which was nothing, so they got the default. The screen tests set it
+to `fixtures` for the whole run and all thirty-three failed at once. `freshApi()` now deletes
+it before each fresh import, next to the join token it already deleted for exactly this
+reason.
 
 `fixtures.test.mjs` pins the assistant's routing table: one case per demo script, plus several
 that once went to the wrong branch ("Will it hurt my cat?" belongs with injured rather than

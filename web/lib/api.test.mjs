@@ -26,6 +26,15 @@ async function freshApi({ store = {}, crypto, brokenStorage = false, joinToken,
   if (joinToken === undefined) delete process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN;
   else process.env.NEXT_PUBLIC_FENCEPOST_JOIN_TOKEN = joinToken;
 
+  // Same reason, and the same move: start each case from an unconfigured environment so what
+  // is measured is api.js's own default rather than whatever the process is carrying. Every
+  // test in this file is about the network paths, which is what that default gives. Until
+  // 2026-09-20 it was left ambient and nothing noticed, because nothing else set it; the
+  // screen tests then set it to fixtures for the whole run and all thirty-three of these
+  // failed at once. If the shipped default ever becomes fixtures, they should fail again —
+  // these would no longer be describing what ships.
+  delete process.env.NEXT_PUBLIC_FENCEPOST_MODE;
+
   // Three storages, because they fail in three different ways and only the first one is the
   // one people picture. Throwing is the loud kind. Accepting a write and keeping nothing is
   // the quiet kind, and it is the one that used to slip through: setItem returns, nothing
