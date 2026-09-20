@@ -290,6 +290,30 @@ including deleting the `<span>` that gives the handle field its accessible name:
 are labelled by a `<label>` wrapping them rather than by `htmlFor`, and if that is ever broken
 into siblings the field goes on working with a mouse and stops being announced at all.
 
+**What the fixtures can and cannot put a screen into.** These tests drive the offline dataset,
+so a rule can only be checked in the states that dataset can reach, and three cannot be reached
+at all. No sighting of mine is under review, so neither half of "an author sees the review label
+and not the two buttons" is testable. There is no read-only *open* storyboard — sb_roof is a view
+grant and archived — so a view grant's lack of vote buttons cannot be told apart from the board
+being closed, and neither can the two halves of the forum's "Start a thread" gate. And no
+storyboard runs past one page of twenty, so "Show more sightings" is never drawn. Each gap is
+named in the header of the file it belongs to, and the two that a mutation would slip through are
+carried in the mutation set as deliberate misses rather than left out of it, so a run says so out
+loud. Closing all three means adding to what the demo contains, which is a separate decision.
+
+One state that looked unreachable is not: a storyboard archived while I still own it. sb_roof is
+read-only, so `owner` is false there and every owner control is already gone for the wrong reason.
+`board.test.mjs` closes sb_jacaranda through `closeStoryboard` at the end of the file instead —
+the fixture's own door, not a hand-edited row — which is what shows that second look deliberately
+survives closing while editing, deleting, removing, adding and closing again do not.
+
+Writing these turned up a demo the tests could not have caught on their own: every share code in
+the offline dataset had gone dead. sl_1 was the live one and its expiry was a written-down date,
+2026-09-19, so once the clock passed it the share screen drew no Turn off button at all and the
+demo could not show the thing the paragraph of copy directly under that list spends its length
+explaining. Relative now, and `lib/fixtures.test.mjs` holds the list to one live, one expired and
+one turned off.
+
 ## Checked in a browser
 
 One thing left this section on 2026-09-17. The masking — `redact`, `maskedFrame`, `grabStill`
