@@ -148,6 +148,7 @@ class Database:
             self.conn.commit()
         self._add_missing_columns()
         self._refresh_rate_limit_scopes()
+        self._refresh_screening_fields()
 
     def _add_missing_columns(self) -> None:
         """Add columns the document has gained since this database was made.
@@ -192,38 +193,85 @@ class Database:
                         raise
         self.conn.commit()
 
-    def _refresh_rate_limit_scopes(self) -> None:
-        """Rebuild rate_limits when its CHECK is missing a scope the document now lists.
+    def _enumerations_changed(self, table: str) -> bool:
+        """True when the stored CREATE TABLE is missing a value the document now lists.
 
-        SQLite cannot alter a CHECK constraint, and this is the only one in the schema that
-        enumerates values. Adding the login ceiling on 2026-09-15 means a database made
-        before it refuses that insert, so every sign-in attempt answers 500 — and a bucket
-        that errors is not a bucket that limits.
+        SQLite cannot alter a CHECK constraint, so a database made before a value was added
+        refuses to store it. Adding the login ceiling on 2026-09-15 is the measured case:
+        every sign-in attempt answered 500, and a bucket that errors is not a bucket that
+        limits.
 
-        Dropping the table is the repair rather than a last resort: every row is a counting
-        row inside a window, nothing references it, and the entire cost is that somebody
-        close to a cap gets their count reset. One window of being too permissive, once.
-
-        The trigger is deliberately narrow, a scope value the stored definition does not
+        The trigger is deliberately narrow, a quoted value the stored definition does not
         mention, rather than a comparison of the two definitions. Comparing text across
         whitespace and comments would eventually disagree with itself, and a rebuild that
         fires on every open is a rate limiter that never counts to anything.
         """
         stored = self.conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rate_limits'"
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
         ).fetchone()
         if stored is None or not stored["sql"]:
-            return
+            return False
         wanted = next((s for s in _statements()
-                       if re.match(r"CREATE TABLE\s+rate_limits\b", s, re.I)), "")
-        scopes = re.findall(r"'(\w+)'", wanted)
-        if not scopes or all(f"'{scope}'" in stored["sql"] for scope in scopes):
+                       if re.match(rf"CREATE TABLE\s+{table}\b", s, re.I)), "")
+        values = re.findall(r"'(\w+)'", wanted)
+        return bool(values) and not all(f"'{value}'" in stored["sql"] for value in values)
+
+    def _table_statements(self, table: str) -> list:
+        return [s for s in _statements() if re.search(rf"\b{table}\b", s)]
+
+    def _refresh_rate_limit_scopes(self) -> None:
+        """Rebuild rate_limits when its CHECK is missing a scope the document now lists.
+
+        Dropping the table is the repair rather than a last resort: every row is a counting
+        row inside a window, nothing references it, and the entire cost is that somebody
+        close to a cap gets their count reset. One window of being too permissive, once.
+        """
+        if not self._enumerations_changed("rate_limits"):
             return
         self.conn.execute("DROP TABLE rate_limits")
-        for statement in _statements():
-            if re.search(r"\brate_limits\b", statement):
-                self.conn.execute(statement)
+        for statement in self._table_statements("rate_limits"):
+            self.conn.execute(statement)
         self.conn.commit()
+
+    def _refresh_screening_fields(self) -> None:
+        """Rebuild screening_results when its CHECK is missing a field the document lists.
+
+        Same situation as the scopes above, with the one difference that decides the method:
+        these rows are the audit trail. How much screening was skipped, and how often the
+        language floor fired, are counted out of them for the report (operations.md §1), so
+        dropping the table would delete the evidence rather than reset a counter. The table
+        is renamed instead, the new one built from the document, the rows copied across, and
+        the old one dropped — inside one transaction, so a failure halfway leaves the old
+        table exactly as it was rather than no table at all.
+
+        Adding storyboard_title and closed_note on 2026-09-20 (#36) is what needs this: the
+        deployed database predates them and would refuse the insert, which turns creating a
+        storyboard into a 500 rather than leaving the title unscreened.
+        """
+        if not self._enumerations_changed("screening_results"):
+            return
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            # Two instances cold-starting together both saw the old CHECK. The one that took
+            # the write lock second reads the table again here, finds it already rebuilt, and
+            # does nothing — rather than renaming a table the other has just replaced.
+            if not self._enumerations_changed("screening_results"):
+                self.conn.rollback()
+                return
+            columns = ", ".join(row["name"] for row in self.conn.execute(
+                "PRAGMA table_info(screening_results)").fetchall())
+            self.conn.execute("ALTER TABLE screening_results RENAME TO screening_results_old")
+            for statement in self._table_statements("screening_results"):
+                self.conn.execute(statement)
+            # Named columns, not SELECT *: the old table can be a column short of the new one,
+            # and positional copying would then put each value in the wrong place.
+            self.conn.execute(f"INSERT INTO screening_results ({columns}) "
+                              f"SELECT {columns} FROM screening_results_old")
+            self.conn.execute("DROP TABLE screening_results_old")
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     @property
     def conn(self):
