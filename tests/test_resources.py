@@ -25,7 +25,7 @@ os.environ.setdefault("FENCEPOST_TOKEN_SECRET", "test-secret")
 import api.index as entry                                          # noqa: E402
 from unittest import mock                                          # noqa: E402
 from proxy import auth                                             # noqa: E402
-from proxy.ports import CEILINGS                                   # noqa: E402
+from proxy.ports import CEILINGS, DEFAULT_LIMITS                   # noqa: E402
 from proxy.app import (COPY, FUN_FACT_LIMIT, SHARE_LINK_DAYS,      # noqa: E402
                        STILL_LIMIT, STORY_LIMIT, TIMELINE_PAGE, Deps)
 from proxy.db import (PARTICIPANT_LIMIT, Database, SqliteCeilings,  # noqa: E402
@@ -94,10 +94,16 @@ class Fixture(unittest.TestCase):
         return self.post("/api/session", {"handle": handle})[1]
 
     def board(self, handle="owner"):
+        """A storyboard and its owner, made straight in the database.
+
+        Through the endpoint until #36, which sends the title to the Screener. Scaffolding
+        for a test about something else should not spend model calls or leave an audit row
+        in front of the one the test came to read — every count of screening_results and of
+        client.calls would have had to know that a storyboard had been made first. The
+        endpoint has its own tests, in Storyboards.
+        """
         who = self.session(handle)
-        _, created = self.post("/api/storyboards", {"title": "Fence at number 12"},
-                               token=who["token"])
-        return who, created["storyboard_id"]
+        return who, self.db.add_storyboard(who["user_id"], "Fence at number 12")
 
     def submit(self, token, storyboard_id, *replies, **over):
         self.client.replies = list(replies) or [OK_JSON]
@@ -1217,6 +1223,146 @@ class Closing(Fixture):
         status, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
         self.assertEqual(200, status)
         self.assertEqual(["before closing"], [e["story"] for e in view["entries"]])
+
+
+class ScreeningTheShortFields(Fixture):
+    """The storyboard title and the closing note, which reach the Screener since #36.
+
+    operations.md §1.1 had recorded leaving them out as a decision rather than an oversight,
+    and the report line that came with it was carefully worded: bodies are screened, the two
+    title-ish fields are held by constraints. What changed is the first of its three reasons
+    — there is a quota check on these paths now, so the model call is metered like any other
+    — and what it cost, one call on two rare actions, was weighed against a title being the
+    line everyone reads first and the one place an address could sit unscreened.
+
+    The other two reasons are answered by shape rather than by argument, and these pin both:
+    a title marked review stays out of the queue, which is right because its author is the
+    owner; and the audit row now says 'storyboard' instead of having nowhere to point.
+    """
+
+    def create(self, token, title="Fence at number 12", *replies):
+        self.client.replies = list(replies) or [OK_JSON]
+        return self.post("/api/storyboards", {"title": title}, token=token)
+
+    def close(self, token, board, note, *replies):
+        self.client.replies = list(replies) or [OK_JSON]
+        return self.post("/api/storyboards/close",
+                         {"storyboard_id": board, "closed_note": note}, token=token)
+
+    def screened(self):
+        """(field, text) for each call the Screener actually saw."""
+        return [(re.search(r"^field: (\w+)$", c["content"], re.M).group(1), c["content"])
+                for c in self.client.calls if c["role"] == "screener"]
+
+    def test_a_title_goes_to_the_screener_and_is_recorded_against_its_storyboard(self):
+        who = self.session()
+        status, made = self.create(who["token"], "Fence at number 12")
+        self.assertEqual(200, status)
+
+        seen = self.screened()
+        self.assertEqual(["storyboard_title"], [field for field, _ in seen])
+        self.assertIn("Fence at number 12", seen[0][1])
+        row = self.rows()[0]
+        self.assertEqual(("storyboard", made["storyboard_id"], "storyboard_title", "ok"),
+                         (row["subject_type"], row["subject_id"], row["field"], row["verdict"]))
+        self.assertEqual(who["user_id"], row["author_id"])
+
+    def test_a_refused_title_creates_no_storyboard(self):
+        who = self.session()
+        status, payload = self.create(who["token"], "He lives at 42 Example St", REJECT_JSON)
+
+        self.assertEqual(200, status, "a refusal is an answer, not an error")
+        self.assertFalse(payload["published"])
+        self.assertEqual(["pii"], payload["reason_codes"])
+        self.assertNotIn("storyboard_id", payload)
+        self.assertEqual([], self.get("/api/dashboard", token=who["token"])[1]["active"])
+        row = self.rows()[0]
+        self.assertEqual("submission", row["subject_type"], "it pointed at a storyboard "
+                         "that was never made")
+        self.assertIsNone(row["subject_id"])
+        self.assertEqual("He lives at 42 Example St", row["original_text"])
+
+    def test_a_title_marked_review_is_published_and_stays_out_of_the_queue(self):
+        """Reason (2) in the old decision, answered rather than dodged. The author of a
+        title is the owner of the storyboard, so a queue entry would be asking somebody to
+        review their own words — and every review read filters on subject_type = 'entry'.
+        """
+        who = self.session()
+        status, made = self.create(who["token"], "Fence at number 12", REVIEW_JSON)
+        self.assertEqual(200, status)
+        self.assertIn("storyboard_id", made)
+        self.assertEqual("review", self.rows()[0]["verdict"])
+
+        queue = self.get(f"/api/review?storyboard_id={made['storyboard_id']}",
+                         token=who["token"])[1]
+        self.assertEqual([], queue["items"])
+
+    def test_a_closing_note_is_screened_too(self):
+        owner, board = self.board()
+        status, payload = self.close(owner["token"], board, "that was the last of them")
+
+        self.assertEqual(200, status)
+        self.assertEqual("archived", payload["status"])
+        self.assertEqual(["closed_note"], [field for field, _ in self.screened()])
+        row = self.rows()[0]
+        self.assertEqual(("storyboard", board, "closed_note"),
+                         (row["subject_type"], row["subject_id"], row["field"]))
+
+    def test_a_refused_note_leaves_the_storyboard_open(self):
+        """Archiving anyway and dropping the note would be quieter and wrong: closing is
+        deliberate and the note is how it is explained, so the owner picks other words rather
+        than finding their storyboard shut with nothing said.
+        """
+        owner, board = self.board()
+        status, payload = self.close(owner["token"], board, "Come to 42 Example St", REJECT_JSON)
+
+        self.assertEqual(200, status)
+        self.assertFalse(payload["published"])
+        self.assertEqual(["pii"], payload["reason_codes"])
+        active = self.get("/api/dashboard", token=owner["token"])[1]["active"]
+        self.assertEqual([board], [b["id"] for b in active], "it was archived anyway")
+
+    def test_an_outsider_is_refused_before_the_model_is_asked(self):
+        """The owner check first: an outsider's note on somebody else's storyboard should
+        cost a 403, not a model call.
+        """
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "reshare", owner["user_id"])
+
+        status, _ = self.close(guest["token"], board, "closing this for you")
+
+        self.assertEqual(403, status)
+        self.assertEqual([], self.screened())
+
+    def test_nothing_to_judge_is_not_a_model_call(self):
+        """Both fields are optional, so this is the ordinary case rather than an edge one.
+        A screener call on "" spends a slice of the day's ceiling to be told nothing.
+        """
+        who = self.session()
+        self.client.replies = []
+        _, made = self.post("/api/storyboards", {}, token=who["token"])
+        self.post("/api/storyboards/close", {"storyboard_id": made["storyboard_id"]},
+                  token=who["token"])
+
+        self.assertEqual([], self.screened())
+        self.assertEqual([], self.rows())
+        past = self.get("/api/dashboard", token=who["token"])[1]["past"]
+        self.assertEqual([made["storyboard_id"]], [b["id"] for b in past])
+
+    def test_the_title_spends_from_the_same_quota_as_a_submission(self):
+        """A model call on an unmetered path is the hole #33 closed for the assistant. The
+        global ceiling on the client catches it too, but a per-user bucket is what keeps one
+        person from spending everybody's day.
+        """
+        who = self.session()
+        with mock.patch.dict(DEFAULT_LIMITS, {"submission": (1, 3600)}):
+            self.assertEqual(200, self.create(who["token"], "First one")[0])
+            status, payload = self.create(who["token"], "Second one")
+
+        self.assertEqual(429, status)
+        self.assertEqual("submission", payload["error"]["scope"])
+        self.assertEqual(1, len(self.rows()), "the refused call still reached the model")
 
 
 class Forum(Fixture):

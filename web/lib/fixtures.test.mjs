@@ -185,6 +185,29 @@ test("no closing line means no closing line, not an empty string", () => {
   assert.equal(past.closed_note, null);
 });
 
+test("a refused closing line leaves the storyboard open", () => {
+  // The half that matters. Archiving anyway and dropping the note would be the wrong one
+  // to keep: closing cannot be undone, and the note is the whole reason it says anything.
+  // Its own storyboard rather than one of the seeded pair, which the cases above close.
+  const { storyboard_id } = createStoryboard("Winter on the back fence");
+  const out = closeStoryboard({ storyboard_id,
+                                closed_note: `We have all moved to ${BLOCKED_TRIGGER}` });
+  assert.equal(out.published, false);
+  assert.deepEqual(out.reason_codes, ["pii"]);
+  assert.ok(!("status" in out), "a refusal that carries a status reads as closed");
+  assert.ok(dashboard().active.some((b) => b.id === storyboard_id),
+            "refused, and archived all the same");
+});
+
+test("an address in a storyboard title is refused, and nothing is created", () => {
+  const before = dashboard().active.length;
+  const out = createStoryboard(`The one at ${BLOCKED_TRIGGER}`);
+  assert.equal(out.published, false);
+  assert.deepEqual(out.reason_codes, ["pii"]);
+  assert.ok(!("storyboard_id" in out), "the interface would navigate to it");
+  assert.equal(dashboard().active.length, before);
+});
+
 // ── The second-look queue (offline) ──
 
 test("the queue carries no author identity at all", () => {

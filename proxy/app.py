@@ -18,11 +18,12 @@ from .ports import (CEILINGS, MemoryContext, MemoryHistory, MemoryRateLimiter,
 # doc needs a line added (see the stage 3 report).
 SCOPE = {"neighbour": "chat", "writer": "chat", "screener": "submission"}
 
-FIELDS = {"fun_fact", "story", "forum_post"}
-SUBJECTS = {"entry", "forum_post", "submission"}
-# What a request from outside may screen. The other two subject kinds are real rows that
-# belong to somebody, and they are only ever written by the server about its own work —
-# see the note in _screener.
+FIELDS = {"fun_fact", "story", "forum_post", "storyboard_title", "closed_note"}
+# What a request from outside may screen. The other subject kinds are real rows that belong
+# to somebody, and they are only ever written by the server about its own work — see the
+# note in _screener. A SUBJECTS set listing all of them used to sit here; the hardening on
+# 2026-09-16 left it unread, and a constant that mirrors a CHECK constraint while validating
+# nothing is a place to add the next subject type and believe it was checked.
 CALLER_SUBJECTS = {"submission"}
 SPECIES = {"brushtail", "ringtail", "other", "unknown"}
 WRITE_LEVELS = {"contribute", "reshare"}          # view can only look
@@ -182,10 +183,12 @@ def _plain_text(value, limit: int, multiline: bool = False):
 
     Two jobs, and the second was added on 2026-09-17.
 
-    For **the fields the Screener never sees** — the storyboard title, the forum thread
-    title, the closing line — this is the only layer there is, so it has to stop what no
-    model is needed for: wrong type, too long, hidden control characters, and "a few spaces",
-    which lands in the database and shows up in the interface as a blank nobody can identify.
+    For **the short fields** — the storyboard title, the forum thread title, the closing
+    line — it is what stops everything no model is needed for: wrong type, too long, hidden
+    control characters, and "a few spaces", which lands in the database and shows up in the
+    interface as a blank nobody can identify. It used to be the only layer those had; all
+    three reach the Screener as well since #36, and it still runs first, because a length
+    check that costs nothing should not wait on a model call that does.
 
     For **the text going to the model** — a question to the assistant, a draft for the
     Writer, a submission to the Screener — it is the door. Those three arrived uncapped,
@@ -194,9 +197,8 @@ def _plain_text(value, limit: int, multiline: bool = False):
     model and should not wait for one.
 
     `None` passes through untouched (an optional field); empty after strip counts as not
-    given rather than as an empty string. Why these are not screened as well: see
-    operations.md §1.1. In short, neither path has a model call to ride along with, and a
-    `review` verdict has nowhere to land on a title.
+    given rather than as an empty string — which is also what tells _screen_aside there is
+    nothing to send.
     """
     if value is None:
         return None, True
@@ -536,14 +538,20 @@ def create_storyboard(body: dict, token: str, deps: Deps):
     user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
-    # The title never reaches the Screener, so this layer judges everything no model is
-    # needed for: type, length, control characters, and "a few spaces". Reasons and
-    # trade-offs in operations.md §1.1.
+    # This layer first, because it judges everything no model is needed for: type, length,
+    # control characters, and "a few spaces". Reasons in operations.md §1.1.
     title, ok = _plain_text(body.get("title"), 120)
     if not ok:
         return 400, _error("bad_request")
+    result, refusal = _screen_aside(title, "storyboard_title", user_id, deps)
+    if refusal:
+        return refusal
     # add_storyboard hands the owner a grant too, or they cannot enter their own storyboard
-    return 200, {"storyboard_id": deps.db.add_storyboard(user_id, title), "title": title}
+    storyboard_id = deps.db.add_storyboard(user_id, title)
+    if result:
+        _record_screening(deps, result, "storyboard_title", title, "storyboard",
+                          storyboard_id, user_id)
+    return 200, {"storyboard_id": storyboard_id, "title": title}
 
 
 def _settle(deps: Deps) -> None:
@@ -682,6 +690,41 @@ def _record_screening(deps: Deps, result: dict, field: str, text: str,
         "original_text": None if result["verdict"] == "ok" else text,
         "model": getattr(deps.client, "screener_model", None),
     })
+
+
+def _screen_aside(text, field: str, user_id: str, deps: Deps):
+    """Screen a short field that is not a post of its own: a storyboard title, a closing note.
+
+    Returns (result, refusal). On a rejection the audit row is written here, against
+    'submission' with nothing to point at, and the caller returns the refusal having created
+    nothing — the same shape the forum uses. Anything else leaves the row to the caller,
+    which by then has the storyboard id to point it at.
+
+    Nothing to judge is not a model call. Both fields are optional, so an empty one is the
+    ordinary case rather than an edge, and a screener call on "" would spend a slice of the
+    day's ceiling to be told that nothing says nothing.
+
+    operations.md §1.1 recorded not screening these as a decision, on three grounds. The
+    first two are answered by what is around it now: there is a quota check here, so the
+    model call is metered like any other; and a 'review' verdict lands in the audit trail
+    rather than nowhere, which is where it belongs, since both fields are written by the
+    storyboard's owner and a queue asking an owner to review their own title asks nobody.
+    The third, that no subject_type could name a storyboard, is now simply false.
+    """
+    if not text:
+        return None, None
+    try:
+        deps.limiter.check_and_count(user_id, "submission")
+    except RateLimited as limited:
+        return None, (429, _error("rate_limited", f"rate_limited_{limited.scope}",
+                                  scope=limited.scope))
+    result = roles.screener(deps.client, "other", field, text)
+    if result["verdict"] == "reject":
+        _record_screening(deps, result, field, text, "submission", None, user_id)
+        return result, (200, {"published": False,
+                              "reason_codes": sorted(set(result["codes"])),
+                              "prompt_version": result["prompt_version"]})
+    return result, None
 
 
 def register_video(body: dict, token: str, deps: Deps):
@@ -1059,7 +1102,19 @@ def close_storyboard(body: dict, token: str, deps: Deps):
         return 400, _error("bad_request")
     if deps.db.storyboard_owner(storyboard_id) != user_id:
         return 403, _error("not_the_owner")
+    # After the owner check, not before: screening is a model call, and an outsider's note on
+    # somebody else's storyboard should be refused rather than paid for.
+    result, refusal = _screen_aside(note, "closed_note", user_id, deps)
+    if refusal:
+        # A refused note leaves the storyboard open. Archiving it anyway and dropping the
+        # note would be quieter, and wrong: closing is deliberate and the note is how it is
+        # explained, so the owner gets to choose different words rather than find their
+        # storyboard shut with nothing said.
+        return refusal
     deps.db.close_storyboard(storyboard_id, note)
+    if result:
+        _record_screening(deps, result, "closed_note", note, "storyboard", storyboard_id,
+                          user_id)
     return 200, {"storyboard_id": storyboard_id, "status": "archived", "closed_note": note}
 
 

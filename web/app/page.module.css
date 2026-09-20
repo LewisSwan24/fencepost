@@ -61,6 +61,11 @@
   padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--line);
   color: var(--text-dim); font-size: 13.5px;
 }
+/* A refused title, in the new-storyboard sheet. Same pair as the forum sheet: the sentence
+   that says what to change, then the line saying nothing was lost. */
+.refused { color: var(--accent-hover); font-size: 13.5px; margin: 12px 0 0; }
+.blockedQuiet { color: var(--text-dim); font-size: 13.5px; margin: 4px 0 0; }
+
 .mode {
   font-size: 11.5px; color: var(--text-faint); text-align: center;
   padding: 8px 20px 0;

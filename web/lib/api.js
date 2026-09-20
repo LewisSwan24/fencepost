@@ -563,6 +563,9 @@ export async function dashboard() {
   }
 }
 
+// The title goes through the Screener since #36, so a refusal is possible here too: 200
+// with published:false and **no storyboard_id**, not an error, so catch never sees it.
+// Nothing is created — the person still has their title and can change it.
 export async function createStoryboard(title) {
   if (!usesNetwork) return fixtures.createStoryboard(title);
   return call("/api/storyboards", { body: { title } });
@@ -823,6 +826,10 @@ export async function isOwner(storyboardId, level) {
 // The owner closing it deliberately, optionally with a closing line. **Irreversible** — no
 // endpoint can open it again — and it deletes the assistant conversation on this storyboard
 // as well (the DELETE inside db.close_storyboard). The interface has to say both.
+//
+// The note is screened since #36, and a refused one leaves the storyboard **open**: 200 with
+// published:false and no status. Closing is deliberate and the note explains it, so the owner
+// gets to choose other words rather than find it shut with nothing said.
 export async function closeStoryboard({ storyboardId, closedNote }) {
   const body = { storyboard_id: storyboardId };
   if (closedNote) body.closed_note = closedNote;

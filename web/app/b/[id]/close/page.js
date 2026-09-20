@@ -14,7 +14,7 @@
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { boardRow, isOwner, closeStoryboard, isArchived } from "../../../../lib/api";
-import { COPY } from "../../../../lib/copy";
+import { COPY, reasonSentence } from "../../../../lib/copy";
 import { BackButton, ui } from "../../../../components/ui";
 import styles from "./close.module.css";
 
@@ -29,6 +29,7 @@ export default function CloseStoryboard({ params }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [blocked, setBlocked] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -57,8 +58,17 @@ export default function CloseStoryboard({ params }) {
 
   async function close() {
     setBusy(true);
+    setBlocked(null);
     try {
-      await closeStoryboard({ storyboardId: id, closedNote: note.trim() || undefined });
+      const done = await closeStoryboard({ storyboardId: id, closedNote: note.trim() || undefined });
+      // The note is screened, and a refusal comes back 200 with published:false — catch
+      // never sees it. **The storyboard is still open**, so going back to it would look
+      // like the closing worked. Stay here with the note still in the box.
+      if (done.published === false) {
+        setBlocked(reasonSentence(done.reason_codes));
+        setBusy(false);
+        return;
+      }
       router.replace("/b/" + id);
     } catch (e) {
       setError(e.message);
@@ -101,7 +111,7 @@ export default function CloseStoryboard({ params }) {
                 maxLength={NOTE_LIMIT}
                 value={note}
                 placeholder={COPY.closeNotePlaceholder}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={(e) => { setNote(e.target.value); setBlocked(null); }}
               />
               <div className={styles.hintRow}>
                 <span className={styles.hint}>{COPY.closeNoteHint}</span>
@@ -110,6 +120,13 @@ export default function CloseStoryboard({ params }) {
                 {left <= 40 ? <span className={styles.count}>{left}</span> : null}
               </div>
             </div>
+
+            {blocked ? (
+              <>
+                <p className={styles.refused}>{blocked}</p>
+                <p className={styles.quiet}>{COPY.blockedKept}</p>
+              </>
+            ) : null}
 
             <p className={styles.notRequired}>{COPY.closeNotRequired}</p>
           </>

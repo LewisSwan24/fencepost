@@ -439,6 +439,12 @@ export function timeline(storyboardId, after) {
 }
 
 export function createStoryboard(title) {
+  // A title is screened too since #36, and the offline demo has to be able to show it: the
+  // title is the line everyone reads first, and an address sitting in one was the case the
+  // change was made for.
+  if (String(title || "").includes(BLOCKED_TRIGGER)) {
+    return { published: false, reason_codes: ["pii"], prompt_version: PROMPT_VERSION };
+  }
   const id = "sb_" + Math.random().toString(36).slice(2, 8);
   STORYBOARDS[id] = {
     id, title, suburb: "Brisbane", status: "active", level: "reshare",
@@ -701,6 +707,11 @@ const GRANTS = {
 };
 
 export function closeStoryboard({ storyboard_id, closed_note }) {
+  // A refused note leaves it open, exactly as the server does — archiving it anyway and
+  // dropping the note would be the wrong half to keep.
+  if (String(closed_note || "").includes(BLOCKED_TRIGGER)) {
+    return { published: false, reason_codes: ["pii"], prompt_version: PROMPT_VERSION };
+  }
   const board = STORYBOARDS[storyboard_id];
   if (board) {
     board.status = "archived";
