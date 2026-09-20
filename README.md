@@ -75,8 +75,8 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 |---|---|
 | `POST /api/session` | Exchange a handle for a token, creating the user on first use. Off unless `FENCEPOST_OPEN_SIGNUP` is set. |
 | `POST /api/sessions/revoke` | Sign out: refuse every token this person holds, the one making the call included. All of them, not one device — there is no session table to be selective with. **Accounts only**: a guest's handle is public and exchanges for a token under open sign-up, so anybody could otherwise sign a guest out, in a loop; a guest gets 403 `not_an_account`, and loses nothing by it. |
-| `POST /api/storyboards` | Create a storyboard and grant its owner access. |
-| `POST /api/storyboards/close` | Close a storyboard with a note. Archiving is not deletion: the QR still works. |
+| `POST /api/storyboards` | Create a storyboard and grant its owner access. The title is screened; a refusal creates nothing. |
+| `POST /api/storyboards/close` | Close a storyboard with a note. The note is screened, and a refused one leaves it open. Archiving is not deletion: the QR still works. |
 | `POST /api/videos` | Register a clip. Only a storage key is kept — there is no field for EXIF to land in. |
 | `POST /api/entries` | Submit an entry. Screened first, created only if nothing was rejected. Needs `contribute` or `reshare`. |
 | `POST /api/entries/edit` | Change your own entry. Changed fields go back through the Screener; a rejected edit leaves the original alone. |

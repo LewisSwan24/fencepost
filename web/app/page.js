@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { dashboard, createStoryboard, me, MODE, assistantIsLive } from "../lib/api";
+import { COPY, reasonSentence } from "../lib/copy";
 import { relative, initials } from "../lib/format";
 import { Sheet, ui } from "../components/ui";
 import Shot from "../components/Shot";
@@ -20,6 +21,7 @@ export default function Home() {
   const [newOpen, setNewOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState(null);
 
   useEffect(() => {
     dashboard().then(setBoards, (e) => setError(e.message));
@@ -30,8 +32,17 @@ export default function Home() {
 
   async function create() {
     setBusy(true);
+    setBlocked(null);
     try {
       const made = await createStoryboard(title.trim());
+      // A refused title comes back 200 with published:false and no storyboard_id, so catch
+      // never sees it and pushing straight on would land on /b/undefined with the title
+      // gone. The same shape as the forum sheet next door.
+      if (made.published === false) {
+        setBlocked(reasonSentence(made.reason_codes));
+        setBusy(false);
+        return;
+      }
       router.push("/b/" + made.storyboard_id);
     } catch (e) {
       setError(e.message);
@@ -106,7 +117,8 @@ export default function Home() {
           <label htmlFor="sb-title" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Title</label>
           {/* Capped where the server caps it, so nobody types past a limit they cannot
               see and then meets a 400 that explains nothing. */}
-          <input id="sb-title" value={title} onChange={(e) => setTitle(e.target.value)}
+          <input id="sb-title" value={title}
+                 onChange={(e) => { setTitle(e.target.value); setBlocked(null); }}
                  maxLength={120}
                  placeholder="The one in the jacaranda"
                  style={{
@@ -114,6 +126,12 @@ export default function Home() {
                    borderRadius: 999, border: "1px solid var(--line)",
                    background: "var(--bg)", color: "var(--text)", fontSize: 15,
                  }} />
+          {blocked ? (
+            <>
+              <p className={styles.refused}>{blocked}</p>
+              <p className={styles.blockedQuiet}>{COPY.blockedKept}</p>
+            </>
+          ) : null}
           <button type="button" className={ui.btn} style={{ marginTop: 20 }}
                   disabled={!title.trim() || busy} onClick={create}>
             {busy ? "Creating…" : "Create"}

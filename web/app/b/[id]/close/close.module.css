@@ -6,6 +6,10 @@
 .quiet { color: var(--text-dim); }
 .error { color: var(--text-dim); }
 
+/* A refused closing note. Readable rather than dim, unlike .error above: that one carries a
+   failure the person cannot act on, this one is a sentence asking them to change a line. */
+.refused { color: var(--accent-hover); font-size: 13.5px; margin: 0 0 6px; }
+
 /* The four consequences. No warning colour: this is not an error, it is a weighty but
    ordinary act. */
 .points {
