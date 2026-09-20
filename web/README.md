@@ -162,10 +162,19 @@ live. Replacing or adding an image means doing this step too, and adding the att
 npm test
 ```
 
-That is `node --test "lib/*.test.mjs"`. The pattern is quoted because cmd.exe does not expand
-globs, and it matches `*.test.mjs` rather than the directory because `node --test lib/` would
-treat the ordinary `.js` modules in there as test files. A new test file is picked up without
-anything being edited, which the previous hand-written list of four filenames was not.
+Two commands, run one after the other: `node --test "lib/*.test.mjs"` for the modules, then
+`node --import ./test/setup.mjs --test "test/*.test.mjs"` for the screens. `npm run test:screens`
+is the second on its own. The patterns are quoted because cmd.exe does not expand globs, and
+they match `*.test.mjs` rather than the directory because `node --test lib/` would treat the
+ordinary `.js` modules in there as test files. A new test file is picked up without anything
+being edited, which the previous hand-written list of four filenames was not.
+
+They stay two commands rather than one because the modules are tested without a document and
+two of them depend on that. Under the harness, `stills.test.mjs` fails twice: those tests hand
+`stillsFrom` a plain object as a File, and `extractStills` returns `[]` immediately when
+`typeof document === "undefined"`, so what they exercise today is the bail-out and not the
+routing they describe. The file says as much in a comment. Making them faithful is its own
+piece of work.
 
 `fixtures.test.mjs` pins the assistant's routing table: one case per demo script, plus several
 that once went to the wrong branch ("Will it hurt my cat?" belongs with injured rather than
@@ -216,6 +225,45 @@ four" and "three were taken in daylight" after a fifth is added, and go on claim
 for every one of them after something else slips in. Each mutation was checked: dropping the
 species filter, collapsing the hash so a third of the pictures are never chosen, renaming a
 file, and emptying an author field each fail exactly the test meant to catch them.
+
+### The screens
+
+`test/` holds the render harness and one file per screen. `--import ./test/setup.mjs` registers
+a module hook and puts a jsdom document in place before anything else loads, which is the whole
+of the setup; a test then imports the page like any other module and renders it.
+
+The hook exists because Next's bundler is what normally makes these files importable. It does
+three things. It runs `web/**/*.{js,mjs}` outside `node_modules` through esbuild and returns
+them as ES modules — the screens are full of JSX, and this package.json has no
+`"type": "module"`, so Node would otherwise read them as CommonJS and stop at the first `<`. It
+answers a `*.css` import with a `Proxy` that returns the key as the class name, so `styles.lede`
+is `"lede"` and a class name is something a test can assert on; whether that name exists in the
+stylesheet is `classnames.test.mjs`'s question, not this one. And it resolves `next/navigation`
+and `next/font/google` to stubs in `test/stubs/`. Those three are the entire non-relative import
+surface of `app/` and `components/`, apart from React itself.
+
+The navigation stub records rather than navigates: `navigated` is the list of `["push", "/you"]`
+pairs since `reset()`. "Signing in takes you to /you" is then a claim about that list, which is
+checkable, rather than a claim about a real router inside jsdom, which would either do nothing
+or unload the document. Doing this in the loader rather than with `node:test`'s `mock.module()`
+is deliberate: module mocking is still behind `--experimental-test-module-mocks`, and a stub the
+loader installs is the same stub for every importer, including one three levels down inside a
+component.
+
+The hook also retries a failed relative resolve with `.js` and then `/index.js`, because the
+screens import each other the way a bundler allows — `from "../../lib/api"`, no extension — and
+Node's resolver requires one. Only relative specifiers, and only after the real resolver has
+already said no, so nothing there can shadow a package that does exist.
+
+`sign-in.test.mjs` is the first. It holds rules that live in one expression in the middle of a
+component and nowhere else: the submit button is disabled until the handle is three characters
+and the password eight, the "there is no password reset" warning belongs to one of the two modes
+only, and the password field's `autocomplete` has to be `new-password` when making an account
+and `current-password` when signing in — two hints a password manager reads and a person cannot
+see. Five mutations of the screen were checked and each failed the test meant to catch it,
+including deleting the `<span>` that gives the handle field its accessible name: those inputs
+are labelled by a `<label>` wrapping them rather than by `htmlFor`, and if that is ever broken
+into siblings the field goes on working with a mouse and stops being announced at all.
 
 ## Checked in a browser
 
