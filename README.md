@@ -42,11 +42,15 @@ None of them touch the network — the model is faked.
 ```bash
 python tests/test_proxy.py && python tests/test_data_layer.py &&
 python tests/test_entrypoint.py && python tests/test_resources.py &&
-python tests/test_store.py && python tests/test_teardown.py
+python tests/test_store.py && python tests/test_teardown.py &&
+python tests/test_batch_reports.py
 ```
 
-375 tests. The last two were missing from the line above until 2026-09-17, so
-thirty-one of them were never run by the documented command. The data layer ones
+431 tests. Two files have gone missing from that line since it was written. The last
+two until 2026-09-17, so thirty-one were never run by the documented command; then
+`test_batch_reports.py`, added on 2026-09-20 and left out the same day — and that one
+was worse, because it also had no `unittest.main()`, so running it by name printed
+nothing and exited 0. Adding a suite means adding it here. The data layer ones
 matter most: they pin the three access invariants — other people's entries never
 enter the assistant's context, a soft-deleted entry disappears on the next call, and
 a revoked grant stops both context and chat history immediately.
