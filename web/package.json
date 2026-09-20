@@ -8,6 +8,9 @@
     "test": "node --import ./test/setup.mjs --test \"lib/*.test.mjs\" \"test/*.test.mjs\"",
     "test:screens": "node --import ./test/setup.mjs --test \"test/*.test.mjs\""
   },
+  "overrides": {
+    "postcss": "^8.5.28"
+  },
   "dependencies": {
     "next": "^15",
     "qrcode-generator": "^2.0.4",
