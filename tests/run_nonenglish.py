@@ -8,8 +8,13 @@ non-English floor (§4.3: a non-English submission tops out at review and is nev
 rejected) is implemented in that layer, and bypassing it would test something other than
 the real behaviour.
 
-The report records two things separately: what the model itself decided, and whether the
-floor pushed a reject down to review.
+The report records three things separately: what the model itself decided, whether the
+floor pushed a reject down to review, and whether the model answered at all.
+
+That last one is not bookkeeping. A Screener that fails open returns `review`, which for
+any case expecting a flag counts as the model agreeing with the human — so an upstream
+outage would raise the agreement figure this report exists to state. Those rows are marked
+and counted out of the agreement (#35, the same defect as in run_redline.py).
 """
 
 import sys
@@ -30,6 +35,9 @@ from proxy.env import load_env
 from proxy.model import DashScope
 
 CASES = Path(__file__).resolve().parent / "nonenglish_cases.yaml"
+# Where the report lands. A name rather than an expression inside main() so a test can run
+# the whole thing and have it write somewhere harmless — the archived reports live here.
+REPORT_DIR = Path(__file__).resolve().parent
 
 # Which of these share our alphabet. Only used to label the report: the point of the second
 # signal in roles.looks_non_english is that these are the ones a character ratio cannot see,
@@ -41,17 +49,22 @@ def main() -> None:
     load_env()
     cases = yaml.safe_load(CASES.read_text(encoding="utf-8"))
     client = DashScope()
-    rows, agreed, floored = [], 0, 0
+    rows, agreed, floored, fell_back = [], 0, 0, 0
     versions = set()
 
     for case in cases:
         result = roles.screener(client, "unknown", case["field"], case["input"])
-        raw = "reject" if result["downgraded_non_english"] else result["verdict"]
+        # The model never answered, so there is nothing here to agree or disagree with.
+        # Counting it either way would be a statement about a call that did not happen.
+        opened = bool(result["fail_open"])
+        raw = "fell back" if opened else (
+            "reject" if result["downgraded_non_english"] else result["verdict"])
         verdict = result["verdict"]
         judged = "ok" if verdict == "ok" else "flag"
-        match = judged == case["expect"]
+        match = judged == case["expect"] and not opened
         agreed += match
         floored += bool(result["downgraded_non_english"])
+        fell_back += opened
         rows.append((case, raw, verdict, result["codes"], match))
         # Taken from the result rather than read off disk: this is the version the call
         # actually recorded. A run that somehow spanned two would show both, rather than
@@ -85,6 +98,14 @@ def main() -> None:
         f"- Latin-script languages in the sample: "
         + ", ".join(sorted(LATIN_SCRIPT & set(counts)) or ["none"]),
         f"- Times the floor pushed a reject down to review: {floored}",
+    ]
+    if fell_back:
+        lines.append(
+            f"- **The Screener fell back on {fell_back} of {total} cases** — two attempts "
+            "produced nothing usable, so `review` there is prompts.md §5's fallback and not "
+            "a judgement. Counted as no agreement, because nothing was judged. Rerun them "
+            "before quoting the figure above.")
+    lines += [
         "",
         "The model column is what the model decided; final is what the user actually met "
         "after the floor.",
@@ -97,9 +118,10 @@ def main() -> None:
                      f"{case['expect']} | {raw} | {verdict} | {' '.join(codes) or '-'} | "
                      f"{'yes' if ok else 'no'} |")
 
-    out = Path(__file__).resolve().parent / f"nonenglish_report_{datetime.now():%Y%m%d_%H%M}.md"
+    out = REPORT_DIR / f"nonenglish_report_{datetime.now():%Y%m%d_%H%M}.md"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-    print(f"\nAgreement {agreed}/{total}, floor stepped in {floored} times")
+    print(f"\nAgreement {agreed}/{total}, floor stepped in {floored} times"
+          + (f", fell back {fell_back} times" if fell_back else ""))
     print(f"Report: {out}")
 
 

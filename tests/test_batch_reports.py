@@ -1,4 +1,4 @@
-"""The red-line report as an artefact: what they keep, and what they admit.
+"""The two batch reports as artefacts: what they keep, and what they admit.
 
     python tests/test_batch_reports.py
 
@@ -16,9 +16,16 @@ a Screener that failed open showed `verdict=review` as if it had judged the text
 swallow the reason on purpose, because the product must not stop; a report that repeats
 them without saying so is evidence of something that never happened.
 
+The non-English batch had the same blind spot with a sharper edge. A fail-open returns
+`review`, which for any case expecting a flag scored as the model agreeing with the human —
+so an upstream outage would have raised the agreement figure that report exists to state,
+and that operations.md 4.2 quotes.
+
 Offline: nothing here makes a model call.
 """
 
+import contextlib
+import io
 import json
 import re
 import sys
@@ -31,6 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import run_nonenglish                                                # noqa: E402
 import run_redline                                                   # noqa: E402
 from run_redline import Recording, Row, fallback_note, render        # noqa: E402
 from proxy.model import UpstreamError                                # noqa: E402
@@ -217,12 +225,15 @@ class TheWholeRunWritesOne(unittest.TestCase):
 
     def run_main(self, out_path, cases_path):
         argv = ["run_redline.py", "--cases", str(cases_path), "--out", str(out_path)]
+        printed = io.StringIO()
         with mock.patch.object(run_redline, "DashScope", self.Client), \
              mock.patch.object(run_redline, "load_env", lambda: None), \
              mock.patch.dict("os.environ", {"DASHSCOPE_API_KEY": "sk-not-a-real-key"}), \
-             mock.patch.object(sys, "argv", argv):
+             mock.patch.object(sys, "argv", argv), \
+             contextlib.redirect_stdout(printed):
             with self.assertRaises(SystemExit) as caught:
                 run_redline.main()
+        self.printed = printed.getvalue()
         return caught.exception.code, out_path.read_text(encoding="utf-8")
 
     def test_a_run_with_a_fallback_in_it_says_so_at_the_top(self):
@@ -238,3 +249,80 @@ class TheWholeRunWritesOne(unittest.TestCase):
         self.assertIn("Request timed out", report, "the reason never reached the file")
         self.assertIn("verdict=reject", report)
         self.assertNotIn("### #20 screener", report)
+
+
+class TheNonEnglishBatchDoesNotCountASilence(unittest.TestCase):
+    """run_nonenglish — where a fallback used to score as agreement.
+
+    The agreement figure is the whole output of that batch and operations.md §4.2 quotes it.
+    A Screener that fails open answers `review`, which reads as "flag", which is what most
+    of these cases expect — so a bad afternoon upstream made the number go up.
+    """
+
+    CASES = """
+- {id: zh-1, language: zh, category: sighting, field: story, input: "看到一只", expect: ok}
+- {id: zh-2, language: zh, category: abuse, field: story, input: "骂人的话", expect: flag}
+"""
+
+    class Client:
+        """Answers for the first case, times out for the second."""
+        chat_model = "fake-chat"
+        screener_model = "fake-screener"
+        timeout = 20.0
+
+        def __init__(self):
+            self.calls = 0
+            self._client = mock.Mock(base_url="https://example.invalid/v1/")
+
+        def call(self, role, system, content, history=()):
+            self.calls += 1
+            if self.calls == 1:
+                return '{"verdict": "ok", "codes": [], "note": ""}'
+            raise UpstreamError("[proxy] upstream screener: Request timed out.")
+
+    def run_main(self, folder):
+        cases = Path(folder) / "nonenglish_cases.yaml"
+        cases.write_text(self.CASES, encoding="utf-8")
+        printed = io.StringIO()
+        with mock.patch.object(run_nonenglish, "DashScope", self.Client), \
+             mock.patch.object(run_nonenglish, "load_env", lambda: None), \
+             mock.patch.object(run_nonenglish, "CASES", cases), \
+             mock.patch.object(run_nonenglish, "REPORT_DIR", Path(folder)), \
+             contextlib.redirect_stdout(printed):
+            run_nonenglish.main()
+        written = list(Path(folder).glob("nonenglish_report_*.md"))
+        self.assertEqual(1, len(written))
+        self.printed = printed.getvalue()
+        return written[0].read_text(encoding="utf-8")
+
+    def test_a_row_the_model_never_answered_is_not_agreement(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = self.run_main(folder)
+
+        self.assertIn("Agreed with the human judgement: 1/2", report,
+                      "the fallback was counted as the model agreeing")
+        self.assertIn("**The Screener fell back on 1 of 2 cases**", report)
+        self.assertIn("Rerun them before quoting the figure above", report)
+        row = [line for line in report.splitlines() if line.startswith("| zh-2 |")][0]
+        self.assertIn("fell back", row, "the row reads as a verdict the model reached")
+        self.assertTrue(row.rstrip().endswith("no |"))
+
+    def test_the_line_printed_at_the_end_says_it_too(self):
+        """The terminal is where the figure is read first, and often the only place it is
+        read before it goes into a document. A bare `Agreement 1/2` there is the same
+        silence, in the channel the operator actually looks at."""
+        with tempfile.TemporaryDirectory() as folder:
+            self.run_main(folder)
+        self.assertIn("Agreement 1/2", self.printed)
+        self.assertIn("fell back 1 times", self.printed)
+
+    def test_running_the_batch_here_does_not_write_into_the_archive(self):
+        """REPORT_DIR exists for this. The archived reports are the course evidence and sit
+        in tests/; a test that runs the batch must not drop a fake one among them, and the
+        only thing stopping it is that the path is a name the test can point elsewhere.
+        """
+        archive = ROOT / "tests"
+        before = set(archive.glob("nonenglish_report_*.md"))
+        with tempfile.TemporaryDirectory() as folder:
+            self.run_main(folder)
+        self.assertEqual(before, set(archive.glob("nonenglish_report_*.md")))
