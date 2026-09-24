@@ -240,6 +240,22 @@ class Cors(unittest.TestCase):
         with urllib.request.urlopen(request) as resp:
             self.assertEqual("*", resp.headers.get("access-control-allow-origin"))
 
+    def test_a_closed_configuration_sends_no_allow_origin_at_all(self):
+        """Fail-closed means no header. The literal "null" it used to send admits exactly
+        the callers that send Origin: null — sandboxed iframes, file: and data: pages."""
+        original = entry.ALLOWED_ORIGINS
+        entry.ALLOWED_ORIGINS = ()
+        try:
+            for origin in ("https://fencepost-app.vercel.app", "null"):
+                request = urllib.request.Request(self.url, method="OPTIONS",
+                                                 headers={"origin": origin})
+                with urllib.request.urlopen(request) as resp:
+                    self.assertIsNone(resp.headers.get("access-control-allow-origin"),
+                                      f"a closed deployment answered Origin: {origin}")
+                    self.assertEqual("origin", resp.headers.get("vary"))
+        finally:
+            entry.ALLOWED_ORIGINS = original
+
 
 class WhichOriginIsAllowed(unittest.TestCase):
     """FENCEPOST_ALLOWED_ORIGIN takes a list, because one front end carries several
@@ -279,12 +295,13 @@ class WhichOriginIsAllowed(unittest.TestCase):
         self.assertEqual("https://a.example", self.choose("https://a.example", None))
 
     def test_a_closed_configuration_refuses_every_origin(self):
-        """The fail-closed case: no origins allowed returns a value that matches no real
-        origin, so the browser blocks every cross-origin read rather than getting a wildcard."""
+        """The fail-closed case: no origins allowed means no header to send — not a wildcard,
+        and not the literal "null", which an Origin: null caller would match."""
         original = entry.ALLOWED_ORIGINS
         entry.ALLOWED_ORIGINS = ()
         try:
-            self.assertEqual("null", entry._allow_origin("https://anything.example"))
+            self.assertIsNone(entry._allow_origin("https://anything.example"))
+            self.assertIsNone(entry._allow_origin("null"))
         finally:
             entry.ALLOWED_ORIGINS = original
 

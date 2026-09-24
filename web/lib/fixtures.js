@@ -402,6 +402,8 @@ export function boardAccess(id) {
 // does or it is not standing in for the server — and the difference would only show up on a
 // storyboard long enough to need a second page, which is exactly where nobody looks.
 const PAGE = 20;
+// Matches FORUM_PAGE in proxy/app.py, for the same reason: a thread pages on its own size.
+const FORUM_PAGE = 30;
 
 export function timeline(storyboardId, after) {
   const all = (TIMELINES[storyboardId] || []).map((e) => ({ ...e }));
@@ -540,10 +542,10 @@ export function readThread(threadId, after) {
                           { status: 400, code: "bad_request" });
     }
     const start = at + 1;
-    const page = all.slice(start, start + PAGE);
+    const page = all.slice(start, start + FORUM_PAGE);
     return {
       thread_id: threadId, title: thread.title, posts: page,
-      next: start + PAGE < all.length ? page[page.length - 1].id : null,
+      next: start + FORUM_PAGE < all.length ? page[page.length - 1].id : null,
     };
   }
   return { thread_id: threadId, posts: [], next: null };

@@ -70,9 +70,16 @@ STILL_LIMIT = 120_000
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 
 
-def _still_carries_metadata(b64: str) -> bool:
-    """Whether a base64 still holds an image-metadata block that can carry EXIF/GPS, XMP or
-    IPTC. Server-side backstop for the frame-privacy invariant.
+# Byte strings that open a metadata block able to carry a location: the EXIF header (APP1 in a
+# JPEG, and the same header inside any other container), the XMP namespace and packet, and the
+# Photoshop resource block that carries IPTC (APP13).
+_METADATA_SIGNATURES = (b"Exif\x00\x00", b"http://ns.adobe.com/xap/1.0/", b"<x:xmpmeta",
+                        b"Photoshop 3.0\x00")
+
+
+def _still_to_drop(b64: str) -> bool:
+    """Whether a base64 still should be dropped instead of stored. Server-side backstop for
+    the frame-privacy invariant.
 
     The invariant — a stored frame carries no EXIF/GPS, and a masked one is what reaches the
     timeline — is enforced in the client, which re-encodes every frame through a <canvas>
@@ -80,44 +87,30 @@ def _still_carries_metadata(b64: str) -> bool:
     the way in, so a caller bypassing the client (the demo join code is public) could POST a
     raw phone JPEG with its GPS tag and an un-blacked-out face, and the timeline would serve
     it. Masking cannot be verified here — it is visual — but the metadata half can, so this
-    backs that half: a still that carries a metadata block is dropped, the sighting kept, the
-    same trade the size and shape checks already make. data-model.md §1.1.
+    backs that half: a dropped still costs the picture and keeps the sighting, the same trade
+    the size and shape checks already make. data-model.md §1.1.
 
-    Header walk only, never pixel data, so image content cannot false-positive. A still that
-    does not decode as base64 is left to the checks around this rather than judged here (the
-    fixtures' fake stills are not real images and must still round-trip)."""
+    It accepts what the client sends and nothing else: a JPEG straight out of
+    canvas.toDataURL("image/jpeg"), which writes no metadata. So a still is dropped when it
+    will not decode, when it is not a JPEG, or when a metadata signature appears anywhere in
+    its bytes. The first version (2026-09-24, morning) walked JPEG and PNG headers and let
+    every other case through, and the self-review beat it four ways the same day: base64 with
+    its '=' padding stripped (the decode failed, so the check was skipped, and browsers render
+    an unpadded data: URL anyway), a WebP, a PNG with its text chunk after IDAT, and a JPEG
+    with a 0xFF fill byte before APP1. A signature search has no structure to walk around, and
+    the shortest signature is six bytes, so compressed pixel data matching one by chance is
+    about a one in 2^48 draw per position.
+
+    Padding is restored before decoding, because the regex at the call site accepts base64
+    without it and a browser renders it either way. What gets stored is the string as sent.
+    """
     try:
-        raw = base64.b64decode(b64, validate=True)
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4), validate=True)
     except (ValueError, binascii.Error):
-        return False
-    if raw[:3] == b"\xff\xd8\xff":                      # JPEG
-        i, n = 2, len(raw)
-        while i + 4 <= n and raw[i] == 0xFF:
-            marker = raw[i + 1]
-            if marker in (0xD9, 0xDA):                  # EOI or start of scan: metadata is before
-                break
-            if marker == 0x01 or 0xD0 <= marker <= 0xD7:  # standalone markers carry no length
-                i += 2
-                continue
-            length = (raw[i + 2] << 8) | raw[i + 3]
-            if length < 2:
-                break
-            if marker in (0xE1, 0xED):                  # APP1 (EXIF / XMP), APP13 (IPTC)
-                return True
-            i += 2 + length
-        return False
-    if raw[:8] == b"\x89PNG\r\n\x1a\n":                 # PNG
-        i, n = 8, len(raw)
-        while i + 8 <= n:
-            length = int.from_bytes(raw[i:i + 4], "big")
-            ctype = raw[i + 4:i + 8]
-            if ctype in (b"eXIf", b"tEXt", b"iTXt", b"zTXt"):
-                return True
-            if ctype == b"IDAT":                        # pixel data has begun
-                break
-            i += 12 + length                            # 4 length + 4 type + data + 4 CRC
-        return False
-    return False
+        return True
+    if raw[:3] != b"\xff\xd8\xff":
+        return True
+    return any(signature in raw for signature in _METADATA_SIGNATURES)
 
 # How many entries one /api/timeline response carries.
 #
@@ -235,36 +228,60 @@ def _error(code: str, copy_key: str = None, **extra) -> dict:
     return {"error": {"code": code, "message": COPY[copy_key or code], **extra}}
 
 
+_BOM = chr(0xFEFF)
+
+
 def _has_unsafe_format(text: str) -> bool:
-    """Format/control characters with no legitimate place in a line of user text.
+    """Characters that make text show or say something other than what a reader sees.
 
-    The predicate above catches only characters below U+0020 (plus DEL), which misses a
-    class that sorts higher and is exactly what an attacker reaches for. Bidi overrides and
-    isolates (U+202A-202E, U+2066-2069) are the Trojan-Source display-spoof vector: they
-    reorder rendered text with no visible cause, so a stored forum body can show a different
-    URL or phone number than the bytes the Screener judged and the database holds. C1
-    controls (U+0080-009F), the zero-width space (U+200B) and the BOM / zero-width no-break
-    space (U+FEFF) are invisible padding that hides PII from a reader and from a literal
-    match alike.
+    Two kinds, and only these two (narrowed on 2026-09-24).
 
-    Deliberately NOT rejected: ZWNJ and ZWJ (U+200C/U+200D) and the LRM/RLM marks
-    (U+200E/U+200F), which are load-bearing in the Arabic, Persian and Indic scripts this
-    app accepts, and in emoji sequences. The "non-English is never rejected" red line means
-    correct right-to-left and joined text has to pass, so this stays a narrow denylist of
-    the reordering and zero-width-hiding characters, not a sweep of everything non-ASCII.
-    This mirrors, for runtime input, the invisible-character policy the repo already applies
-    to files.
+    Reordering. Bidi overrides and isolates (U+202A-202E, U+2066-2069) are the Trojan-Source
+    display spoof: they reorder rendered text with no visible cause, so a stored body can
+    show a different URL or phone number than the bytes the Screener judged and the database
+    holds.
+
+    Smuggling. Tag characters (U+E0000-E007F) spell out ASCII that no font draws but a model
+    reads, so a submission could carry an instruction to the Screener that no human reviewer
+    would ever see. Their one legitimate use is an emoji tag sequence (the England, Scotland
+    and Wales flags: U+1F3F4, tag letters, then U+E007F), which passes whole. The invisible
+    operators (U+2061-2064) have no place in prose either, and C1 controls (U+0080-009F)
+    none anywhere.
+
+    What this used to refuse and no longer does: the zero-width space (U+200B) and the BOM /
+    zero-width no-break space (U+FEFF), on the theory that invisible padding hides PII. That
+    refused Khmer, which separates words with U+200B, and text pasted with a leading BOM —
+    against the red line that non-English is never rejected — and it closed nothing, because
+    U+2060, U+00AD and a dozen other invisible characters did the same padding job unrefused.
+    PII is the Screener's call, not a character list's. A leading BOM is stripped in
+    _plain_text instead.
+
+    Passed on purpose: ZWNJ and ZWJ (U+200C/U+200D) and the LRM/RLM/ALM marks (U+200E,
+    U+200F, U+061C), load-bearing in Arabic, Persian and the Indic scripts and in emoji, and
+    U+180E, which Mongolian uses. The marks can nudge how digits render beside right-to-left
+    text. They stay because right-to-left writing needs them; this does not claim to stop it.
     """
-    # By ordinal, never by literal: a zero-width character written into this source would be
+    # By ordinal, never by literal: characters like these written into this source would be
     # stripped by the repo's own invisible-character scrub, so the codepoints are named.
-    for ch in text:
-        o = ord(ch)
-        if 0x202A <= o <= 0x202E or 0x2066 <= o <= 0x2069:  # bidi overrides / isolates
+    i, n = 0, len(text)
+    while i < n:
+        o = ord(text[i])
+        if o == 0x1F3F4:                                        # a flag that may carry tags
+            j = i + 1
+            while j < n and 0xE0020 <= ord(text[j]) <= 0xE007E:
+                j += 1
+            if j > i + 1 and j < n and ord(text[j]) == 0xE007F:
+                i = j + 1                                       # one whole tag sequence
+                continue
+        elif 0x202A <= o <= 0x202E or 0x2066 <= o <= 0x2069:    # bidi overrides / isolates
             return True
-        if 0x80 <= o <= 0x9F:                               # C1 controls
+        elif 0xE0000 <= o <= 0xE007F:                           # tags outside a flag
             return True
-        if o == 0x200B or o == 0xFEFF:                      # zero-width space, BOM / ZWNBSP
+        elif 0x2061 <= o <= 0x2064:                             # invisible operators
             return True
+        elif 0x80 <= o <= 0x9F:                                 # C1 controls
+            return True
+        i += 1
     return False
 
 
@@ -294,7 +311,8 @@ def _plain_text(value, limit: int, multiline: bool = False):
         return None, True
     if not isinstance(value, str):
         return None, False
-    text = value.strip()
+    # A leading BOM is an artefact of where the text was pasted from, not part of it.
+    text = value.lstrip(_BOM).strip()
     if not text:
         return None, True
     if len(text) > limit:
@@ -616,6 +634,11 @@ def create_session(body: dict, deps: Deps, address: str = None):
         return 400, _error("bad_request")
     handle = (handle or "").strip()
     if not handle or len(handle) > 40:
+        return 400, _error("bad_request")
+    # Printed beside everything its owner writes, so it gets the refusal free text gets:
+    # control characters, and whatever reorders what is shown or hides what is there. Only
+    # that — the alphabet stays as wide as it was, so the join flow's names are not narrowed.
+    if any(ch < " " or ch == "\x7f" for ch in handle) or _has_unsafe_format(handle):
         return 400, _error("bad_request")
     # An identity that has a password is an account, and an account is entered through
     # /api/login. Without this line the two endpoints contradict each other: /api/login
@@ -946,7 +969,7 @@ def submit_entry(body: dict, token: str, deps: Deps):
     if (not isinstance(still, str) or not 0 < len(still) <= STILL_LIMIT
             or not _BASE64.fullmatch(still)):
         still = None
-    elif _still_carries_metadata(still):
+    elif _still_to_drop(still):
         # A frame carrying EXIF/GPS/XMP/IPTC is dropped here even though the client strips it,
         # because not every caller is the client. The sighting still posts.
         still = None
@@ -1061,6 +1084,15 @@ def edit_entry(body: dict, token: str, deps: Deps):
                if value and value != before]
     if not changed:
         return 200, {"entry_id": record["id"], "published": True, "unchanged": True}
+
+    # Charged like a submission, after the no-change return so saving nothing costs nothing.
+    # It was the one Screener caller with no per-user quota (found 2026-09-24): one account
+    # editing in a loop could spend the site-wide model ceiling, and past that ceiling every
+    # submission fails open and the assistant goes offline for everybody.
+    try:
+        deps.limiter.check_and_count(record["author_id"], "submission")
+    except RateLimited as limited:
+        return 429, _error("rate_limited", f"rate_limited_{limited.scope}", scope=limited.scope)
 
     screened = [(field, value, roles.screener(deps.client, record["species"], field, value))
                 for field, value in changed]

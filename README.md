@@ -29,7 +29,7 @@ Create a `.env` in the repository root. It is git-ignored.
 | `FENCEPOST_OPEN_SIGNUP` | no | Opens `POST /api/session`. Leave it unset anywhere real: with it on, anyone holding a handle can impersonate its owner. **The course deployment sets it deliberately** — it is this prototype's entire login model, and the `hybrid` frontend cannot obtain a token without it, so removing it blanks the site. It widens who can *write*, not who can *read*: visibility still runs through `access_grants`. Reasoning in `web/README.md`. |
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | on Vercel | The hosted libSQL database. `vercel integration add turso` injects both. Required for any real deployment — see Deploying. |
 | `FENCEPOST_DB` | no | Database address, and it wins over `TURSO_DATABASE_URL`. A local SQLite path, or a `libsql://` URL to point a script at the hosted database. Defaults to `fencepost.db` in the repo, or `/tmp` on Vercel — and `/tmp` is a last resort, not a deployment. |
-| `FENCEPOST_ALLOWED_ORIGIN` | no | Origins allowed to call the API from a browser, comma-separated. Defaults to `*`. Set it on any deployment that stays up — and list **every** alias the frontend answers on, because a missing one loads blank with nothing but a CORS error to go on. |
+| `FENCEPOST_ALLOWED_ORIGIN` | on Vercel | Origins allowed to call the API from a browser, comma-separated. Off Vercel it defaults to `*`. On Vercel an unset value fails closed: no origin is allowed, so the frontend loads blank, and `scripts/check_deploy.py` fails on it. List **every** alias the frontend answers on, because a missing one loads blank with nothing but a CORS error to go on. |
 | `CHAT_MODEL`, `SCREENER_MODEL`, `MODEL_TIMEOUT` | no | Model overrides. Defaults are in `proxy/model.py`. |
 | `LIMIT_CHAT_PER_DAY`, `LIMIT_VISION_PER_HOUR`, `LIMIT_SUBMISSION_PER_HOUR` | no | Rate limits. Defaults match the operations doc. |
 | `LIMIT_MODEL_CALLS_PER_DAY` | no | Ceiling on model calls across **everybody**, retries included, over a sliding 24 hours. Default `1000`. Open sign-up makes a fresh handle a fresh per-user quota, so this is what actually bounds spend. Reaching it looks like an outage: the Screener fails open, the Writer skips, the assistant says it is offline. |
@@ -95,7 +95,7 @@ entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new 
 | `POST /api/forum/threads` | Start a thread. The body is screened first; a rejection creates nothing. |
 | `POST /api/forum/posts` | Reply to a thread, screened the same way. |
 | `GET /api/forum?storyboard_id=` | Threads on a storyboard. Reading needs any grant, posting needs `contribute`. |
-| `GET /api/forum/thread?thread_id=` | The posts in one thread. |
+| `GET /api/forum/thread?thread_id=[&after=]` | A thread's replies, oldest first, thirty at a time (`FORUM_PAGE`): a reply runs to the free-text cap, so an unbounded thread crosses the same 4.5 MB response cap the timeline did. `after` is the previous page's `next` (a post id), and `next` is null on the last page; a cursor this thread never issued is a 400. |
 | `GET /api/review?storyboard_id=` | Entries flagged for checking. Never includes your own — the author is not told. |
 | `POST /api/review/vote` | One vote per person, changeable. Two agreeing votes settle it. |
 | `POST /api/review/dispose` | The owner keeps, labels or removes. Removal is a soft delete. |

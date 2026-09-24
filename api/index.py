@@ -91,8 +91,9 @@ def _default_origins() -> tuple:
     A wildcard is convenient for a local run but the wrong default for production: a
     deployment that forgets the variable should not silently open to every site. On Vercel
     an unset variable therefore fails closed — nothing is allowed cross-origin — rather than
-    opening wide. check_deploy still backs this up, but the default no longer has to be
-    remembered to be safe. Off Vercel (local dev) the wildcard stays.
+    opening wide. That also blanks the front end, which is a cross-origin caller, so
+    check_deploy asserts the front end's own origin is echoed back and fails loudly when it
+    is not. Off Vercel (local dev) the wildcard stays.
     """
     return () if os.getenv("VERCEL") else ("*",)
 
@@ -108,18 +109,22 @@ def _parse_origins() -> tuple:
 ALLOWED_ORIGINS = _parse_origins()
 
 
-def _allow_origin(requested: str | None) -> str:
-    """The access-control-allow-origin to return for this request.
+def _allow_origin(requested: str | None) -> str | None:
+    """The access-control-allow-origin to return for this request, or None to send none.
 
     A match is echoed back as it came (`vary: origin` is already sent, so caches will not
     cross). A miss does not get a wildcard — that would make the setting pointless — but the
     first entry in the list: the browser still blocks it, and the response leaves a clue
     about who this deployment does accept. An empty list is the fail-closed case (on Vercel
-    with no origin configured): return `null`, which matches no real origin, so every
-    cross-origin read is refused rather than allowed.
+    with no origin configured): no header at all, which every browser refuses.
+
+    It used to answer the literal "null" there, which is not a closed door: a sandboxed
+    iframe, a file: page and a data: document all send `Origin: null`, and an allow-origin
+    of "null" admits exactly them. check_deploy also let it through as a non-wildcard, so a
+    missing variable blanked the site behind a green check. Found 2026-09-24.
     """
     if not ALLOWED_ORIGINS:
-        return "null"
+        return None
     if "*" in ALLOWED_ORIGINS:
         return "*"
     if requested and requested in ALLOWED_ORIGINS:
@@ -287,7 +292,9 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def _cors(self) -> None:
-        self.send_header("access-control-allow-origin", _allow_origin(self.headers.get("origin")))
+        allowed = _allow_origin(self.headers.get("origin"))
+        if allowed is not None:
+            self.send_header("access-control-allow-origin", allowed)
         self.send_header("vary", "origin")
 
     def do_OPTIONS(self):

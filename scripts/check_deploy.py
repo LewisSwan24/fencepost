@@ -104,7 +104,7 @@ def check_web(report: Report, web: str) -> None:
                  "every page 404s - this is what a build with no source looks like")
 
 
-def check_api(report: Report, api: str) -> None:
+def check_api(report: Report, api: str, web: str) -> None:
     print(f"\napi  {api}")
     status, body, _ = fetch(api + "/api/dashboard")
     report.check(status == 401, "an unauthenticated read is refused, not crashed",
@@ -145,12 +145,21 @@ def check_api(report: Report, api: str) -> None:
                          headers={"content-type": "application/json"})
     report.check(status == 400, "an id that is not a string is a clean 400", f"status {status}")
 
-    _, _, headers = fetch(api + "/api/dashboard",
-                          headers={"Origin": "https://evil.example.com"})
-    allowed = (headers.get("access-control-allow-origin")
-               or headers.get("Access-Control-Allow-Origin") or "")
-    report.check(bool(allowed) and allowed != "*",
+    def allow_origin(origin: str) -> str:
+        _, _, headers = fetch(api + "/api/dashboard", headers={"Origin": origin})
+        return (headers.get("access-control-allow-origin")
+                or headers.get("Access-Control-Allow-Origin") or "")
+
+    hostile = "https://evil.example.com"
+    allowed = allow_origin(hostile)
+    report.check(allowed not in ("*", hostile, "null"),
                  "CORS does not hand a wildcard to a hostile origin", f"got {allowed!r}")
+    # The other half. The front end is itself a cross-origin caller, and a deployment with no
+    # FENCEPOST_ALLOWED_ORIGIN fails closed: no header, a blank site. The check above cannot
+    # tell that from a healthy deployment — it used to pass the old fail-closed value "null"
+    # as a non-wildcard — so ask as the front end and expect to be named.
+    echoed = allow_origin(web)
+    report.check(echoed == web, "CORS lets the front end in", f"got {echoed!r}")
 
 
 def main() -> int:
@@ -161,7 +170,7 @@ def main() -> int:
 
     report = Report()
     check_web(report, args.web.rstrip("/"))
-    check_api(report, args.api.rstrip("/"))
+    check_api(report, args.api.rstrip("/"), args.web.rstrip("/"))
 
     print()
     if report.failures:
