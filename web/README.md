@@ -295,7 +295,23 @@ answers a `*.css` import with a `Proxy` that returns the key as the class name, 
 is `"lede"` and a class name is something a test can assert on; whether that name exists in the
 stylesheet is `classnames.test.mjs`'s question, not this one. And it resolves `next/navigation`
 and `next/font/google` to stubs in `test/stubs/`. Those three are the entire non-relative import
-surface of `app/` and `components/`, apart from React itself.
+surface of `app/` and `components/`, apart from React itself. The font stub hands back the shape
+`layout.js` destructures, with a class name of `font`, and downloads nothing.
+
+The document is jsdom, and rendering goes through React 19, `@testing-library/react` and
+`@testing-library/user-event`. `test/harness.mjs` covers what the real app supplies around a
+screen: `params` arrive as a promise that is read with `use`, so a screen is always rendered
+inside Suspense and awaited, and the five posting screens get a `DraftProvider` with an optional
+`seed` so a test can open the species step already holding a suggestion. To run one file on its
+own, from `web/`:
+
+```
+node --import ./test/setup.mjs --test test/forum.test.mjs
+```
+
+A browser API jsdom lacks (`getUserMedia`, canvas, `Image` decoding, `URL.createObjectURL`) is
+stood in for inside the one suite that needs it, on `globalThis`, and put back afterwards. None
+of that goes into the shared files.
 
 The navigation stub records rather than navigates: `navigated` is the list of `["push", "/you"]`
 pairs since `reset()`. "Signing in takes you to /you" is then a claim about that list, which is
@@ -320,6 +336,17 @@ including deleting the `<span>` that gives the handle field its accessible name:
 are labelled by a `<label>` wrapping them rather than by `htmlFor`, and if that is ever broken
 into siblings the field goes on working with a mouse and stops being announced at all.
 
+Every route and every component now has a file: the eight first ones (`home`, `sign-in`,
+`board`, `share`, `forum`, `close`, `add-species`, `add-mask`) and, under #38, `add`,
+`add-frame`, `add-write`, `add-blocked`, `thread`, `review`, `you`, `share-link` (`s/[token]`),
+`no-access`, `credits`, `chat`, `name-gate`, `camera`, `shot`, `qr-code`, `qr-placeholder` and
+`ui`. They pin what a header comment, `copy.js` or CLAUDE.md says must happen rather than
+markup: a refusal that comes back 200 with `published: false` is not reported as a post, Possum
+Help stays a label with no avatar and no way to write, review never blocks and never tells the
+author, and nobody is ranked. A bug a test turns up in a screen goes in as a `{ todo }` with the
+reason, so the suite stays green and the bug stays visible, rather than being fixed in the same
+pass.
+
 **What the fixtures can and cannot put a screen into.** These tests drive the offline dataset,
 so a rule can only be checked in the states that dataset can reach, and three cannot be reached
 at all. No sighting of mine is under review, so neither half of "an author sees the review label
@@ -330,6 +357,47 @@ storyboard runs past one page of twenty, so "Show more sightings" is never drawn
 named in the header of the file it belongs to, and the two that a mutation would slip through are
 carried in the mutation set as deliberate misses rather than left out of it, so a run says so out
 loud. Closing all three means adding to what the demo contains, which is a separate decision.
+
+The #38 suites found more of the same kind. Each is also named at the top of its own file:
+
+- **`add`.** Real video decoding (`extractStills`) needs a decoder and a canvas. The suite
+  stubs `Image`, `URL.createObjectURL` and the canvas per test and covers only "one photograph
+  still", "`[]`, undecodable" and "still decoding"; a multi-still clip from the library input is
+  not driven end to end. Camera output (`takePhoto` / `stopVideo` into `fromCamera`) needs a
+  live frame drawn to canvas, so only opening, closing and the refused-camera fallback are
+  covered.
+- **`add-write`.** `submitEntry` and `writerHelp` never throw offline, so the error line is
+  unreachable. `helper.question` needs an empty tidied story while Post and the panel need a
+  non-blank one, so it only appears for a whitespace-only story and is not asserted.
+- **`thread`.** sb_roof is both view-only and archived, so which half of `canReply` hides the
+  reply box and the take-down buttons cannot be told apart. Offline answers an empty thread
+  rather than the server's 404 after the last post goes. `createPost` only publishes or
+  refuses, so a reply held for `review` has nothing to render, and it always writes as mel_k,
+  so other-author cases use the seeded t1/t2.
+- **`review`.** The only queued entry (e3) is on sb_jacaranda, which I own, so a non-owner
+  never looks at a non-empty queue and dropping the `owner` check fails nothing. None of my own
+  sightings is under review. `castVote` and `disposeEntry` never throw, so rollback and the
+  error line are unreachable. One queued entry means one disposal per process, spent on the
+  labelled confirm path. The queue item carries no handle, so the test can only check that
+  `aroha_t` and `@` never appear, and code that rendered `item.handle` would not be caught.
+- **`you`.** "Sign-in has ended" (`session_ended`) never happens offline, and `lib/api`'s
+  fixtures namespace cannot be replaced from a test.
+- **`share-link`.** `lib/api` reads `MODE` once at module scope and the fixture only refuses
+  with a 404, so unreachable / `session_ended`, which should keep the code on the page rather
+  than going to `/no-access`, are untested. "Checking the code…" at 900 ms never shows, because
+  the fixture resolves in the same tick.
+- **`chat`.** There is no image path in Chat; frame consent lives in the add flow, so the suite
+  pins only that Chat offers no attachment, video or canvas. Starting offline and the live
+  branch are both read at module scope; the offline line is reached through the failure path.
+- **`name-gate`.** `hasHandle()` never throws, so the "never block the app on this" catch is
+  unreachable, and rendering nothing while checking is not observable with a plain child.
+- **`shot`.** The CSS-module proxy answers every key, so the fallback to `styles.md` for an
+  unknown radius cannot be seen, and EXIF stripping happens before files reach the component.
+- **`qr-placeholder`.** "Every render is identical" always holds because `ROWS` is computed at
+  module load, so it cannot catch a seed change.
+- **`camera`.** The unmount test cannot tell `release()` apart from the stream effect's own
+  cleanup, since both stop the track. The 20-second auto-stop and the 500 ms sampling would
+  need fake timers and are not exercised.
 
 One state that looked unreachable is not: a storyboard archived while I still own it. sb_roof is
 read-only, so `owner` is false there and every owner control is already gone for the wrong reason.
@@ -356,8 +424,9 @@ many rectangles were painted and where, and both directions were checked by muta
 reverting the empty-list behaviour fails one of them, and a `redact` that exports the frame
 without painting anything fails four.
 
-The rest of this section still holds. These are React behaviour or focus behaviour, and the
-tests run without a DOM. These were measured against `npm run dev` on 2026-09-15 by
+More left under #38, listed below where it went. What stays needs a real browser: a real
+pointer drag over real layout, StrictMode's double invoke in dev, and real `offsetParent`
+values. These were measured against `npm run dev` on 2026-09-15 by
 dispatching real pointer and keyboard events at the page, not by clicking through by hand:
 the preview pane scales an emulated viewport, so coordinates written by eye land somewhere
 else, and an earlier attempt to drag a mask box failed for that reason rather than because
@@ -375,18 +444,26 @@ clones this meets it at once; the production build does not double invoke, which
 walking the deployment by hand never turned it up. With `reactStrictMode: false` and nothing
 else changed, one drag gave one box, which is what identifies the mechanism rather than
 guessing at it. After the fix, with strict mode back on: one drag, one box; a twitchy tap
-still refused; remove works on the first click; covering both targets still enables Next.
+still refused. The drag stays here, because the tests render without StrictMode and draw no
+boxes by pointer. `add-mask.test.mjs` now pins the rest on seeded boxes: one remove takes away
+one box and leaves the others, the last remove closes the gate, and a box opens it.
 
-**The consent sheet.** `aria-modal="true"` is a statement to a screen reader that everything
-outside the dialog is not there, and it is only true if Tab is actually trapped. Verified on
-the same run: the dialog carries `aria-modal` and an `aria-labelledby` that points at a
-heading that exists, focus moves into the dialog on open, Tab from the last control wraps to
-the first and Shift+Tab from the first wraps to the last, Escape closes it, and focus returns
-to the button that opened it rather than being dropped on the body.
+**The consent sheet.** Moved out. It is `ui.js`'s `Sheet`, and `ui.test.mjs` pins focus on
+the panel at open, Tab and Shift+Tab wrapping at the two ends, Escape closing without reaching
+a listener behind it, and focus going back to the opener. `add-mask.test.mjs` pins
+`aria-modal` and a heading the name points at on the consent sheet itself. One part still
+belongs here: jsdom reports `offsetParent` as null for everything, so the Tab tests fake it,
+and only a real browser shows the trap finding the controls that are actually visible.
 
 **The rest of the screens.** Every route was loaded and the console read: no errors and no
-warnings beyond React's own DevTools notice. `/b/[id]/add/write` correctly bounces to the
-species step when the draft has no species, which is the guard doing its job.
+warnings beyond React's own DevTools notice. No test reads the console, so that still needs a
+browser. The write screen's bounce to the species step when the draft has none is now
+`add-write.test.mjs`.
+
+**Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
+for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from
+video and the pixels that come out are only ever seen in a browser. So is layout, and so is
+anything timed against a real stream or network rather than the fixtures' timers.
 
 ## Layout
 
