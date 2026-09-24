@@ -37,7 +37,26 @@ def load_prompt(role: str) -> tuple[str, str]:
     return "\n\n".join(blocks), version
 
 
-_DELIMITERS = ("<context>", "</context>", "<user_content>", "</user_content>")
+# A framing tag the way a model would still read one: any case, spaces inside the brackets.
+_DELIMITER = re.compile(r"<\s*/?\s*(?:context|user_content)\s*>", re.IGNORECASE)
+
+
+def _without_delimiters(text: str, replace) -> str:
+    """Every framing tag in `text` replaced, repeated until none is left.
+
+    Repeated because one pass is not enough when the replacement is empty: taking <context>
+    out of "<con<context>text>" leaves a new <context> behind.
+    """
+    while True:
+        cleaned = _DELIMITER.sub(replace, text)
+        if cleaned == text:
+            return text
+        text = cleaned
+
+
+def _as_brackets(match) -> str:
+    """A tag rewritten in square brackets, </user_content> as [/user_content]: words kept."""
+    return "[" + re.sub(r"\s+", "", match.group(0)[1:-1]) + "]"
 
 
 def _safe_field(value) -> str:
@@ -49,18 +68,25 @@ def _safe_field(value) -> str:
     (species_selected, field), so a value carrying a literal </context> and a newline could
     close the trusted block early and add its own lines — bounded to weakening the screening
     of the caller's own submission, since Tier-1 keeps every other user's content out of
-    scope, but still a hole in the framing. Stripping the delimiter tokens and flattening
-    newlines keeps a field to one line of data. The body stays untouched: it is user_content,
-    which the prompt already treats as data.
+    scope, but still a hole in the framing. Removing the tags and flattening newlines keeps a
+    field to one line of data.
     """
-    text = str(value)
-    for token in _DELIMITERS:
-        text = text.replace(token, "")
+    text = _without_delimiters(str(value), "")
     return text.replace("\r", " ").replace("\n", " ")
 
 
 def _wrap(fields: dict, body: str) -> str:
+    """The context block and the user_content block, framed so user text cannot reframe them.
+
+    Fields lose any framing tag outright (_safe_field). The body keeps its words, but a tag in
+    it is shown with square brackets, so a story, a title or a closing note that writes
+    </user_content> can no longer close its own block and speak to the model from outside
+    it. Until 2026-09-24 only the fields were handled, and titles and closing notes reach the
+    Screener as bodies. The audit row keeps the submission as written; what the model read
+    differs from it only in those brackets.
+    """
     lines = "\n".join(f"{k}: {_safe_field(v)}" for k, v in fields.items())
+    body = _without_delimiters(body, _as_brackets)
     return f"<context>\n{lines}\n</context>\n\n<user_content>\n{body}\n</user_content>"
 
 

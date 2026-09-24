@@ -75,12 +75,22 @@ const wholeTimeline = (id) => {
   }
   return rows;
 };
+// readThread() is paged the same way — one page is 30 posts — so it gets the same treatment.
+const wholeThread = (id) => {
+  const rows = [];
+  for (let cursor = null, guard = 0; guard < 100; guard += 1) {
+    const page = f.readThread(id, cursor);
+    rows.push(...page.posts);
+    if (!(cursor = page.next)) break;
+  }
+  return rows;
+};
 for (const b of [...home.active, ...home.past]) {
   out.boards.push({ id: b.id, title: b.title, status: b.status,
                     closed_note: b.closed_note ?? null,
                     entries: wholeTimeline(b.id) });
   out.forum[b.id] = (f.forumThreads(b.id).threads || []).map(t => ({
-    title: t.title, handle: t.handle, posts: f.readThread(t.id).posts }));
+    title: t.title, handle: t.handle, posts: wholeThread(t.id) }));
 }
 console.log(JSON.stringify(out));
 """

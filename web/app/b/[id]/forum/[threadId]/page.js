@@ -36,11 +36,30 @@ export default function Thread({ params }) {
   // lib/paging: keep at least as many replies as were showing (`keep`, after a take-down), and
   // page on until a given reply is in the list (`containing`, after posting one). Returns the
   // view so the callers below can read what came back.
-  function load(keep = 0, containing = null) {
+  function fetchView(keep = 0, containing = null) {
     return readThread(threadId)
       .then((first) => fillTo(first, (after) => readThread(threadId, after),
-                              { atLeast: keep, containing, key: "posts" }))
+                              { atLeast: keep, containing, key: "posts" }));
+  }
+
+  function load(keep = 0, containing = null) {
+    return fetchView(keep, containing)
       .then((v) => { setView(v); return v; }, (e) => { setError(e.message); return null; });
+  }
+
+  // After a take-down. When the last post goes the thread goes with it: the server then
+  // answers 404 "gone", while offline fixtures hand back an empty thread. Either way there is
+  // nothing left to show, so back to the list rather than an error about a thread we emptied.
+  async function reloadAfterRemoval(keep) {
+    const back = () => router.replace("/b/" + id + "/forum");
+    try {
+      const v = await fetchView(keep);
+      if ((v.posts || []).length === 0) back();
+      else setView(v);
+    } catch (e) {
+      if (e.status === 404) back();
+      else setError(e.message);
+    }
   }
 
   useEffect(() => { load(); }, [threadId]);
@@ -89,8 +108,7 @@ export default function Thread({ params }) {
       // Reload rather than splice it out locally: when the last post goes the thread goes
       // with it, and the server is the one that decides that. Keep what was showing so a
       // take-down on an expanded thread does not collapse it back to page one.
-      const left = await load(posts.length);
-      if (left && (left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
+      await reloadAfterRemoval(posts.length);
     } catch (e) {
       setError(e.message);
     }
@@ -100,8 +118,7 @@ export default function Thread({ params }) {
     setClearing(null);
     try {
       await removeForumPost(postId);
-      const left = await load(posts.length);
-      if (left && (left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
+      await reloadAfterRemoval(posts.length);
     } catch (e) {
       setError(e.message);
     }
