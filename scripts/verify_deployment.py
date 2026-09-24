@@ -444,13 +444,20 @@ def main():
            f"{len(facts)} fun facts" +
            (", skipped — neither attempt worked, most likely the upstream is down" if draft.get("skipped") else ""))
 
-    # The rate limit goes last: it uses up the submission quota, and running it before the
-    # entry is posted would break everything above. A screener request with no field is
-    # judged 400 only after the quota has been charged, so this loop makes no model call.
+    # The rate limit spends the stranger's quota, not the owner's. The limiter is per user, so
+    # the stranger meets the same limit. It used to be the owner's, which was fine until
+    # c8e5e60 (2026-09-20) sent the closing note through the Screener as a metered
+    # submission: from then on this loop drained the owner and the close below came back 429
+    # on every run, taking "moved to past" and "the closing line" down with it. The stranger
+    # holds no grant and needs none — _admit charges the quota before anything looks at a
+    # storyboard — and its one assistant call above was a neighbour, which is metered as chat.
+    # A screener request with no field is judged 400 only after the quota has been charged,
+    # so this loop makes no model call and stores nothing.
     hit, spent = None, 0
     for _ in range(30):
         spent += 1
-        status, payload = client.send("/api/assistant", token=token, body={"role": "screener"})
+        status, payload = client.send("/api/assistant", token=stranger,
+                                      body={"role": "screener"})
         if status == 429:
             hit = payload.get("error", {})
             break
