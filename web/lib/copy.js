@@ -210,6 +210,9 @@ export const COPY = {
   discussion: "Discussion",
   newThread: "Start a thread",
   reply: "Reply",
+  // Same rule as moreSightings: a thread is paged behind the 4.5 MB cap, and this shows only
+  // when the server hands back a `next` cursor.
+  moreReplies: "Show more replies",
   shareTitle: "Share this storyboard",
   shareLede: "The code carries the access you set here. It isn't a public link.",
   // Two captions, because the square underneath means two different things. Before anything

@@ -278,6 +278,28 @@ class WhichOriginIsAllowed(unittest.TestCase):
         """Server-to-server calls carry no Origin — verify_deployment.py runs exactly that way."""
         self.assertEqual("https://a.example", self.choose("https://a.example", None))
 
+    def test_a_closed_configuration_refuses_every_origin(self):
+        """The fail-closed case: no origins allowed returns a value that matches no real
+        origin, so the browser blocks every cross-origin read rather than getting a wildcard."""
+        original = entry.ALLOWED_ORIGINS
+        entry.ALLOWED_ORIGINS = ()
+        try:
+            self.assertEqual("null", entry._allow_origin("https://anything.example"))
+        finally:
+            entry.ALLOWED_ORIGINS = original
+
+    def test_on_vercel_an_unset_origin_fails_closed(self):
+        """Off Vercel an unset variable keeps the convenient wildcard; on Vercel it must not,
+        so a production deploy that forgets it opens to nobody rather than to everybody."""
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"VERCEL": "1"}):
+            os.environ.pop("FENCEPOST_ALLOWED_ORIGIN", None)
+            self.assertEqual((), entry._parse_origins())
+        with mock.patch.dict(os.environ):
+            os.environ.pop("VERCEL", None)
+            os.environ.pop("FENCEPOST_ALLOWED_ORIGIN", None)
+            self.assertEqual(("*",), entry._parse_origins())
+
 
 if __name__ == "__main__":
     unittest.main()

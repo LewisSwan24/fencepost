@@ -527,12 +527,26 @@ export function forumThreads(storyboardId) {
   return { storyboard_id: storyboardId, threads };
 }
 
-export function readThread(threadId) {
+export function readThread(threadId, after) {
   for (const list of Object.values(FORUM)) {
     const thread = list.find((t) => t.id === threadId);
-    if (thread) return { thread_id: threadId, title: thread.title, posts: thread.posts.map((p) => ({ ...p })) };
+    if (!thread) continue;
+    const all = thread.posts.map((p) => ({ ...p }));
+    const at = after ? all.findIndex((p) => p.id === after) : -1;
+    // The server answers 400 to a cursor this thread never issued rather than restarting at
+    // page one; offline has to refuse it the same way to stand in for the server.
+    if (after && at === -1) {
+      throw Object.assign(new Error("The assistant could not read that request."),
+                          { status: 400, code: "bad_request" });
+    }
+    const start = at + 1;
+    const page = all.slice(start, start + PAGE);
+    return {
+      thread_id: threadId, title: thread.title, posts: page,
+      next: start + PAGE < all.length ? page[page.length - 1].id : null,
+    };
   }
-  return { thread_id: threadId, posts: [] };
+  return { thread_id: threadId, posts: [], next: null };
 }
 
 export function removeEntry(entryId) {

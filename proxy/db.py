@@ -951,13 +951,40 @@ class Database:
             "ORDER BY t.created_at DESC, t.rowid DESC", (storyboard_id,)).fetchall()
         return [dict(row) for row in rows]
 
-    def posts(self, thread_id: str) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT p.id, p.author_id, u.handle, p.body, p.created_at FROM forum_posts p "
-            "JOIN users u ON u.id = p.author_id "
-            "WHERE p.thread_id = ? AND p.deleted_at IS NULL "
-            "ORDER BY p.created_at, p.rowid", (thread_id,)).fetchall()
-        return [dict(row) for row in rows]
+    def posts(self, thread_id: str, limit: int, after: str | None = None) -> list[dict]:
+        """One page of a thread's replies, oldest first.
+
+        `limit` has no default, for the reason timeline()'s does not: each post body runs to
+        the free-text cap, so the length of this list is the size of the response, and a
+        thread of a few thousand replies would walk into the platform's 4.5 MB cap. Ask for
+        one more than you mean to show to learn whether another page exists.
+
+        `after` is a post id, a position in the same (created_at, rowid) order the list is
+        sorted by, resolved by post_position(); a reply posted mid-page cannot shift the
+        window the way LIMIT/OFFSET would. Resolve and refuse an unknown cursor at the caller;
+        this method assumes a real one.
+        """
+        sql = ("SELECT p.id, p.author_id, u.handle, p.body, p.created_at FROM forum_posts p "
+               "JOIN users u ON u.id = p.author_id "
+               "WHERE p.thread_id = ? AND p.deleted_at IS NULL ")
+        params: list = [thread_id]
+        if after is not None:
+            position = self.post_position(thread_id, after)
+            if position is None:
+                raise ValueError(f"no such post in this thread: {after}")
+            sql += "AND (p.created_at > ? OR (p.created_at = ? AND p.rowid > ?)) "
+            params += [position["created_at"], position["created_at"], position["seq"]]
+        sql += "ORDER BY p.created_at, p.rowid LIMIT ?"
+        params.append(limit)
+        return [dict(row) for row in self.conn.execute(sql, tuple(params)).fetchall()]
+
+    def post_position(self, thread_id: str, post_id: str):
+        """Where a post sits in its thread's order, for use as a cursor. Not filtered on
+        deleted_at: a cursor is a coordinate, not content, so a post deleted between two page
+        fetches must still say where the next page began. None -> the caller's 400."""
+        return self.conn.execute(
+            "SELECT created_at, rowid AS seq FROM forum_posts WHERE id = ? AND thread_id = ?",
+            (post_id, thread_id)).fetchone()
 
     def post(self, post_id: str):
         row = self.conn.execute(

@@ -467,7 +467,7 @@ class Retention(Fixture):
         thread, _ = self.db.add_thread(self.storyboard, self.guest, "their thread", "their words")
         self.db.add_post(thread, self.owner, "my reply stays")
         self.db.delete_account(self.guest)
-        bodies = [p["body"] for p in self.db.posts(thread)]
+        bodies = [p["body"] for p in self.db.posts(thread, 50)]
         self.assertEqual(["my reply stays"], bodies)
 
     def test_deleting_an_account_turns_off_the_links_they_issued(self):

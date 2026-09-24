@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assistantReply, assistantFrames, writer, suggestedSpecies, PROMPT_VERSION,
-         createThread, createPost, boardAccess, editEntry, deleteEntry,
+         createThread, createPost, readThread, boardAccess, editEntry, deleteEntry,
          timeline, dashboard, closeStoryboard, reviewQueue, castVote, disposeEntry,
          createStoryboard, submitEntry,
          shareLinks, revokeShareLink, issueShareLink, grants,
@@ -117,6 +117,24 @@ test("a clean thread posts, and comes back with a thread_id", () => {
 
 test("an address in a reply is stopped too", () => {
   assert.equal(createPost({ threadId: "t1", body: `round the back of ${BLOCKED_TRIGGER}` }).published, false);
+});
+
+test("a thread reads back oldest first, and says there is no more when it ends", () => {
+  const view = readThread("t1");
+  assert.deepEqual(view.posts.map((p) => p.id), ["t1p0", "t1p1", "t1p2", "t1p3"]);
+  assert.equal(view.next, null, "a short thread should not offer another page");
+});
+
+test("a cursor returns the replies after it, standing in for the server's keyset page", () => {
+  const view = readThread("t1", "t1p1");
+  assert.deepEqual(view.posts.map((p) => p.id), ["t1p2", "t1p3"]);
+});
+
+test("a cursor this thread never issued is a 400, not a silent restart at page one", () => {
+  // The server answers bad_request; offline must refuse the same way rather than paging from
+  // the top, or the two behave differently under the same bug.
+  assert.throws(() => readThread("t1", "not-a-real-post"),
+                (e) => e.status === 400 && e.code === "bad_request");
 });
 
 test("whether you can write depends on the storyboard level and status", () => {

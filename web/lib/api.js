@@ -743,9 +743,11 @@ export async function forumThreads(storyboardId) {
   return call("/api/forum?storyboard_id=" + encodeURIComponent(storyboardId));
 }
 
-export async function readThread(threadId) {
-  if (!usesNetwork) return fixtures.readThread(threadId);
-  return call("/api/forum/thread?thread_id=" + encodeURIComponent(threadId));
+export async function readThread(threadId, after) {
+  if (!usesNetwork) return fixtures.readThread(threadId, after);
+  const q = "?thread_id=" + encodeURIComponent(threadId) +
+            (after ? "&after=" + encodeURIComponent(after) : "");
+  return call("/api/forum/thread" + q);
 }
 
 export async function createThread({ storyboardId, title, body }) {

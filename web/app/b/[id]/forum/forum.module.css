@@ -39,3 +39,14 @@
   text-decoration: underline; text-underline-offset: 3px;
 }
 .takeDown:hover { color: var(--accent-hover); }
+
+/* One more page of replies. Same shape as the timeline's .closeRow, and drawn only when the
+   server hands back another cursor. */
+.showMore {
+  display: block; width: 100%; margin-top: 22px; padding: 14px;
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: transparent; color: var(--text-dim);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.showMore:hover { color: var(--text); border-color: var(--text-dim); }
+.showMore:disabled { cursor: default; opacity: 0.6; }

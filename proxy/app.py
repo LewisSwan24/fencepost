@@ -2,6 +2,8 @@
 rate limiting, fail-open, Writer validation, and never leaking an error outward.
 """
 
+import base64
+import binascii
 import os
 import re
 import sys
@@ -67,6 +69,56 @@ STILL_LIMIT = 120_000
 # the JSON - the assumption TIMELINE_PAGE's arithmetic rests on.
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 
+
+def _still_carries_metadata(b64: str) -> bool:
+    """Whether a base64 still holds an image-metadata block that can carry EXIF/GPS, XMP or
+    IPTC. Server-side backstop for the frame-privacy invariant.
+
+    The invariant — a stored frame carries no EXIF/GPS, and a masked one is what reaches the
+    timeline — is enforced in the client, which re-encodes every frame through a <canvas>
+    (dropping metadata) and burns the redaction boxes into the pixels. Nothing checked it on
+    the way in, so a caller bypassing the client (the demo join code is public) could POST a
+    raw phone JPEG with its GPS tag and an un-blacked-out face, and the timeline would serve
+    it. Masking cannot be verified here — it is visual — but the metadata half can, so this
+    backs that half: a still that carries a metadata block is dropped, the sighting kept, the
+    same trade the size and shape checks already make. data-model.md §1.1.
+
+    Header walk only, never pixel data, so image content cannot false-positive. A still that
+    does not decode as base64 is left to the checks around this rather than judged here (the
+    fixtures' fake stills are not real images and must still round-trip)."""
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    if raw[:3] == b"\xff\xd8\xff":                      # JPEG
+        i, n = 2, len(raw)
+        while i + 4 <= n and raw[i] == 0xFF:
+            marker = raw[i + 1]
+            if marker in (0xD9, 0xDA):                  # EOI or start of scan: metadata is before
+                break
+            if marker == 0x01 or 0xD0 <= marker <= 0xD7:  # standalone markers carry no length
+                i += 2
+                continue
+            length = (raw[i + 2] << 8) | raw[i + 3]
+            if length < 2:
+                break
+            if marker in (0xE1, 0xED):                  # APP1 (EXIF / XMP), APP13 (IPTC)
+                return True
+            i += 2 + length
+        return False
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":                 # PNG
+        i, n = 8, len(raw)
+        while i + 8 <= n:
+            length = int.from_bytes(raw[i:i + 4], "big")
+            ctype = raw[i + 4:i + 8]
+            if ctype in (b"eXIf", b"tEXt", b"iTXt", b"zTXt"):
+                return True
+            if ctype == b"IDAT":                        # pixel data has begun
+                break
+            i += 12 + length                            # 4 length + 4 type + data + 4 CRC
+        return False
+    return False
+
 # How many entries one /api/timeline response carries.
 #
 # This number is not a taste in page length, it is arithmetic. A Vercel function's response
@@ -88,6 +140,10 @@ _BASE64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
 # UX question again instead of a payload one. That is a migration, not a patch; this bounds the
 # damage in the meantime.
 TIMELINE_PAGE = 20
+# How many forum replies one /api/forum/thread response carries. A post body runs to the
+# free-text cap, so like the timeline the list length is the response size: an unbounded
+# thread walks into the platform's 4.5 MB cap. Paged the same way, cursor and all.
+FORUM_PAGE = 30
 
 # What may be handed to the model, in characters.
 #
@@ -157,6 +213,7 @@ COPY = {
     "not_in_review": "That post is not waiting on a second look.",
     "not_your_post": "You can only take down your own posts.",
     "rate_limited_login": "Too many sign-in attempts. Try again in a few minutes.",
+    "rate_limited_password": "Too many sign-in or sign-up attempts from this network right now. Try again in a little while.",
     "rate_limited_session": "Too many new sessions from this network right now. Try again in a little while.",
 }
 
@@ -176,6 +233,39 @@ class Deps:
 
 def _error(code: str, copy_key: str = None, **extra) -> dict:
     return {"error": {"code": code, "message": COPY[copy_key or code], **extra}}
+
+
+def _has_unsafe_format(text: str) -> bool:
+    """Format/control characters with no legitimate place in a line of user text.
+
+    The predicate above catches only characters below U+0020 (plus DEL), which misses a
+    class that sorts higher and is exactly what an attacker reaches for. Bidi overrides and
+    isolates (U+202A-202E, U+2066-2069) are the Trojan-Source display-spoof vector: they
+    reorder rendered text with no visible cause, so a stored forum body can show a different
+    URL or phone number than the bytes the Screener judged and the database holds. C1
+    controls (U+0080-009F), the zero-width space (U+200B) and the BOM / zero-width no-break
+    space (U+FEFF) are invisible padding that hides PII from a reader and from a literal
+    match alike.
+
+    Deliberately NOT rejected: ZWNJ and ZWJ (U+200C/U+200D) and the LRM/RLM marks
+    (U+200E/U+200F), which are load-bearing in the Arabic, Persian and Indic scripts this
+    app accepts, and in emoji sequences. The "non-English is never rejected" red line means
+    correct right-to-left and joined text has to pass, so this stays a narrow denylist of
+    the reordering and zero-width-hiding characters, not a sweep of everything non-ASCII.
+    This mirrors, for runtime input, the invisible-character policy the repo already applies
+    to files.
+    """
+    # By ordinal, never by literal: a zero-width character written into this source would be
+    # stripped by the repo's own invisible-character scrub, so the codepoints are named.
+    for ch in text:
+        o = ord(ch)
+        if 0x202A <= o <= 0x202E or 0x2066 <= o <= 0x2069:  # bidi overrides / isolates
+            return True
+        if 0x80 <= o <= 0x9F:                               # C1 controls
+            return True
+        if o == 0x200B or o == 0xFEFF:                      # zero-width space, BOM / ZWNBSP
+            return True
+    return False
 
 
 def _plain_text(value, limit: int, multiline: bool = False):
@@ -211,6 +301,8 @@ def _plain_text(value, limit: int, multiline: bool = False):
         return None, False
     allowed = "\n\t" if multiline else ""
     if any(ch < " " and ch not in allowed or ch == "\x7f" for ch in text):
+        return None, False
+    if _has_unsafe_format(text):
         return None, False
     return text, True
 
@@ -426,7 +518,23 @@ def _handle(value):
     return text, True
 
 
-def register(body: dict, deps: Deps):
+def _password_gate(deps: Deps, address: str) -> bool:
+    """One slot of the per-address password ceiling, or False when the address is over it.
+
+    register and a login for a handle that does not exist both run a memory-hard scrypt with
+    no per-user counter to charge — the per-user login ceiling is keyed on a real users row,
+    so it cannot cover an attempt that names nobody. Without a per-address bound those two
+    paths are an unauthenticated CPU/memory flood, and register grows the users table with
+    it. This is the bound. As elsewhere, no ceilings backend or no address (a local run)
+    means no limit rather than a refusal.
+    """
+    if deps.ceilings is None or not address:
+        return True
+    cap, window = CEILINGS["password"]
+    return deps.ceilings.claim("password:" + auth.address_key(address), cap, window)
+
+
+def register(body: dict, deps: Deps, address: str = None):
     """Create an account with a password.
 
     Not behind FENCEPOST_OPEN_SIGNUP, unlike /api/session: this endpoint is the thing that
@@ -442,28 +550,37 @@ def register(body: dict, deps: Deps):
     password = body.get("password")
     if not isinstance(password, str) or not PASSWORD_MIN <= len(password) <= PASSWORD_MAX:
         return 400, _error("weak_password")
+    # After the cheap format checks, before the expensive hash and the row it writes.
+    if not _password_gate(deps, address):
+        return 429, _error("rate_limited", "rate_limited_password", scope="password")
     user_id = deps.db.create_account(handle, auth.hash_password(password))
     if user_id is None:
         return 409, _error("handle_taken")
     return 200, {"user_id": user_id, "handle": handle, "token": _mint(deps, user_id)}
 
 
-def login(body: dict, deps: Deps):
+def login(body: dict, deps: Deps, address: str = None):
     """Exchange a handle and password for the same token /api/session hands out.
 
     A malformed handle answers 401 rather than 400. Telling somebody their input was not a
     valid handle is a small oracle, and there is nothing a real person gains from the
     distinction: either way, they cannot get in with what they typed.
 
-    The ceiling is counted before the password is checked, so a wrong guess costs the same
-    as a right one. It is counted only when the handle belongs to somebody, because
-    rate_limits.user_id is a foreign key with nowhere to point otherwise — and an identity
-    with no password is one that guessing cannot open anyway.
+    Two ceilings, before the password is checked so a wrong guess costs the same as a right
+    one. The per-address one covers every attempt, so a handle that does not exist can no
+    longer run scrypt for free and mass handle-probing from one address is bounded. The
+    per-user one stays as a tighter, targeted cap for a real account, and is counted only
+    when the handle belongs to somebody, because rate_limits.user_id is a foreign key with
+    nowhere else to point. A residual remains — a real account trips its 10 before an unknown
+    handle trips the address 30, so single-handle probing can still tell them apart — but
+    handles are printed beside everything their owner writes, so they were never secret.
     """
     handle, ok = _handle(body.get("handle"))
     password = body.get("password")
     if not ok or not isinstance(password, str):
         return 401, _error("bad_credentials")
+    if not _password_gate(deps, address):
+        return 429, _error("rate_limited", "rate_limited_password", scope="password")
     record = deps.db.user_by_handle(handle)
     if record is not None:
         try:
@@ -490,7 +607,14 @@ def create_session(body: dict, deps: Deps, address: str = None):
     """
     if not os.getenv("FENCEPOST_OPEN_SIGNUP"):
         return 403, _error("signup_closed")
-    handle = (body.get("handle") or "").strip()
+    handle = body.get("handle")
+    # A non-string handle is a malformed request, not a handle: strip() on a list or dict
+    # raises AttributeError, which the entry point turns into a 500. The entry point type-
+    # checks only *_id keys, so the guard belongs here. login/register reach _handle, which
+    # already refuses a non-string, so this is the one raw .strip() that needed it.
+    if handle is not None and not isinstance(handle, str):
+        return 400, _error("bad_request")
+    handle = (handle or "").strip()
     if not handle or len(handle) > 40:
         return 400, _error("bad_request")
     # An identity that has a password is an account, and an account is entered through
@@ -543,6 +667,17 @@ def create_storyboard(body: dict, token: str, deps: Deps):
     title, ok = _plain_text(body.get("title"), 120)
     if not ok:
         return 400, _error("bad_request")
+    if not title:
+        # _screen_aside meters through the Screener call, but returns before it when there is
+        # nothing to screen — so a titleless board was created with no charge at all, and a
+        # token could mint storyboards (and owner grants) without limit. Charge the same
+        # ceiling here for the empty-title case; the titled case is still charged once, inside
+        # _screen_aside, so neither path is free and neither is billed twice.
+        try:
+            deps.limiter.check_and_count(user_id, "submission")
+        except RateLimited as limited:
+            return 429, _error("rate_limited", f"rate_limited_{limited.scope}",
+                               scope=limited.scope)
     result, refusal = _screen_aside(title, "storyboard_title", user_id, deps)
     if refusal:
         return refusal
@@ -811,6 +946,10 @@ def submit_entry(body: dict, token: str, deps: Deps):
     if (not isinstance(still, str) or not 0 < len(still) <= STILL_LIMIT
             or not _BASE64.fullmatch(still)):
         still = None
+    elif _still_carries_metadata(still):
+        # A frame carrying EXIF/GPS/XMP/IPTC is dropped here even though the client strips it,
+        # because not every caller is the client. The sighting still posts.
+        still = None
     entry_id = deps.db.add_entry(storyboard_id, user_id, species, fun_fact, story, video_id,
                                  still=still)
     for field, value, result in screened:
@@ -896,6 +1035,18 @@ def edit_entry(body: dict, token: str, deps: Deps):
     record, refusal = _own_editable_entry(body, token, deps)
     if refusal:
         return refusal
+    # Editing needs a current write grant, the same as submitting. delete_entry deliberately
+    # does not — withdrawing your own words survives revocation (see delete_post) — but an
+    # edit ADDS visible content, so a contributor the owner has revoked (or downgraded to
+    # view) must not keep broadcasting to a board they were removed from by rewriting their
+    # old entries. revoke() only marks access_grants, never the token, so _identify still
+    # passes; grant_level is what has to be re-checked here. Gated in edit_entry, not the
+    # shared helper, so delete keeps its withdraw-after-revocation path.
+    level = deps.db.grant_level(record["storyboard_id"], record["author_id"])
+    if level is None:
+        return 403, _error("no_access")
+    if level not in WRITE_LEVELS:
+        return 403, _error("read_only_access")
     # Same validation as submitting. A missing key means "leave that field alone", so the
     # stored value stands in and only what was actually sent gets checked.
     fun_fact, fact_ok = (_plain_text(body["fun_fact"], FUN_FACT_LIMIT, multiline=True)
@@ -972,7 +1123,13 @@ def redeem_share_link(body: dict, token: str, deps: Deps):
     user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
-    link = deps.db.share_link_by_hash(auth.hash_share_token(body.get("token") or ""))
+    code = body.get("token")
+    # A non-string code hashes through str.encode and 500s otherwise; a code that is not a
+    # string is not a link anybody issued, so the honest answer is the same 404 a wrong one
+    # gets. (The bearer token is a header; this body "token" is only the share code.)
+    if code is not None and not isinstance(code, str):
+        return 404, _error("invalid_link")
+    link = deps.db.share_link_by_hash(auth.hash_share_token(code or ""))
     if link is None:
         return 404, _error("invalid_link")
     if link["revoked_at"]:
@@ -1321,8 +1478,18 @@ def read_thread(params: dict, token: str, deps: Deps):
     # Carry the title: without it the thread screen sits under a bare "Discussion" and you
     # cannot tell what you are reading, and a shared link is blank. The title is visible
     # alongside the post already; this is not an extra leak.
+    #
+    # Paged like the timeline: `after` is the last post the caller already has, `next` is the
+    # id to ask for next or null at the end. An unknown cursor is a 400, not a silent restart,
+    # for the reason the timeline gives.
+    after = params.get("after") or None
+    if after is not None and deps.db.post_position(thread_id, after) is None:
+        return 400, _error("bad_request")
+    rows = deps.db.posts(thread_id, FORUM_PAGE + 1, after)
+    more = len(rows) > FORUM_PAGE
+    rows = rows[:FORUM_PAGE]
     return 200, {"thread_id": thread_id, "title": deps.db.thread_title(thread_id),
-                 "posts": deps.db.posts(thread_id)}
+                 "posts": rows, "next": rows[-1]["id"] if more else None}
 
 
 # ---------- review queue ----------

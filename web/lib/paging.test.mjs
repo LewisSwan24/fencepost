@@ -61,3 +61,36 @@ test("a page appended onto a list it overlaps adds nothing twice", () => {
   assert.deepEqual(joined.entries.map((e) => e.id), ["e1", "e2", "e3", "e4"]);
   assert.equal(joined.next, null);
 });
+
+// A forum thread pages the same way behind the same 4.5 MB cap, but its list lives under
+// `posts`, not `entries`. Passing key: "posts" is what the thread screen relies on; without
+// the generalization these would walk an undefined array and page for ever.
+function threadServer(total, size = 30) {
+  const all = Array.from({ length: total }, (_, i) => ({ id: "p" + (i + 1) }));
+  const page = async (after) => {
+    const start = after ? all.findIndex((p) => p.id === after) + 1 : 0;
+    const posts = all.slice(start, start + size);
+    return { posts, next: start + size < all.length ? posts.at(-1).id : null };
+  };
+  return { all, page };
+}
+
+test("posts pages until the reply just posted is on screen", async () => {
+  const s = threadServer(35);
+  const view = await fillTo(await s.page(), s.page, { containing: "p35", key: "posts" });
+  assert.ok(view.posts.some((p) => p.id === "p35"), "the new reply is not on the page");
+  assert.equal(view.posts.length, 35);
+  assert.equal(view.next, null);
+});
+
+test("a reload keeps at least as many posts as were showing", async () => {
+  const s = threadServer(100);
+  const view = await fillTo(await s.page(), s.page, { atLeast: 60, key: "posts" });
+  assert.equal(view.posts.length, 60, "a take-down collapsed the expanded thread");
+});
+
+test("a posts page appended onto a list it overlaps adds nothing twice", () => {
+  const view = { posts: [{ id: "p1" }, { id: "p2" }], next: "p2" };
+  const joined = appendPage(view, { posts: [{ id: "p2" }, { id: "p3" }], next: null }, "posts");
+  assert.deepEqual(joined.posts.map((p) => p.id), ["p1", "p2", "p3"]);
+});

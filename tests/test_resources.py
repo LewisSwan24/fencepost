@@ -182,6 +182,24 @@ class Resources(Fixture):
         status, _ = self.post("/api/storyboards", {"title": "x" * 121}, token=token)
         self.assertEqual(400, status)
 
+    def test_a_non_string_handle_is_a_bad_request_not_a_crash(self):
+        """create_session strips the handle directly; a list or dict raised AttributeError
+        and came back a 500. A non-string handle is a malformed request, so 400."""
+        status, payload = self.post("/api/session", {"handle": ["neighbour-a"]})
+        self.assertEqual(400, status)
+        self.assertEqual("bad_request", payload["error"]["code"])
+
+    def test_an_empty_title_storyboard_is_still_metered(self):
+        """A titleless board skipped the Screener and so skipped its quota charge, letting a
+        token mint storyboards without limit. It is charged the submission ceiling now."""
+        token = self.session()["token"]
+        with mock.patch.dict("proxy.ports.DEFAULT_LIMITS", {"submission": (1, 3600)}):
+            first, _ = self.post("/api/storyboards", {}, token=token)
+            self.assertEqual(200, first)
+            status, payload = self.post("/api/storyboards", {}, token=token)
+        self.assertEqual(429, status, "a second empty-title board was created for free")
+        self.assertEqual("rate_limited", payload["error"]["code"])
+
     def test_an_unknown_path_is_404(self):
         status, payload = self.post("/api/nothing-here", {})
         self.assertEqual(404, status)
@@ -559,6 +577,37 @@ class TheMaskedFrameOnAnEntry(Fixture):
         mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
         self.assertEqual(self.JPEG, mine["still"])
 
+    def test_a_frame_carrying_exif_is_dropped_but_the_sighting_posts(self):
+        """The client strips EXIF by re-encoding through a canvas, but a caller bypassing it
+        could POST a raw phone JPEG with a GPS tag. A frame with a metadata block is dropped
+        server-side and the account of the evening still posts. Built from bytes so the
+        base64 is real and decodes: SOI, an APP1 (EXIF) segment, EOI."""
+        import base64
+        seg = b"\xff\xe1" + (2 + 6).to_bytes(2, "big") + b"Exif\x00\x00"
+        exif = base64.b64encode(b"\xff\xd8" + seg + b"\xff\xd9").decode()
+        owner, board, status, made = self.entry(still=exif, story="it came back")
+        self.assertEqual(200, status)
+        self.assertTrue(made["published"])
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
+        self.assertIsNone(mine["still"], "an EXIF-bearing frame reached the timeline")
+        row = self.db.conn.execute("SELECT still FROM entries WHERE id = ?",
+                                   (made["entry_id"],)).fetchone()
+        self.assertIsNone(row["still"], "an EXIF-bearing frame was stored")
+
+    def test_a_metadata_free_frame_round_trips(self):
+        """The check is narrow: only a real metadata block is refused. An APP0/JFIF segment
+        is not metadata, so a clean JPEG that decodes is kept whole."""
+        import base64
+        payload = b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        seg = b"\xff\xe0" + (2 + len(payload)).to_bytes(2, "big") + payload
+        clean = base64.b64encode(b"\xff\xd8" + seg + b"\xff\xd9").decode()
+        owner, board, status, made = self.entry(still=clean)
+        self.assertEqual(200, status)
+        _, view = self.get(f"/api/timeline?storyboard_id={board}", token=owner["token"])
+        mine = [e for e in view["entries"] if e["id"] == made["entry_id"]][0]
+        self.assertEqual(clean, mine["still"], "a clean frame was dropped")
+
     def test_an_entry_without_one_is_ordinary(self):
         # The placeholder path, and any browser that could not decode the clip.
         owner, board, status, made = self.entry()
@@ -671,6 +720,32 @@ class TheShapeOfAnEntry(Fixture):
         self.assertEqual(200, status)
         self.assertTrue(out["published"])
 
+    def test_bidi_and_zero_width_format_characters_are_refused(self):
+        """Higher than the control-char check reaches: a bidi override (Trojan-Source
+        display spoofing), a bidi isolate, the zero-width space, the BOM and a C1 control.
+        Each would let stored text render differently from the bytes screened and held, or
+        hide PII from a reader and a literal match. Built with chr(), never as literals,
+        which the repo's own invisible-character scrub would strip out of this file."""
+        # Embedded mid-string, not trailing: a C1 like U+0085 is Unicode whitespace that
+        # .strip() would remove from an end anyway, so the attack that matters is one buried
+        # between real words, where it survives to render and to store.
+        for cp in (0x202E, 0x2066, 0x200B, 0xFEFF, 0x85):
+            status, _ = self.submit(story="on the" + chr(cp) + "fence")
+            self.assertEqual(400, status, f"U+{cp:04X} got through")
+
+    def test_non_english_and_joined_text_still_passes(self):
+        """The denylist is narrow on purpose. Correct right-to-left, CJK and joined text has
+        to pass because non-English submissions are never rejected: ZWNJ/ZWJ and the LRM/RLM
+        marks are load-bearing in Arabic, Persian and Indic scripts and in emoji, so they
+        stay allowed. Everything invisible here is built with chr() to keep this source
+        ASCII and out of reach of the scrub."""
+        arabic = "".join(chr(c) for c in (0x645, 0x631, 0x62D, 0x628, 0x627))
+        chinese = "".join(chr(c) for c in (0x4F60, 0x597D, 0x4E16, 0x754C))
+        for good in (arabic, chinese, "man" + chr(0x200D) + "woman", "a" + chr(0x200E) + "b"):
+            status, out = self.submit(story="saw one " + good)
+            self.assertEqual(200, status, f"legitimate text refused: {good!r}")
+            self.assertTrue(out["published"])
+
     def test_whitespace_alone_is_not_a_sighting(self):
         status, _ = self.submit(story="    ")
         self.assertEqual(400, status, "a blank entry would render as an unexplained gap")
@@ -763,6 +838,47 @@ class Edits(Fixture):
                                     token=who["token"])
         self.assertEqual(409, status)
         self.assertEqual("storyboard_closed", payload["error"]["code"])
+
+    def test_a_revoked_author_cannot_edit_but_can_still_withdraw(self):
+        """Revoking someone's grant removes their write access at once. Their token stays
+        valid (revoke marks access_grants, not the token), so editing an old entry would
+        otherwise keep broadcasting new content onto a board they were removed from. Editing
+        needs a current write grant like submitting; deleting does not — withdrawing your own
+        words survives revocation on purpose."""
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        _, created = self.submit(guest["token"], board, OK_JSON, story="mine, on the fence")
+        entry_id = created["entry_id"]
+        self.db.revoke(board, guest["user_id"])
+
+        status, payload = self.post("/api/entries/edit",
+                                    {"entry_id": entry_id, "story": "call me on 0400 000 000"},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("no_access", payload["error"]["code"])
+        self.assertEqual("mine, on the fence", self.db.entry(entry_id)["story"],
+                         "a revoked author's edit still changed the board")
+
+        status, payload = self.post("/api/entries/delete", {"entry_id": entry_id},
+                                    token=guest["token"])
+        self.assertEqual(200, status, "a revoked author could not withdraw their own entry")
+        self.assertTrue(payload["deleted"])
+
+    def test_an_author_downgraded_to_view_cannot_edit(self):
+        """The same gate catches a contributor downgraded to view: no write level, no edit."""
+        owner, board = self.board()
+        guest = self.session("guest")
+        self.db.grant(board, guest["user_id"], "contribute", owner["user_id"])
+        _, created = self.submit(guest["token"], board, OK_JSON, story="mine, on the fence")
+        entry_id = created["entry_id"]
+        self.db.grant(board, guest["user_id"], "view", owner["user_id"])
+
+        status, payload = self.post("/api/entries/edit",
+                                    {"entry_id": entry_id, "story": "later"},
+                                    token=guest["token"])
+        self.assertEqual(403, status)
+        self.assertEqual("read_only_access", payload["error"]["code"])
 
 
 class Sharing(Fixture):
@@ -974,6 +1090,15 @@ class Sharing(Fixture):
     def test_an_unknown_token_is_not_found(self):
         guest = self.session("guest")
         status, payload = self.post("/api/share-links/redeem", {"token": "made-up"},
+                                    token=guest["token"])
+        self.assertEqual(404, status)
+        self.assertEqual("invalid_link", payload["error"]["code"])
+
+    def test_a_non_string_share_code_is_invalid_not_a_crash(self):
+        """A non-string code hashed through str.encode and 500ed; a code that is not a string
+        is no link anybody issued, so it gets the same 404 a wrong one does."""
+        guest = self.session("guest")
+        status, payload = self.post("/api/share-links/redeem", {"token": ["made-up"]},
                                     token=guest["token"])
         self.assertEqual(404, status)
         self.assertEqual("invalid_link", payload["error"]["code"])
@@ -1518,6 +1643,45 @@ class Forum(Fixture):
         self.assertEqual(200, status)
         self.assertEqual("That clicking noise", view["title"])
         self.assertEqual(1, len(view["posts"]))
+
+    def test_a_long_thread_comes_back_one_page_at_a_time(self):
+        """A reply body runs to the free-text cap, so the length of this list is the size of
+        the response. Unbounded, a few thousand replies walk into the 4.5 MB platform cap, the
+        way the timeline did. Paged the same way: a page, a cursor, and the next page after it.
+        """
+        owner, board = self.board()
+        _, created = self.thread(owner["token"], board)   # the opening post is post one
+        tid = created["thread_id"]
+        # Seed past a page directly rather than through forty screened calls: the paging is what
+        # this test is about, not the Screener, which has its own tests above.
+        for i in range(40):
+            self.db.add_post(tid, owner["user_id"], f"reply number {i}")
+
+        status, first = self.get(f"/api/forum/thread?thread_id={tid}", token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual(30, len(first["posts"]), "a page is FORUM_PAGE replies")
+        self.assertEqual(first["posts"][-1]["id"], first["next"],
+                         "the cursor is the last reply on the page")
+
+        status, second = self.get(f"/api/forum/thread?thread_id={tid}&after={first['next']}",
+                                  token=owner["token"])
+        self.assertEqual(200, status)
+        self.assertEqual(11, len(second["posts"]), "1 opening + 40 = 41, so 30 then 11")
+        self.assertIsNone(second["next"], "the second page is the end")
+        self.assertEqual(set(), {p["id"] for p in first["posts"]}
+                                & {p["id"] for p in second["posts"]},
+                         "no reply appears on both pages")
+
+    def test_a_cursor_this_thread_never_issued_is_a_bad_request(self):
+        """The server refuses an unknown cursor rather than silently restarting at page one —
+        the same choice the timeline makes, so a bug cannot make the two diverge."""
+        owner, board = self.board()
+        _, created = self.thread(owner["token"], board)
+        status, payload = self.get(
+            f"/api/forum/thread?thread_id={created['thread_id']}&after=not-a-real-post",
+            token=owner["token"])
+        self.assertEqual(400, status)
+        self.assertEqual("bad_request", payload["error"]["code"])
 
 
 class Review(Fixture):
@@ -2238,6 +2402,78 @@ class SessionsPerAddress(Fixture):
             for n in range(self.CAP):
                 self.from_address(f"192.0.2.{n}", f"fresh-{n}")
             self.assertEqual(429, self.from_address("192.0.2.99", "spoofed")[0])
+
+
+class PasswordCeilingPerAddress(Fixture):
+    """The per-address ceiling on register and login (CEILINGS['password']).
+
+    scrypt is memory-hard, and register plus a login for a handle nobody holds run it with no
+    per-user counter to charge — an unauthenticated CPU/memory flood, and register grows the
+    users table with it. Counted by client address like /api/session, kept as a keyed hash.
+    """
+
+    CAP = 2
+
+    def setUp(self):
+        super().setUp()
+        entry._DEPS.ceilings = SqliteCeilings(self.db)
+        patcher = mock.patch.dict(CEILINGS, {"password": (self.CAP, 900)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        env = mock.patch.dict(os.environ, {"VERCEL": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def _post(self, path, body, address):
+        request = urllib.request.Request(
+            self.base + path, data=json.dumps(body).encode(),
+            headers={"content-type": "application/json", "x-forwarded-for": address})
+        try:
+            resp = urllib.request.urlopen(request)
+        except urllib.error.HTTPError as err:
+            resp = err
+        return resp.status, json.loads(resp.read())
+
+    def test_register_is_capped_per_address(self):
+        for n in range(self.CAP):
+            status, _ = self._post("/api/register",
+                                   {"handle": f"acct-{n}", "password": "long enough pw"},
+                                   "203.0.113.7")
+            self.assertEqual(200, status)
+        status, payload = self._post("/api/register",
+                                     {"handle": "one-more", "password": "long enough pw"},
+                                     "203.0.113.7")
+        self.assertEqual(429, status)
+        self.assertEqual("password", payload["error"]["scope"])
+        self.assertIsNone(self.db.user_by_handle("one-more"), "a refused register wrote a row")
+        self.assertEqual(200, self._post("/api/register",
+                                         {"handle": "elsewhere", "password": "long enough pw"},
+                                         "198.51.100.4")[0], "another network was affected")
+
+    def test_login_for_an_unknown_handle_is_capped_per_address(self):
+        """The path that used to run scrypt for free: a handle nobody holds. It shares the
+        ceiling now, so a flood of guesses from one address is bounded."""
+        for n in range(self.CAP):
+            status, _ = self._post("/api/login",
+                                   {"handle": f"nobody-{n}", "password": "whatever pw"},
+                                   "203.0.113.9")
+            self.assertEqual(401, status)
+        status, payload = self._post("/api/login",
+                                     {"handle": "nobody-more", "password": "whatever pw"},
+                                     "203.0.113.9")
+        self.assertEqual(429, status)
+        self.assertEqual("password", payload["error"]["scope"])
+
+    def test_a_malformed_request_is_refused_before_the_gate(self):
+        """A short password is refused before the ceiling, so it neither reaches scrypt nor
+        spends a network's allowance."""
+        for _ in range(self.CAP + 2):
+            self.assertEqual(400, self._post("/api/register",
+                                             {"handle": "validname", "password": "x"},
+                                             "203.0.113.7")[0])
+        self.assertEqual(200, self._post("/api/register",
+                                         {"handle": "finally", "password": "long enough pw"},
+                                         "203.0.113.7")[0])
 
 
 class Accounts(Fixture):

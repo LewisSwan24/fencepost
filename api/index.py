@@ -45,8 +45,8 @@ def _addressed(fn):
 # there and not here. A table dispatches in one line, and one line can be wrapped.
 POST_ROUTES = {
     "/api/session": _addressed(create_session),
-    "/api/register": _tokenless(register),
-    "/api/login": _tokenless(login),
+    "/api/register": _addressed(register),
+    "/api/login": _addressed(login),
     "/api/storyboards": create_storyboard,
     "/api/storyboards/close": close_storyboard,
     "/api/videos": register_video,
@@ -85,10 +85,27 @@ _DEPS = None
 # honouring only one of them means opening the site from another alias gives a blank page,
 # while the browser says only that CORS failed and never which origin was refused — the
 # hardest kind of fault to trace with an audience watching.
-ALLOWED_ORIGINS = tuple(
-    origin.strip() for origin in os.getenv("FENCEPOST_ALLOWED_ORIGIN", "*").split(",")
-    if origin.strip()
-) or ("*",)
+def _default_origins() -> tuple:
+    """What to allow when FENCEPOST_ALLOWED_ORIGIN is unset.
+
+    A wildcard is convenient for a local run but the wrong default for production: a
+    deployment that forgets the variable should not silently open to every site. On Vercel
+    an unset variable therefore fails closed — nothing is allowed cross-origin — rather than
+    opening wide. check_deploy still backs this up, but the default no longer has to be
+    remembered to be safe. Off Vercel (local dev) the wildcard stays.
+    """
+    return () if os.getenv("VERCEL") else ("*",)
+
+
+def _parse_origins() -> tuple:
+    parsed = tuple(
+        origin.strip() for origin in os.getenv("FENCEPOST_ALLOWED_ORIGIN", "").split(",")
+        if origin.strip()
+    )
+    return parsed or _default_origins()
+
+
+ALLOWED_ORIGINS = _parse_origins()
 
 
 def _allow_origin(requested: str | None) -> str:
@@ -97,8 +114,12 @@ def _allow_origin(requested: str | None) -> str:
     A match is echoed back as it came (`vary: origin` is already sent, so caches will not
     cross). A miss does not get a wildcard — that would make the setting pointless — but the
     first entry in the list: the browser still blocks it, and the response leaves a clue
-    about who this deployment does accept.
+    about who this deployment does accept. An empty list is the fail-closed case (on Vercel
+    with no origin configured): return `null`, which matches no real origin, so every
+    cross-origin read is refused rather than allowed.
     """
+    if not ALLOWED_ORIGINS:
+        return "null"
     if "*" in ALLOWED_ORIGINS:
         return "*"
     if requested and requested in ALLOWED_ORIGINS:

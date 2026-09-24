@@ -37,8 +37,30 @@ def load_prompt(role: str) -> tuple[str, str]:
     return "\n\n".join(blocks), version
 
 
+_DELIMITERS = ("<context>", "</context>", "<user_content>", "</user_content>")
+
+
+def _safe_field(value) -> str:
+    """A context field value with the framing taken out of it.
+
+    The context block is the trusted region: the shared prompt tells the model to distrust
+    only what is inside <user_content>, so anything interpolated into <context> is read as
+    instruction. Field values reach here straight from the caller on the assistant path
+    (species_selected, field), so a value carrying a literal </context> and a newline could
+    close the trusted block early and add its own lines — bounded to weakening the screening
+    of the caller's own submission, since Tier-1 keeps every other user's content out of
+    scope, but still a hole in the framing. Stripping the delimiter tokens and flattening
+    newlines keeps a field to one line of data. The body stays untouched: it is user_content,
+    which the prompt already treats as data.
+    """
+    text = str(value)
+    for token in _DELIMITERS:
+        text = text.replace(token, "")
+    return text.replace("\r", " ").replace("\n", " ")
+
+
 def _wrap(fields: dict, body: str) -> str:
-    lines = "\n".join(f"{k}: {v}" for k, v in fields.items())
+    lines = "\n".join(f"{k}: {_safe_field(v)}" for k, v in fields.items())
     return f"<context>\n{lines}\n</context>\n\n<user_content>\n{body}\n</user_content>"
 
 

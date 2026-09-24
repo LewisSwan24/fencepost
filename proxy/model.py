@@ -17,9 +17,24 @@ class UpstreamError(Exception):
     """Any upstream failure lands here. The detail goes to the server log, never the client."""
 
 
+_SECRET_ENV = ("DASHSCOPE_API_KEY", "FENCEPOST_TOKEN_SECRET", "TURSO_AUTH_TOKEN",
+               "LIBSQL_AUTH_TOKEN", "TURSO_DATABASE_URL")
+
+
 def redact(text: str) -> str:
-    key = os.getenv("DASHSCOPE_API_KEY")
-    return text.replace(key, "***") if key else text
+    """Mask every known secret env value before text reaches a log.
+
+    This is the one sanitiser on exception text on its way to stderr. It used to strip only
+    the DashScope key, so a libSQL/Turso connection or query error — whose message can carry
+    the database URL and its auth token — or anything that embedded the token-signing secret
+    went to the runtime log verbatim. Redacting one secret while others flow through the same
+    sink was the gap. Longest value first, so a secret that happens to contain another is
+    still fully masked.
+    """
+    values = [v for v in (os.getenv(name) for name in _SECRET_ENV) if v]
+    for value in sorted(values, key=len, reverse=True):
+        text = text.replace(value, "***")
+    return text
 
 
 def log_usage(role: str, usage) -> None:

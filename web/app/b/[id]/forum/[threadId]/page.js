@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { readThread, createPost, deleteForumPost, removeForumPost, boardAccess,
          isArchived, isOwner, me } from "../../../../../lib/api";
 import { COPY, reasonSentence } from "../../../../../lib/copy";
+import { appendPage, fillTo } from "../../../../../lib/paging";
 import { stamp } from "../../../../../lib/format";
 import { BackButton, Sheet, ui } from "../../../../../components/ui";
 import styles from "../forum.module.css";
@@ -27,12 +28,22 @@ export default function Thread({ params }) {
   const [confirming, setConfirming] = useState(null);   // my own, being taken down
   const [clearing, setClearing] = useState(null);       // somebody else's, on a board I own
   const [owner, setOwner] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  function load() {
-    readThread(threadId).then(setView, (e) => setError(e.message));
+  // /api/forum/thread is paged (FORUM_PAGE in proxy/app.py) behind the same 4.5 MB cap as the
+  // timeline, so a reload lands on page one — and a thread runs oldest first, which puts the
+  // reply you just posted on a later page. So load() carries the timeline's two remedies via
+  // lib/paging: keep at least as many replies as were showing (`keep`, after a take-down), and
+  // page on until a given reply is in the list (`containing`, after posting one). Returns the
+  // view so the callers below can read what came back.
+  function load(keep = 0, containing = null) {
+    return readThread(threadId)
+      .then((first) => fillTo(first, (after) => readThread(threadId, after),
+                              { atLeast: keep, containing, key: "posts" }))
+      .then((v) => { setView(v); return v; }, (e) => { setError(e.message); return null; });
   }
 
-  useEffect(load, [threadId]);
+  useEffect(() => { load(); }, [threadId]);
   // As above: the server takes no reply for a view grant or an archived storyboard.
   useEffect(() => { boardAccess(id).then(setAccess, () => {}); }, [id]);
   // Needed to tell which posts are mine. Same comparison the timeline makes: author_id
@@ -58,7 +69,9 @@ export default function Thread({ params }) {
         setBlocked(reasonSentence(result.reason_codes));
       } else {
         setBody("");
-        load();
+        // Page on until the reply just posted is on screen: on a long thread it is on a later
+        // page, the same trap the timeline landing hit. See lib/paging.
+        load(posts.length, result.post_id);
       }
     } catch (e) {
       setError(e.message);
@@ -74,10 +87,10 @@ export default function Thread({ params }) {
     try {
       await deleteForumPost(postId);
       // Reload rather than splice it out locally: when the last post goes the thread goes
-      // with it, and the server is the one that decides that.
-      const left = await readThread(threadId);
-      if ((left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
-      else setView(left);
+      // with it, and the server is the one that decides that. Keep what was showing so a
+      // take-down on an expanded thread does not collapse it back to page one.
+      const left = await load(posts.length);
+      if (left && (left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
     } catch (e) {
       setError(e.message);
     }
@@ -87,11 +100,28 @@ export default function Thread({ params }) {
     setClearing(null);
     try {
       await removeForumPost(postId);
-      const left = await readThread(threadId);
-      if ((left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
-      else setView(left);
+      const left = await load(posts.length);
+      if (left && (left.posts || []).length === 0) router.replace("/b/" + id + "/forum");
     } catch (e) {
       setError(e.message);
+    }
+  }
+
+  // One more page of replies, appended. `view.next` is the server's cursor or null, so the
+  // button exists only when there is really more. Appends onto the list it was fetched for:
+  // a reload may have replaced it while the page was on its way, and appendPage also drops
+  // anything already held, so a take-down shifting later posts up cannot double a card.
+  async function loadMore() {
+    if (!view?.next || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const cursor = view.next;
+      const page = await readThread(threadId, cursor);
+      setView((prev) => (prev?.next === cursor ? appendPage(prev, page, "posts") : prev));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -132,6 +162,17 @@ export default function Thread({ params }) {
             <p className={styles.body}>{p.body}</p>
           </article>
         ))}
+
+        {/* Drawn only when the server says there is another page. `next` is a cursor or null,
+            so this is never a button that could be pressed for nothing. Replies run oldest
+            first, so this loads later ones and appends: reading down a long thread should not
+            lose your place. */}
+        {view?.next ? (
+          <button type="button" className={styles.showMore} disabled={loadingMore}
+                  onClick={loadMore}>
+            {loadingMore ? "Loading…" : COPY.moreReplies}
+          </button>
+        ) : null}
 
         {canReply ? (
           <div className={styles.field} style={{ marginTop: 20 }}>
