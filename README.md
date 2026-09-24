@@ -34,6 +34,7 @@ Create a `.env` in the repository root. It is git-ignored.
 | `LIMIT_CHAT_PER_DAY`, `LIMIT_VISION_PER_HOUR`, `LIMIT_SUBMISSION_PER_HOUR` | no | Rate limits. Defaults match the operations doc. |
 | `LIMIT_MODEL_CALLS_PER_DAY` | no | Ceiling on model calls across **everybody**, retries included, over a sliding 24 hours. Default `1000`. Open sign-up makes a fresh handle a fresh per-user quota, so this is what actually bounds spend. Reaching it looks like an outage: the Screener fails open, the Writer skips, the assistant says it is offline. |
 | `LIMIT_SESSIONS_PER_HOUR` | no | New identities `POST /api/session` will create per client address per hour. A handle that already exists is exchanged without counting: a guest's browser exchanges its handle again on every page load. Default `120`, generous on purpose — a lecture theatre can sit behind one campus NAT. The address is counted as a keyed hash, never stored. |
+| `LIMIT_PASSWORD_PER_15MIN` | no | Password work `POST /api/register` and `POST /api/login` will do per client address per 15 minutes. scrypt is memory-hard, and register (which also writes a row) and a login for a handle nobody holds run it with no per-user counter to bill, so this bounds the unauthenticated flood. Default `30`, keyed hash, same NAT caveat as sessions. `LIMIT_LOGIN_PER_15MIN` (default `10`) is the tighter per-account cap that stays on top of it. |
 
 ## Tests
 

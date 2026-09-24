@@ -26,6 +26,13 @@ DEFAULT_LIMITS = {
 CEILINGS = {
     "model": (int(os.getenv("LIMIT_MODEL_CALLS_PER_DAY", "1000")), 86400),
     "session": (int(os.getenv("LIMIT_SESSIONS_PER_HOUR", "120")), 3600),
+    # Password work per client address. scrypt is memory-hard by design (~16 MiB and ~60 ms
+    # a call), and two unauthenticated paths run it with no per-user counter to bill against:
+    # register (which also writes a permanent row each time) and a login for a handle that
+    # does not exist. A flood of either is unauthenticated CPU, memory and — for register —
+    # unbounded rows. Capped per address like sessions, and generous for the same reason: a
+    # lecture theatre of markers can sit behind one campus NAT.
+    "password": (int(os.getenv("LIMIT_PASSWORD_PER_15MIN", "30")), 900),
 }
 
 
