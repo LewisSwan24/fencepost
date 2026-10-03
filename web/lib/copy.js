@@ -168,6 +168,9 @@ export const COPY = {
   // clip leaves the phone on this screen, and the frame reaches the assistant only on the
   // next one, once the covering-up gate has been passed.
   frameNoteLive: "Frames from your own clip, read on this phone. The video itself is not uploaded.",
+  // The scrubber's accessible name. Heard, not seen: the value read after it is the frame's
+  // time, so the name only has to say what moving it does.
+  frameScrubber: "Frame to use",
   // A photograph has no timeline, so there is nothing to scrub and no timestamp to stamp on
   // it. Reached only by coming back from the next screen — taking a photograph skips this
   // one, because picking a frame from one frame is not a choice.

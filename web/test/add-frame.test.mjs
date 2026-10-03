@@ -19,7 +19,10 @@
 //   made the picker ringtail-only with nothing on screen to notice;
 //
 //   an index left pointing past the end of a shorter clip is clamped rather than rendered as
-//   undefined.
+//   undefined;
+//
+//   the scrubber is a slider a keyboard can reach and move, and landing on the frame already
+//   chosen, by key or by tap, does not clear the masks drawn on it.
 //
 // jsdom lays nothing out, so the scrubber test gives the track a measured box of its own.
 
@@ -29,6 +32,7 @@ import { screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import PickFrame from "../app/b/[id]/add/frame/page.js";
+import { useDraft } from "../app/b/[id]/add/DraftContext.js";
 import { COPY } from "../lib/copy.js";
 import { CLIP } from "../lib/fixtures.js";
 import { FRAMES } from "../lib/frames.js";
@@ -144,6 +148,106 @@ test("scrubbing to the far end picks the last frame", async () => {
   fireEvent.pointerUp(scrubber(), { pointerId: 1 });
   assert.equal(picture().getAttribute("src"), "data:image/jpeg;base64,STILL3");
   assert.equal(document.querySelector(".stampChip").textContent, "0:03");
+});
+
+// ---- from a keyboard -----------------------------------------------------------------------
+//
+// The scrubber was a div with pointer handlers and nothing else: Tab never reached it and a
+// screen reader never announced it, so anybody without a pointer posted whichever frame the
+// screen opened on. Found walking the flow in a real browser on 2026-10-04 (#43).
+
+test("the scrubber is a slider that says which frame is chosen", async () => {
+  await renderInFlow(PickFrame, { seed: (d) => { d.setStills(clip(4)); d.setFrameIndex(1); } });
+
+  const slider = screen.getByRole("slider", { name: COPY.frameScrubber });
+  assert.equal(slider.tabIndex, 0);
+  assert.equal(slider.getAttribute("aria-valuemin"), "0");
+  assert.equal(slider.getAttribute("aria-valuemax"), "3");
+  assert.equal(slider.getAttribute("aria-valuenow"), "1");
+  // The time the stamp chip shows, not a bare index nobody can map to the clip.
+  assert.equal(slider.getAttribute("aria-valuetext"), "0:01");
+});
+
+test("arrow keys step one frame, Home and End go to the ends", async () => {
+  const user = userEvent.setup({ document });
+  await renderInFlow(PickFrame, { seed: (d) => { d.setStills(clip(4)); d.setFrameIndex(1); } });
+  const slider = screen.getByRole("slider", { name: COPY.frameScrubber });
+  const shown = () => [picture().getAttribute("src").slice(-6), slider.getAttribute("aria-valuenow")];
+
+  for (let i = 0; i < 10 && document.activeElement !== slider; i++) await user.tab();
+  assert.equal(document.activeElement, slider, "Tab does not reach the scrubber");
+
+  await user.keyboard("{ArrowRight}");
+  assert.deepEqual(shown(), ["STILL2", "2"]);
+  await user.keyboard("{ArrowLeft}{ArrowLeft}");
+  assert.deepEqual(shown(), ["STILL0", "0"]);
+  await user.keyboard("{ArrowLeft}");
+  assert.deepEqual(shown(), ["STILL0", "0"], "stepped past the first frame");
+  await user.keyboard("{End}");
+  assert.deepEqual(shown(), ["STILL3", "3"]);
+  await user.keyboard("{ArrowRight}");
+  assert.deepEqual(shown(), ["STILL3", "3"], "stepped past the last frame");
+  await user.keyboard("{Home}");
+  assert.deepEqual(shown(), ["STILL0", "0"]);
+  // Up and Down are the other axis of the same control, as the ARIA slider pattern has them.
+  await user.keyboard("{ArrowUp}");
+  assert.deepEqual(shown(), ["STILL1", "1"]);
+  await user.keyboard("{ArrowDown}");
+  assert.deepEqual(shown(), ["STILL0", "0"]);
+});
+
+test("over the placeholders the slider runs the fixture clip's length and times", async () => {
+  await renderInFlow(PickFrame, { seed: (d) => d.setFrameIndex(2) });
+
+  const slider = screen.getByRole("slider", { name: COPY.frameScrubber });
+  assert.equal(slider.getAttribute("aria-valuemax"), String(CLIP.frames.length - 1));
+  assert.equal(slider.getAttribute("aria-valuetext"), CLIP.frames[2].label);
+});
+
+test("a key that cannot move the frame leaves the masks alone", async () => {
+  // Choosing a frame clears the boxes drawn on the old one, which is right when the frame
+  // changes and wrong when it does not. Coming back from masking and pressing Left on the
+  // first frame, or End on the last, would otherwise wipe the covering-up for the same frame.
+  const user = userEvent.setup({ document });
+  const Probe = () => <output data-boxes={useDraft().boxes.length} />;
+  const WithProbe = (props) => <><PickFrame {...props} /><Probe /></>;
+  await renderInFlow(WithProbe, {
+    seed: (d) => { d.setStills(clip(4)); d.setFrameIndex(0); d.setBoxes([{ x: 1, y: 1, w: 9, h: 9 }]); },
+  });
+  const boxes = () => document.querySelector("output").dataset.boxes;
+  screen.getByRole("slider", { name: COPY.frameScrubber }).focus();
+
+  await user.keyboard("{ArrowLeft}{Home}{ArrowDown}");
+  assert.equal(boxes(), "1", "a key at the first frame wiped the masks");
+  await user.keyboard("{End}{ArrowRight}");
+  assert.equal(boxes(), "0", "moving to another frame kept masks drawn on the old one");
+});
+
+test("a tap on the frame already chosen leaves the masks alone too", async () => {
+  // The pointer half of the same rule. It had the same flaw before the keyboard existed.
+  const Probe = () => <output data-boxes={useDraft().boxes.length} />;
+  const WithProbe = (props) => <><PickFrame {...props} /><Probe /></>;
+  await renderInFlow(WithProbe, {
+    seed: (d) => { d.setStills(clip(4)); d.setFrameIndex(3); d.setBoxes([{ x: 1, y: 1, w: 9, h: 9 }]); },
+  });
+  document.querySelector(".track").getBoundingClientRect = () => (
+    { left: 0, width: 300, top: 0, height: 40, right: 300, bottom: 40, x: 0, y: 0 });
+  const boxes = () => document.querySelector("output").dataset.boxes;
+
+  fireEvent.pointerDown(scrubber(), { clientX: 300, pointerId: 1 });
+  fireEvent.pointerUp(scrubber(), { pointerId: 1 });
+  assert.equal(boxes(), "1", "a tap on the chosen frame wiped its masks");
+  fireEvent.pointerDown(scrubber(), { clientX: 0, pointerId: 1 });
+  fireEvent.pointerUp(scrubber(), { pointerId: 1 });
+  assert.equal(boxes(), "0");
+});
+
+test("a photograph's hidden scrubber is out of the tab order", async () => {
+  // display: none already keeps it out of reach; the explicit -1 keeps it out if that styling
+  // ever changes to something that only looks hidden.
+  await renderInFlow(PickFrame, { seed: (d) => d.setStills(photograph) });
+
+  assert.equal(scrubber().tabIndex, -1);
 });
 
 test("Next goes on to masking; back returns to capture", async () => {

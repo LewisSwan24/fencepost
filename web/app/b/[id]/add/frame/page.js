@@ -80,6 +80,24 @@ export default function PickFrame({ params }) {
     return Math.round(frac * span);
   };
 
+  // Choosing a frame clears the boxes drawn on the old one, so landing on the frame already
+  // chosen (a tap on it, Left on the first, End on the last) must not choose at all, or
+  // coming back from masking would wipe the covering-up for the same frame.
+  const choose = (next) => {
+    if (next !== index) draft.setFrameIndex(next);
+  };
+
+  // The same control from a keyboard, as the ARIA slider pattern has it: Right and Up step
+  // forward, Left and Down back, Home and End to the ends. It was pointer-only until #43, so
+  // anybody without a pointer posted whichever frame the screen happened to open on.
+  const step = (e) => {
+    const to = { ArrowRight: index + 1, ArrowUp: index + 1, ArrowLeft: index - 1,
+                 ArrowDown: index - 1, Home: 0, End: frames.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    choose(Math.min(Math.max(0, to), frames.length - 1));
+  };
+
   const chosen = shotFor(index);
 
   return (
@@ -104,12 +122,16 @@ export default function PickFrame({ params }) {
         </p>
 
         <div style={{ marginTop: 20, display: photo ? "none" : undefined }}
+             role="slider" tabIndex={photo ? -1 : 0} aria-label={COPY.frameScrubber}
+             aria-valuemin={0} aria-valuemax={frames.length - 1} aria-valuenow={index}
+             aria-valuetext={frames[index].label || `Frame ${index + 1} of ${frames.length}`}
+             onKeyDown={step}
              onPointerDown={(e) => {
                try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
                dragging.current = true;
-               draft.setFrameIndex(at(e));
+               choose(at(e));
              }}
-             onPointerMove={(e) => dragging.current && draft.setFrameIndex(at(e))}
+             onPointerMove={(e) => dragging.current && choose(at(e))}
              onPointerUp={() => { dragging.current = false; }}
              onPointerCancel={() => { dragging.current = false; }}>
           <div ref={track} className={styles.track}>
