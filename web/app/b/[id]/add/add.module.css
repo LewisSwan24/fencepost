@@ -82,3 +82,21 @@
 .nothing input { margin-top: 2px; width: 17px; height: 17px; accent-color: var(--accent-hover); }
 .nothing input:disabled { cursor: not-allowed; }
 .nothing input:disabled + span { color: var(--text-dim); }
+
+/* Masking from a keyboard (#46). The button sits under the frame for anybody, and the key
+   help is read out with every mask but only drawn once a mask has focus, so a phone screen
+   is not told about arrow keys it does not have. */
+.addMask {
+  margin-top: 12px; min-height: 44px; padding: 8px 18px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-pill);
+  background: transparent; color: var(--text); font-size: 14.5px; font-weight: 600;
+}
+.addMask:hover { background: rgba(244, 235, 220, 0.07); }
+.keysHelp {
+  position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+.canvas:focus-within ~ .keysHelp {
+  position: static; width: auto; height: auto; margin: 10px 2px 0; overflow: visible;
+  clip-path: none; white-space: normal; font-size: 13px; line-height: 1.6; color: var(--text-muted);
+}

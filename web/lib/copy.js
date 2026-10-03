@@ -194,6 +194,9 @@ export const COPY = {
   maskPhoto: "Your photograph. Nothing is detected automatically — cover what you know is there.",
   maskNothing: "Nothing in this frame identifies a person or a house",
   maskBlockedNow: "Cover what needs covering, or tick the line below to say there's nothing.",
+  // For somebody without a pointer (#46): a mask placed in the middle, then moved by keys.
+  maskAdd: "Add a mask",
+  maskKeys: "Arrow keys move a mask. Shift and the arrow keys change its size. Delete removes it.",
   helperDisclosure: "AI suggestions. Nothing goes into your post unless you put it there.",
   helperEmpty: "No fun facts for this one. Possum Help only knows brushtail and ringtail possums.",
   helperOpen: "Possum Help — writing suggestions",
@@ -403,4 +406,12 @@ export function reasonSentence(codes) {
     if (REASON_COPY[code]) return REASON_COPY[code];
   }
   return REASON_FALLBACK;
+}
+
+// A placed mask is named by where it is, in the same percentages it is stored in, so
+// somebody who cannot see the frame hears it move as they press the keys (#46).
+export function maskName(n, box) {
+  const at = (v) => Math.round(v) + "%";
+  return `Mask ${n}: ${at(box.x)} from the left, ${at(box.y)} from the top, ` +
+         `${at(box.w)} wide, ${at(box.h)} tall`;
 }
