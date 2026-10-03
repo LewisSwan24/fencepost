@@ -45,7 +45,10 @@
   --text-body: var(--color-neutral-300);
   --text-muted: var(--color-neutral-400);
   --text-dim: var(--color-neutral-500);
-  --text-faint: #7d7365;
+  /* The lightest step on this hue that clears 4.5:1 on a card (4.55 on --surface, 4.93 on
+     --bg). It was #7d7365 at 3.54 and 3.84, under small text everywhere it was used (#44).
+     test/contrast.test.mjs holds every text token to 4.5 and to this order. */
+  --text-faint: #908575;
   --line: rgba(244, 235, 220, 0.14);
   --line-strong: rgba(244, 235, 220, 0.22);
 

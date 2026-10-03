@@ -473,6 +473,15 @@ answered only to a pointer, so Tab never reached it and a keyboard user posted w
 the screen opened on. It is a slider now (#43), pinned in `add-frame.test.mjs` and pressed
 again in the browser with real keys.
 
+The same day, a script loaded every route into a 390-wide frame and checked each visible
+element: pointer-only handlers, controls with no accessible name, images with no alt, heading
+order, and text contrast with translucent backgrounds composited down to the page. Nothing was
+pointer-only or unnamed. Two things were wrong (#44). `--text-faint` sat at 3.54 to 3.84 under
+small text everywhere it was used, so it moved to #908575, and `test/contrast.test.mjs` now reads
+every text token out of `globals.css` and holds it at 4.5:1 on the page and on a card, in order.
+`/you` had no h1; the handle is one now, styled as it was. The audit only sees each screen as
+it first draws, so sheets and dialogs opened later were not part of it.
+
 **Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
 for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from
 video and the pixels that come out are only ever seen in a browser. So is layout, and so is

@@ -12,8 +12,11 @@
   font-size: 15px; letter-spacing: 0.04em; text-transform: uppercase;
 }
 
+/* An h1 since #44, so a screen reader has a title for this screen; it keeps the look it had
+   as a div, which means undoing the global heading weight and spacing and the UA margin. */
 .handle {
   font-size: 19px; line-height: 1.3; word-break: break-all;
+  margin: 0; font-weight: 400; letter-spacing: normal;
 }
 
 .kind {
