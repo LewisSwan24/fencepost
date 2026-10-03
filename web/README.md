@@ -460,6 +460,19 @@ warnings beyond React's own DevTools notice. No test reads the console, so that 
 browser. The write screen's bounce to the species step when the draft has none is now
 `add-write.test.mjs`.
 
+**Walked again on 2026-10-04**, after the Next.js 15.5.27 bump and everything since 09-15, in
+`fixtures` mode on the dev server. Every route's console was clean. On the mask screen under
+StrictMode one drag gave one box at the dragged geometry, a twitchy tap gave none, and removes
+took away one box each. The consent sheet's trap, driven by real Tab and Shift+Tab presses,
+cycled its two visible buttons in both directions and Escape put focus back on Next. With
+`getUserMedia` returning a canvas stream, so that recording, timing and extraction were all
+real, a three-second clip came out as eight distinct 640×480 stills under the "your own clip"
+line. A clip picked from the library whose WebM reports an Infinity duration falls back to the
+placeholders, as `lib/stills.js` says it should. One thing was wrong: the frame scrubber
+answered only to a pointer, so Tab never reached it and a keyboard user posted whichever frame
+the screen opened on. It is a slider now (#43), pinned in `add-frame.test.mjs` and pressed
+again in the browser with real keys.
+
 **Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
 for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from
 video and the pixels that come out are only ever seen in a browser. So is layout, and so is
