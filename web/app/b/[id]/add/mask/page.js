@@ -16,11 +16,11 @@
 // prototype has none, so it falls back to what prompts.md §2.5.1 specifies: you say what
 // needs covering, and "nothing does" is a tick rather than the default.
 
-import { use, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { COPY } from "../../../../../lib/copy";
+import { COPY, maskName } from "../../../../../lib/copy";
 import { identifyFrame } from "../../../../../lib/api";
-import { isDeliberate } from "../../../../../lib/mask";
+import { KEY_STEP, PLACED_BOX, isDeliberate, nudge } from "../../../../../lib/mask";
 import { base64Of, maskedFrame } from "../../../../../lib/stills";
 
 import { BackButton, Sheet, Steps, Spinner, ui } from "../../../../../components/ui";
@@ -113,6 +113,44 @@ export default function Mask({ params }) {
     setLive(null);
   }
 
+  // Masking without a pointer (#46). Where focus goes after the boxes change is decided when
+  // they are changed and carried out once they have rendered: the mask just placed, the one
+  // after a removed one, or Add a mask when none are left. A removed element that held focus
+  // drops it on <body>, where nothing on this screen can be reached from.
+  const addButton = useRef(null);
+  const focusAfter = useRef(null);
+  useEffect(() => {
+    const target = focusAfter.current;
+    if (target === null) return;
+    focusAfter.current = null;
+    if (target === "add") addButton.current?.focus();
+    else canvas.current?.querySelectorAll("[data-mask]")[target]?.focus();
+  }, [boxes]);
+
+  function place() {
+    // Each one a little down and to the right of the last, so a second does not sit exactly
+    // on the first and look like nothing happened.
+    const off = (boxes.length % 5) * KEY_STEP * 2;
+    focusAfter.current = boxes.length;
+    draft.setBoxes((prev) => [...prev, { ...PLACED_BOX, x: PLACED_BOX.x + off, y: PLACED_BOX.y + off }]);
+  }
+
+  function remove(i) {
+    focusAfter.current = boxes.length > 1 ? Math.min(i, boxes.length - 2) : "add";
+    draft.setBoxes((prev) => prev.filter((_, j) => j !== i));
+  }
+
+  function keys(e, i) {
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      remove(i);
+      return;
+    }
+    if (!nudge(boxes[i], e.key)) return;
+    e.preventDefault();      // or the arrows scroll the page as well as moving the mask
+    draft.setBoxes((prev) => prev.map((b, j) => (j === i ? nudge(b, e.key, e.shiftKey) : b)));
+  }
+
   // The frame that goes on the entry: the same still, the same boxes, drawn small. Both ways
   // off this screen call it, because the masking is done either way — somebody who skips the
   // identification has still said what needs covering, and their sighting should carry their
@@ -198,14 +236,21 @@ export default function Mask({ params }) {
           {/* The frame itself, underneath everything. Drawing over a gradient and calling it
               masking was the old version of this screen. */}
           {still ? <img className={styles.canvasShot} src={still.src} alt="" draggable="false" /> : null}
+          {/* A committed mask can take focus and answers to keys; the one being dragged is
+              not a mask yet and does neither. */}
           {drawn.map((b, i) => (
             <span key={i} className={styles.box}
-                  style={{ left: b.x + "%", top: b.y + "%", width: b.w + "%", height: b.h + "%" }}>
+                  style={{ left: b.x + "%", top: b.y + "%", width: b.w + "%", height: b.h + "%" }}
+                  {...(i < boxes.length ? {
+                    "data-mask": "", tabIndex: 0, role: "group",
+                    "aria-label": maskName(i + 1, b), "aria-describedby": "mask-keys",
+                    onKeyDown: (e) => keys(e, i),
+                  } : {})}>
               <button type="button" className={styles.boxKill} aria-label="Remove mask"
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
-                        draft.setBoxes(boxes.filter((_, j) => j !== i));
+                        remove(i);
                       }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      strokeWidth="3" strokeLinecap="round" aria-hidden="true">
@@ -216,6 +261,10 @@ export default function Mask({ params }) {
           ))}
           {drawn.length === 0 ? <span className={styles.hint}>{COPY.maskHint}</span> : null}
         </div>
+        <p id="mask-keys" className={styles.keysHelp}>{COPY.maskKeys}</p>
+        <button type="button" ref={addButton} className={styles.addMask} onClick={place}>
+          {COPY.maskAdd}
+        </button>
         <p className={styles.footnote} style={{ marginTop: 10 }}>
           {!still ? COPY.maskNoFrame : photo ? COPY.maskPhoto : COPY.maskNote}
         </p>

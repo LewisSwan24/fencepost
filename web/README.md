@@ -488,6 +488,17 @@ Tab trap; focus goes to the question box instead, checked with a real Enter and 
 screens drew errors as plain paragraphs, silent to a screen reader; they are `ErrorNote`, which
 is `role="alert"`, and `ui.test.mjs` fails if a bare `{error ? <p` comes back.
 
+The audit's "nothing pointer-only" missed the biggest one, because the mask canvas is a drag
+on a plain `div` and looks like nothing at all to a check for handlers. Without a pointer you
+could tick "nothing to cover" and could not cover anything (#46). There is an **Add a mask**
+button under the frame now; each mask takes focus, is named by where it is, moves with the
+arrows, resizes with Shift and the arrows, and goes with Delete, inside the frame and never
+below `SMALLEST_BOX`. In the browser, with real keys at 390 wide: the page did not scroll
+under the arrows, the key help appeared only once a mask had focus, Delete on the last mask
+handed focus back to the button, and a mask placed by keyboard and moved left was burned into
+the masked cover where it ended up, not where it started — black at 25–55% across a white
+400×300 photograph, white at the spot it was first placed.
+
 **Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
 for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from
 video and the pixels that come out are only ever seen in a browser. So is layout, and so is
