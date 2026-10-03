@@ -480,7 +480,13 @@ pointer-only or unnamed. Two things were wrong (#44). `--text-faint` sat at 3.54
 small text everywhere it was used, so it moved to #908575, and `test/contrast.test.mjs` now reads
 every text token out of `globals.css` and holds it at 4.5:1 on the page and on a card, in order.
 `/you` had no h1; the handle is one now, styled as it was. The audit only sees each screen as
-it first draws, so sheets and dialogs opened later were not part of it.
+it first draws, so the sheets and what appears after an action were gone through next (#45).
+All fifteen sheets are named by their own heading. Possum Help's conversation had no live
+region, so a reply was never read out; it is `role="log"` now. Pressing one of its suggested
+questions removed the chip that held focus and dropped focus onto `body`, outside the sheet's
+Tab trap; focus goes to the question box instead, checked with a real Enter and Tab. Ten
+screens drew errors as plain paragraphs, silent to a screen reader; they are `ErrorNote`, which
+is `role="alert"`, and `ui.test.mjs` fails if a bare `{error ? <p` comes back.
 
 **Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
 for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from

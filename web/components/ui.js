@@ -49,6 +49,13 @@ export function Spinner({ label }) {
   );
 }
 
+// An error that appears after something was tried. role="alert" is what makes it heard: as a
+// plain paragraph a refused sign-in or a 429 changed nothing a screen reader reports (#45).
+// Nothing to say draws nothing, since an empty alert region is still one.
+export function ErrorNote({ className, children }) {
+  return children ? <p className={className} role="alert">{children}</p> : null;
+}
+
 // Things that can take focus, used to keep Tab inside the dialog.
 const FOCUSABLE = 'a[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])';
 

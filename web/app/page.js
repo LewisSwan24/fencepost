@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { dashboard, createStoryboard, me, MODE, assistantIsLive } from "../lib/api";
 import { COPY, reasonSentence } from "../lib/copy";
 import { relative, initials } from "../lib/format";
-import { Sheet, ui } from "../components/ui";
+import { ErrorNote, Sheet, ui } from "../components/ui";
 import Shot from "../components/Shot";
 import { frameForSpecies } from "../lib/frames";
 import styles from "./page.module.css";
@@ -68,7 +68,7 @@ export default function Home() {
       <div className={ui.body}>
         <h1 className={styles.title}>My storyboards</h1>
 
-        {error ? <p className={styles.empty}>{error}</p> : null}
+        <ErrorNote className={styles.empty}>{error}</ErrorNote>
         {!boards && !error ? <p className={styles.empty}>Loading…</p> : null}
 
         {boards ? (

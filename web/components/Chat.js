@@ -19,6 +19,7 @@ export default function Chat({ storyboardId, onClose }) {
   const [thinking, setThinking] = useState(false);
   const [offline, setOffline] = useState(assistantOffline);
   const bottom = useRef(null);
+  const field = useRef(null);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -48,7 +49,9 @@ export default function Chat({ storyboardId, onClose }) {
         Possum Help
       </h2>
 
-      <div className={styles.log}>
+      {/* A log, so each reply and the offline notice are read out as they land; without it
+          a screen-reader user asked and heard nothing come back (#45). */}
+      <div className={styles.log} role="log">
         {offline ? (
           <p className={styles.offline}>{COPY.assistantOffline}</p>
         ) : (
@@ -79,7 +82,13 @@ export default function Chat({ storyboardId, onClose }) {
       {messages.length === 0 && !offline ? (
         <div className={styles.chips}>
           {ASSISTANT_SCRIPT.map((s) => (
-            <button key={s.key} type="button" className={styles.chip} onClick={() => ask(s.question)}>
+            <button key={s.key} type="button" className={styles.chip}
+                    onClick={() => {
+                      // The chips go once the conversation starts, taking the focused one
+                      // with them; focus would fall to body, outside the sheet's Tab trap.
+                      field.current?.focus();
+                      ask(s.question);
+                    }}>
               {s.question}
             </button>
           ))}
@@ -88,7 +97,7 @@ export default function Chat({ storyboardId, onClose }) {
 
       <form className={styles.compose}
             onSubmit={(e) => { e.preventDefault(); ask(input); }}>
-        <input className={styles.input} value={input} onChange={(e) => setInput(e.target.value)}
+        <input ref={field} className={styles.input} value={input} onChange={(e) => setInput(e.target.value)}
                placeholder="Ask about the one you filmed" aria-label="Ask Possum Help" />
         <button type="submit" className={styles.send} disabled={!input.trim()} aria-label="Send">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"

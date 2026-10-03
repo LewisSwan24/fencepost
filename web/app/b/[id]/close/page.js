@@ -15,7 +15,7 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { boardRow, isOwner, closeStoryboard, isArchived } from "../../../../lib/api";
 import { COPY, reasonSentence } from "../../../../lib/copy";
-import { BackButton, ui } from "../../../../components/ui";
+import { BackButton, ErrorNote, ui } from "../../../../components/ui";
 import styles from "./close.module.css";
 
 const NOTE_LIMIT = 280;      // matches the server's _plain_text(..., 280)
@@ -86,7 +86,7 @@ export default function CloseStoryboard({ params }) {
       </div>
 
       <div className={ui.body}>
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
         {allowed !== true ? (
           <p className={styles.quiet}>Loading…</p>
         ) : (

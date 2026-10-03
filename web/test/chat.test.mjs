@@ -116,6 +116,32 @@ test("the demo questions are offered, and a tapped one gets its scripted answer"
                "the chips stayed up after the conversation started");
 });
 
+// ---- heard, not only seen (#45) ------------------------------------------------------------
+
+test("the conversation is a log, so a reply is read out when it arrives", async () => {
+  // It had no live region: a screen-reader user sent a question and heard nothing come back.
+  // role="log" is polite by definition, so additions are announced without interrupting.
+  const user = await open();
+  const log = screen.getByRole("log");
+  assert.ok(screen.getByRole("dialog").contains(log));
+
+  await ask(user, script("roof").question);
+  const reply = await answer(script("roof").reply);
+  assert.ok(log.contains(reply), "the reply landed outside the log");
+});
+
+test("a question asked from a chip leaves focus in the sheet, on the box", async () => {
+  // The chips go once the conversation starts, so the one just pressed was removed while it
+  // held focus. Focus fell to body, outside the dialog, where the Tab trap no longer reaches.
+  const user = await open();
+  screen.getByRole("button", { name: script("roof").question }).focus();
+
+  await user.keyboard("{Enter}");
+  assert.equal(document.activeElement, box(), "focus did not move to the question box");
+  await answer(script("roof").reply);
+  assert.equal(document.activeElement, box());
+});
+
 test("a snake gets distance and a catcher, never a name and never 'safe'", async () => {
   // Red line: snakes are never identified and never called harmless, not even when the
   // person names the species themselves.
