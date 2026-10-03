@@ -19,7 +19,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { registerAccount, signIn } from "../../lib/api";
 import { COPY } from "../../lib/copy";
-import { BackButton, Spinner, ui } from "../../components/ui";
+import { BackButton, ErrorNote, Spinner, ui } from "../../components/ui";
 import styles from "./sign-in.module.css";
 
 export default function SignInScreen() {
@@ -74,7 +74,7 @@ export default function SignInScreen() {
           </label>
 
           {making ? <p className={styles.warn}>{COPY.noReset}</p> : null}
-          {error ? <p className={styles.error}>{error}</p> : null}
+          <ErrorNote className={styles.error}>{error}</ErrorNote>
 
           {busy ? (
             <Spinner label={making ? "Making your account" : "Signing in"} />

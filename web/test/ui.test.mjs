@@ -31,7 +31,11 @@ import { useState } from "react";
 import { act, render, cleanup, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { BackButton, Steps, Frame, Spinner, Sheet } from "../components/ui.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { BackButton, Steps, Frame, Spinner, Sheet, ErrorNote } from "../components/ui.js";
 
 afterEach(() => cleanup());
 
@@ -212,4 +216,42 @@ test("a spinner says what it is waiting for", async () => {
   // A wheel alone tells nobody what is happening.
   await draw(<Spinner label="Checking…" />);
   assert.ok(screen.getByText("Checking…"));
+});
+
+// ---- ErrorNote (#45) ---------------------------------------------------------------------
+
+test("an error note is an alert, so a failed action is heard as well as seen", async () => {
+  // Ten screens drew their errors as plain paragraphs: a refused sign-in or a 429 changed
+  // nothing a screen reader reports. role="alert" is read out as soon as it appears.
+  await draw(<ErrorNote className="error">Too many tries. Wait a minute.</ErrorNote>);
+  const note = screen.getByRole("alert");
+  assert.equal(note.textContent, "Too many tries. Wait a minute.");
+  assert.ok(note.classList.contains("error"), "the screen's own style was dropped");
+});
+
+test("an error note with nothing to say draws nothing", async () => {
+  // An empty alert region is still an alert region, and some readers announce it.
+  const { container } = await draw(<ErrorNote className="error">{null}</ErrorNote>);
+  assert.equal(container.innerHTML, "");
+  cleanup();
+  const blank = await draw(<ErrorNote className="error">{""}</ErrorNote>);
+  assert.equal(blank.container.innerHTML, "");
+});
+
+test("no screen draws an error as a bare paragraph any more", () => {
+  // The guard for the eleventh: every `{error ? <p ...>}` became an ErrorNote, and one
+  // written the old way would be silent again without anything failing.
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.js$/.test(entry.name) && /\{\s*error\s*\?\s*<p\b/.test(readFileSync(path, "utf8"))) {
+        found.push(path);
+      }
+    }
+  };
+  walk(fileURLToPath(new URL("../app", import.meta.url)));
+  walk(fileURLToPath(new URL("../components", import.meta.url)));
+  assert.deepEqual(found, []);
 });

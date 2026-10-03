@@ -25,7 +25,7 @@ import { reviewQueue, castVote, disposeEntry, boardRow, isOwner } from "../../..
 import { SPECIES_LABEL } from "../../../../lib/fixtures";
 import { COPY } from "../../../../lib/copy";
 import { stamp } from "../../../../lib/format";
-import { BackButton, Sheet, ui } from "../../../../components/ui";
+import { BackButton, ErrorNote, Sheet, ui } from "../../../../components/ui";
 import styles from "./review.module.css";
 
 // Which part was picked out. fields is a combination of fun_fact and story.
@@ -100,7 +100,7 @@ export default function Review({ params }) {
         <h1 className={styles.title}>{COPY.secondLookTitle}</h1>
         <p className={styles.lede}>{COPY.secondLookLede}</p>
 
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
         {!items && !error ? <p className={styles.quiet}>Loading…</p> : null}
 
         {items?.length === 0 ? <p className={styles.empty}>{COPY.secondLookEmpty}</p> : null}

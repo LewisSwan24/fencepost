@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { forumThreads, createThread, boardAccess, isArchived } from "../../../../lib/api";
 import { COPY, reasonSentence } from "../../../../lib/copy";
 import { relative, countLabel } from "../../../../lib/format";
-import { BackButton, Sheet, ui } from "../../../../components/ui";
+import { BackButton, ErrorNote, Sheet, ui } from "../../../../components/ui";
 import styles from "./forum.module.css";
 
 export default function Forum({ params }) {
@@ -73,7 +73,7 @@ export default function Forum({ params }) {
         <h1 className={styles.title}>{COPY.discussion}</h1>
         <p className={styles.lede}>Everything that isn&apos;t a sighting.</p>
 
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
         {!threads && !error ? <p className={styles.quiet}>Loading…</p> : null}
 
         {threads?.length === 0 ? (

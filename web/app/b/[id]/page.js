@@ -15,7 +15,7 @@ import { storyboard, timeline, isArchived, castVote, me, editEntry, deleteEntry,
 import { SPECIES_LABEL } from "../../../lib/fixtures";
 import { COPY, reasonSentence } from "../../../lib/copy";
 import { stamp, countLabel, monthDay } from "../../../lib/format";
-import { BackButton, Sheet, ui } from "../../../components/ui";
+import { BackButton, ErrorNote, Sheet, ui } from "../../../components/ui";
 import Chat from "../../../components/Chat";
 import Shot from "../../../components/Shot";
 import { frameFor } from "../../../lib/frames";
@@ -211,7 +211,7 @@ export default function Storyboard({ params }) {
       </div>
 
       <div className={ui.body}>
-        {error ? <p className={styles.quiet}>{error}</p> : null}
+        <ErrorNote className={styles.quiet}>{error}</ErrorNote>
         {!view && !error ? <p className={styles.quiet}>Loading…</p> : null}
 
         {view ? (

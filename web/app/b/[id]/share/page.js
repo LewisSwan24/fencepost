@@ -15,7 +15,7 @@ import { grants, issueShareLink, revokeGrant, shareLinks, revokeShareLink, me }
   from "../../../../lib/api";
 import { COPY, LEVELS, EXPIRY, DEFAULT_EXPIRY_DAYS } from "../../../../lib/copy";
 import { monthDay, until } from "../../../../lib/format";
-import { BackButton, ui } from "../../../../components/ui";
+import { BackButton, ErrorNote, ui } from "../../../../components/ui";
 import QrPlaceholder from "../../../../components/QrPlaceholder";
 import QrCode from "../../../../components/QrCode";
 import { shareUrl } from "../../../../lib/qr";
@@ -219,7 +219,7 @@ export default function Share({ params }) {
         })}
 
         <div className={ui.kicker}>{COPY.whoHasAccess}</div>
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
         {!access && !error ? <p className={styles.quiet}>Loading…</p> : null}
         {access?.grants.map((person) => (
           <div key={person.user_id} className={styles.person}>

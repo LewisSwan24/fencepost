@@ -12,7 +12,7 @@ import { readThread, createPost, deleteForumPost, removeForumPost, boardAccess,
 import { COPY, reasonSentence } from "../../../../../lib/copy";
 import { appendPage, fillTo } from "../../../../../lib/paging";
 import { stamp } from "../../../../../lib/format";
-import { BackButton, Sheet, ui } from "../../../../../components/ui";
+import { BackButton, ErrorNote, Sheet, ui } from "../../../../../components/ui";
 import styles from "../forum.module.css";
 
 export default function Thread({ params }) {
@@ -152,7 +152,7 @@ export default function Thread({ params }) {
       </div>
 
       <div className={ui.body}>
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
         {!view && !error ? <p className={styles.quiet}>Loading…</p> : null}
 
         {view?.title ? <h1 className={styles.title}>{view.title}</h1> : null}

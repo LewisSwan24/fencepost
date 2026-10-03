@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { SPECIES_LABEL } from "../../../../../lib/fixtures";
 import { COPY } from "../../../../../lib/copy";
 import { submitEntry, writerHelp } from "../../../../../lib/api";
-import { BackButton, Sheet, Spinner, Steps, ui } from "../../../../../components/ui";
+import { BackButton, ErrorNote, Sheet, Spinner, Steps, ui } from "../../../../../components/ui";
 import { useDraft } from "../DraftContext";
 import styles from "./write.module.css";
 
@@ -109,7 +109,7 @@ export default function WriteItUp({ params }) {
                     onChange={(e) => { draft.setStory(e.target.value); setHelper(null); }} />
         </div>
 
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
       </div>
 
       <div className={ui.footer}>

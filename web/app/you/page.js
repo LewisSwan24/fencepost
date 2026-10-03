@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 import { dashboard, myRecord, signOut, whoAmI } from "../../lib/api";
 import { COPY } from "../../lib/copy";
 import { initials, relative } from "../../lib/format";
-import { BackButton, ui } from "../../components/ui";
+import { BackButton, ErrorNote, ui } from "../../components/ui";
 import styles from "./you.module.css";
 
 export default function You() {
@@ -77,7 +77,7 @@ export default function You() {
           </div>
         </div>
 
-        {error ? <p className={styles.error}>{error}</p> : null}
+        <ErrorNote className={styles.error}>{error}</ErrorNote>
         {/* The copy says "Sign in again", so the way to do it has to be here. Sign out stays
             below, for carrying on as the guest. */}
         {ended ? (
