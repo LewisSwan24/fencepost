@@ -33,7 +33,8 @@ import { myRecord } from "../lib/fixtures.js";
 import { renderScreen } from "./harness.mjs";
 import { navigated, reset } from "./stubs/navigation.mjs";
 
-// The page has no h1; it is ready once the access list has been drawn.
+// It is ready once the access list has been drawn. The h1 is the handle, which arrives with
+// whoAmI, so the harness is not asked to wait for a heading that starts out blank.
 async function open() {
   await renderScreen(You, { heading: false });
   await waitFor(() => screen.getByRole("link", { name: "The one in the jacaranda" }));
@@ -57,6 +58,18 @@ test("a guest is told they are a guest, and how to become an account", async () 
   assert.ok(screen.getByText(COPY.guestBody));
   await user.click(screen.getByRole("button", { name: COPY.signInTitle }));
   assert.deepEqual(navigated, [["push", "/sign-in"]]);
+});
+
+test("the screen is titled by the handle, as its one h1", async () => {
+  // It had no h1 at all, so a screen reader moving by heading landed on "What you've kept"
+  // with nothing saying which screen this was (#44). The handle is what the screen already
+  // shows as its title; the sections under it stay h2.
+  await open();
+
+  const titles = screen.getAllByRole("heading", { level: 1 });
+  assert.equal(titles.length, 1);
+  assert.equal(titles[0].textContent, (await whoAmI()).handle);
+  assert.ok(screen.getByRole("heading", { level: 2, name: COPY.recordTitle }));
 });
 
 test("a guest is never offered Sign out", async () => {

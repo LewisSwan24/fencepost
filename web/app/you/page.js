@@ -70,7 +70,7 @@ export default function You() {
         <div className={styles.identity}>
           <span className={styles.initials} aria-hidden="true">{initials(who?.handle)}</span>
           <div>
-            <div className={styles.handle}>{who?.handle || " "}</div>
+            <h1 className={styles.handle}>{who?.handle || " "}</h1>
             <div className={styles.kind}>
               {who && !ended ? (who.account ? "Signed in" : COPY.guestTitle) : ""}
             </div>
