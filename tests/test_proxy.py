@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -206,6 +207,64 @@ class Redaction(unittest.TestCase):
         for secret in env.values():
             self.assertNotIn(secret, out, f"{secret} reached the log")
         self.assertIn("***", out)
+
+
+class Provider(unittest.TestCase):
+    """MODEL_PROVIDER picks the key, endpoint and default model as one row (#50). Mixing
+    rows — an OpenAI key sent to DashScope, or qwen asked of OpenAI — fails on every call,
+    and the Screener would hide that by failing open."""
+
+    ENV = ("MODEL_PROVIDER", "DASHSCOPE_API_KEY", "OPENAI_API_KEY", "CHAT_MODEL",
+           "SCREENER_MODEL", "DASHSCOPE_BASE_URL", "OPENAI_BASE_URL")
+
+    def build(self, **env):
+        from proxy import model
+        saved = {k: os.environ.pop(k, None) for k in self.ENV}
+        os.environ.update(env)
+        try:
+            with mock.patch.object(model, "load_env", lambda: None):
+                return model.DashScope()
+        finally:
+            for k in self.ENV:
+                os.environ.pop(k, None)
+                if saved[k] is not None:
+                    os.environ[k] = saved[k]
+
+    def test_dashscope_is_still_the_default(self):
+        c = self.build(DASHSCOPE_API_KEY="sk-d")
+        self.assertEqual(("dashscope", "qwen3.8-max"), (c.provider, c.chat_model))
+        self.assertIn("dashscope", str(c._client.base_url))
+        self.assertEqual("sk-d", c._client.api_key)
+
+    def test_openai_takes_its_own_key_endpoint_and_model(self):
+        c = self.build(MODEL_PROVIDER="openai", OPENAI_API_KEY="sk-o", DASHSCOPE_API_KEY="sk-d")
+        self.assertEqual(("openai", "gpt-6-luna", "gpt-6-luna"),
+                         (c.provider, c.chat_model, c.screener_model))
+        self.assertIn("api.openai.com", str(c._client.base_url))
+        self.assertEqual("sk-o", c._client.api_key, "the other provider's key was sent")
+
+    def test_openai_without_its_key_does_not_borrow_dashscopes(self):
+        with self.assertRaises(UpstreamError):
+            self.build(MODEL_PROVIDER="openai", DASHSCOPE_API_KEY="sk-d")
+
+    def test_an_unknown_provider_is_refused_not_defaulted(self):
+        with self.assertRaises(UpstreamError):
+            self.build(MODEL_PROVIDER="opnai", OPENAI_API_KEY="sk-o", DASHSCOPE_API_KEY="sk-d")
+
+    def test_the_model_can_still_be_overridden(self):
+        c = self.build(MODEL_PROVIDER="OpenAI", OPENAI_API_KEY="sk-o", CHAT_MODEL="gpt-6-sol")
+        self.assertEqual(("openai", "gpt-6-sol"), (c.provider, c.chat_model))
+
+    def test_the_openai_key_is_redacted(self):
+        from proxy.model import redact
+        saved = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "sk-proj-SECRET"
+        try:
+            self.assertNotIn("sk-proj-SECRET", redact("401 bad key sk-proj-SECRET"))
+        finally:
+            os.environ.pop("OPENAI_API_KEY")
+            if saved is not None:
+                os.environ["OPENAI_API_KEY"] = saved
 
 
 class PromptFraming(unittest.TestCase):
