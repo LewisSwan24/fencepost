@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.env import load_env
-from proxy.model import EFFORT, provider
+from proxy.model import effort_for, provider
 
 
 def tiny_png(size: int = 64, rgb: tuple[int, int, int] = (118, 92, 66)) -> bytes:
@@ -111,7 +111,7 @@ def main() -> int:
     # fails that role on every call, which the Screener would hide by failing open.
     print("\n2b. The proxy's own reasoning_effort values")
     refused = 0
-    for role, effort in EFFORT.items():
+    for role, effort in effort_for(row).items():
         try:
             client.chat.completions.create(
                 model=chat_model,
@@ -123,7 +123,7 @@ def main() -> int:
             refused += 1
             print(f"   {role}: {effort!r} REFUSED — {clean(exc)[:200]}")
     if refused:
-        print("   → change EFFORT in proxy/model.py for this provider before going further")
+        print("   → change this provider's effort row in proxy/model.py PROVIDERS before going further")
         return 1
 
     print("\n3. Image input (image_url + base64 PNG)")

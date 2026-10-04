@@ -251,6 +251,32 @@ class Provider(unittest.TestCase):
         with self.assertRaises(UpstreamError):
             self.build(MODEL_PROVIDER="opnai", OPENAI_API_KEY="sk-o", DASHSCOPE_API_KEY="sk-d")
 
+    def test_the_screener_effort_follows_the_provider(self):
+        """gpt-6-luna at "none" let abuse through as ok, English included (measured
+        2026-10-04); qwen at "none" did not. Each row keeps the setting it was measured on."""
+        d = self.build(DASHSCOPE_API_KEY="sk-d")
+        o = self.build(MODEL_PROVIDER="openai", OPENAI_API_KEY="sk-o")
+        self.assertEqual("none", d.effort["screener"])
+        self.assertEqual("medium", o.effort["screener"])
+        self.assertEqual(("medium", "low"), (o.effort["neighbour"], o.effort["writer"]))
+
+    def test_the_effort_sent_is_the_rows(self):
+        o = self.build(MODEL_PROVIDER="openai", OPENAI_API_KEY="sk-o")
+        sent = {}
+
+        class Done(Exception):
+            pass
+
+        def create(**kw):
+            sent.update(kw)
+            raise Done
+
+        with mock.patch.object(o._client.chat.completions, "create", create), \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(UpstreamError):
+                o.call("screener", "sys", "text")
+        self.assertEqual({"reasoning_effort": "medium"}, sent["extra_body"])
+
     def test_the_model_can_still_be_overridden(self):
         c = self.build(MODEL_PROVIDER="OpenAI", OPENAI_API_KEY="sk-o", CHAT_MODEL="gpt-6-sol")
         self.assertEqual(("openai", "gpt-6-sol"), (c.provider, c.chat_model))

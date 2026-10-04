@@ -16,11 +16,20 @@ DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 # Added 2026-10-04 (#50): the owner may stop using Bailian. OpenAI's gpt-6-luna is the
 # low-cost row. Switching rows changes the model the red lines were measured on, so re-run
 # tests/run_redline.py and tests/run_nonenglish.py before production follows.
+#
+# The effort is part of the row because the right Screener setting is not portable. Measured
+# 2026-10-04, abuse aimed at a neighbour (the "-7" cases of tests/nonenglish_cases.yaml plus
+# an English one), three runs each: at "none" gpt-6-luna passed it as ok in 15 of 24 calls,
+# English included; at "low" it flagged 24 of 24, and the full batch agreed 70/70.
+# qwen3.8-max at "none" agreed 70/70. The owner set "medium" the same day for margin over
+# the floor that was just enough; its latency sits inside MODEL_TIMEOUT (see the reports).
 PROVIDERS = {
     "dashscope": {"key": "DASHSCOPE_API_KEY", "base_url_env": "DASHSCOPE_BASE_URL",
-                  "base_url": DEFAULT_BASE_URL, "model": "qwen3.8-max"},
+                  "base_url": DEFAULT_BASE_URL, "model": "qwen3.8-max",
+                  "effort": {"screener": "none"}},
     "openai": {"key": "OPENAI_API_KEY", "base_url_env": "OPENAI_BASE_URL",
-               "base_url": "https://api.openai.com/v1", "model": "gpt-6-luna"},
+               "base_url": "https://api.openai.com/v1", "model": "gpt-6-luna",
+               "effort": {"screener": "medium"}},
 }
 
 
@@ -32,8 +41,13 @@ def provider() -> dict:
         raise UpstreamError("unknown_provider")
     return {"name": name, **PROVIDERS[name]}
 
+
+def effort_for(row: dict) -> dict:
+    """EFFORT with the row's own overrides on top."""
+    return {**EFFORT, **row.get("effort", {})}
+
 # Thinking levels from qwen-integration.md §1. "none" was confirmed a valid value by
-# measurement on 2026-09-12, see §5.
+# measurement on 2026-09-12, see §5. Rows in PROVIDERS may override a role.
 EFFORT = {"neighbour": "medium", "writer": "low", "screener": "none"}
 
 
@@ -85,6 +99,7 @@ class DashScope:
         if not key:
             raise UpstreamError("no_api_key")
         self.provider = row["name"]
+        self.effort = effort_for(row)
         self.chat_model = chat_model or os.getenv("CHAT_MODEL", row["model"])
         # Settled 2026-09-13: the Screener and the chat share one model, held down to a
         # usable latency by reasoning_effort=none. To change models edit here or set
@@ -107,7 +122,7 @@ class DashScope:
                 model=model,
                 messages=messages,
                 timeout=self.timeout,
-                extra_body={"reasoning_effort": EFFORT[role]},
+                extra_body={"reasoning_effort": self.effort[role]},
             )
         except Exception as exc:
             print(f"[proxy] upstream {role}: {redact(str(exc))[:300]}", file=sys.stderr)
@@ -130,7 +145,7 @@ class DashScope:
                 # the streaming path would never report its cache hit rate. Verified
                 # against the token-plan gateway 2026-09-18.
                 stream_options={"include_usage": True},
-                extra_body={"reasoning_effort": EFFORT[role]},
+                extra_body={"reasoning_effort": self.effort[role]},
             )
             for chunk in chunks:
                 if getattr(chunk, "usage", None) is not None:
