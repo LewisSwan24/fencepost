@@ -333,7 +333,7 @@ def main():
         f"- Endpoint: `{client._client.base_url}`",
         # The divergence that prompted all of this: seventeen of these cases are neighbour
         # cases, and they were previously run at "low" while production uses "medium".
-        f"- Reasoning effort: " + ", ".join(f"{r}=`{e}`" for r, e in EFFORT.items()),
+        f"- Reasoning effort: " + ", ".join(f"{r}=`{e}`" for r, e in getattr(client, "effort", EFFORT).items()),
         f"- Timeout: `{client.timeout}s`, retries per role decided by proxy/roles.py",
         f"- Automatic: {auto_pass} pass / {auto_fail} fail | awaiting a person: {manual}",
     ]
