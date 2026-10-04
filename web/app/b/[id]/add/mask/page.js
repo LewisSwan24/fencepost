@@ -59,7 +59,13 @@ export default function Mask({ params }) {
   // answer, and "nothing to cover" is a tick rather than the default — this used to be
   // "cover the two rectangles we invented", which somebody could satisfy exactly while
   // leaving a real face in shot.
-  const blocked = drawn.length === 0 && !nothing;
+  //
+  // Unless there is no frame at all: "continue without a clip", or a clip the browser would
+  // not decode. Then no picture of theirs is anywhere in this flow, nothing can leave, and the
+  // screen used to hold the gate shut until somebody ticked "nothing in this frame identifies
+  // a person" about a frame that did not exist, under a line saying there was nothing here to
+  // cover (#49). The safety line is about pixels that leave, so with none there is no gate.
+  const blocked = !!still && drawn.length === 0 && !nothing;
 
   const pos = (e) => {
     const box = canvas.current.getBoundingClientRect();
@@ -170,6 +176,16 @@ export default function Mask({ params }) {
     }
   }
 
+  // No frame, so nothing to ask permission to send. The sheet used to ask anyway, send null,
+  // and come back with a species suggestion from the fixture as if it had looked at
+  // something; with the assistant live it would have put the question to the model with no
+  // picture attached. A suggestion has to come from their own frame or not at all.
+  function withoutFrame() {
+    draft.setCover(null);
+    draft.setSuggestion(null);
+    router.push(`/b/${id}/add/species`);
+  }
+
   async function sendFrame() {
     setSending(true);
     try {
@@ -222,6 +238,8 @@ export default function Mask({ params }) {
           {COPY.maskLede}
         </p>
 
+        {/* Nothing to draw on without a frame, so no canvas and no way to place a mask. */}
+        {still ? (<>
         <div ref={canvas} className={styles.canvas}
              style={shape ? {
                // The still's own shape, with the *width* bounded so the height cannot run
@@ -265,23 +283,27 @@ export default function Mask({ params }) {
         <button type="button" ref={addButton} className={styles.addMask} onClick={place}>
           {COPY.maskAdd}
         </button>
+        </>) : null}
         <p className={styles.footnote} style={{ marginTop: 10 }}>
           {!still ? COPY.maskNoFrame : photo ? COPY.maskPhoto : COPY.maskNote}
         </p>
 
         {/* Saying "there is nothing to cover" is an act, not the default. Ticking it while
-            boxes are drawn would be a contradiction, so drawing one clears it. */}
-        <label className={styles.nothing}>
-          <input type="checkbox" checked={nothing} disabled={drawn.length > 0}
-                 onChange={(e) => setNothing(e.target.checked)} />
-          <span>{COPY.maskNothing}</span>
-        </label>
+            boxes are drawn would be a contradiction, so drawing one clears it. With no frame
+            there is nothing for it to be about. */}
+        {still ? (
+          <label className={styles.nothing}>
+            <input type="checkbox" checked={nothing} disabled={drawn.length > 0}
+                   onChange={(e) => setNothing(e.target.checked)} />
+            <span>{COPY.maskNothing}</span>
+          </label>
+        ) : null}
       </div>
 
       <div className={ui.footer}>
         {blocked ? <p className={styles.blockedNote}>{COPY.maskBlockedNow}</p> : null}
         <button type="button" className={ui.btn} disabled={blocked}
-                onClick={() => setConsent(true)}>Next</button>
+                onClick={() => (still ? setConsent(true) : withoutFrame())}>Next</button>
       </div>
 
       {consent ? (

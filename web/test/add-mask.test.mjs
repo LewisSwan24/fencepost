@@ -39,6 +39,13 @@ import { navigated, reset } from "./stubs/navigation.mjs";
 
 const BOX = { x: 10, y: 10, w: 30, h: 25 };
 
+// Masking is about a picture, so every test of it has one: a photograph with an empty src.
+// The gate and the keys only need a frame to exist, and an empty src is what redact() and
+// redraw() turn down at once, rather than waiting on an Image that jsdom never loads.
+// setStills clears the boxes, so the frame goes in first.
+const PHOTO = { src: "", w: 4, h: 3 };
+const framed = (then) => (d) => { d.setStills([PHOTO]); then?.(d); };
+
 const next = () => screen.getByRole("button", { name: "Next" });
 const tick = () => screen.getByLabelText(COPY.maskNothing);
 
@@ -46,7 +53,7 @@ beforeEach(() => reset());
 afterEach(() => cleanup());
 
 test("the gate is closed on arrival, and says why", async () => {
-  await renderInFlow(Mask);
+  await renderInFlow(Mask, { seed: framed() });
 
   assert.equal(next().disabled, true);
   assert.ok(screen.getByText(COPY.maskBlockedNow), "stopped with nothing on screen to say why");
@@ -54,7 +61,7 @@ test("the gate is closed on arrival, and says why", async () => {
 
 test("nothing to cover is a tick, not the default", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask);
+  await renderInFlow(Mask, { seed: framed() });
 
   assert.equal(tick().checked, false, "the frame was cleared to send without anybody saying so");
   await user.click(tick());
@@ -65,7 +72,7 @@ test("nothing to cover is a tick, not the default", async () => {
 test("a box opens the gate, and takes the tick away", async () => {
   // Ticking "there is nothing to cover" while a box is drawn is a contradiction, and the
   // screen refuses it rather than letting the two answers disagree.
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX])) });
 
   assert.equal(next().disabled, false);
   assert.equal(tick().disabled, true);
@@ -73,7 +80,7 @@ test("a box opens the gate, and takes the tick away", async () => {
 
 test("removing the last box closes the gate again", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX])) });
 
   await user.click(screen.getByRole("button", { name: "Remove mask" }));
   assert.equal(next().disabled, true, "the gate stayed open with nothing covered");
@@ -82,7 +89,7 @@ test("removing the last box closes the gate again", async () => {
 
 test("each box has its own way off, and removing one leaves the others", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX, { ...BOX, x: 60 }]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX, { ...BOX, x: 60 }])) });
 
   const kills = screen.getAllByRole("button", { name: "Remove mask" });
   assert.equal(kills.length, 2);
@@ -105,7 +112,7 @@ const add = () => screen.getByRole("button", { name: COPY.maskAdd });
 
 test("Add a mask puts one in the middle of the frame, and focus on it", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(WithProbe);
+  await renderInFlow(WithProbe, { seed: framed() });
 
   await user.click(add());
   assert.deepEqual(stored(), [{ x: 35, y: 35, w: 30, h: 30 }]);
@@ -121,13 +128,13 @@ test("Add a mask puts one in the middle of the frame, and focus on it", async ()
 
 test("a dragged mask is named in whole percentages", async () => {
   // A drag stores whatever fraction the pointer landed on; nobody needs to hear 12.6%.
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([{ x: 12.6, y: 3.2, w: 20.49, h: 7.5 }]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([{ x: 12.6, y: 3.2, w: 20.49, h: 7.5 }])) });
   assert.equal(masks()[0].getAttribute("aria-label"),
                "Mask 1: 13% from the left, 3% from the top, 20% wide, 8% tall");
 });
 
 test("each mask says where it is, and how to move it", async () => {
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX, { ...BOX, x: 60 }]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX, { ...BOX, x: 60 }])) });
 
   const [first, second] = masks();
   assert.equal(first.getAttribute("aria-label"),
@@ -140,7 +147,7 @@ test("each mask says where it is, and how to move it", async () => {
 
 test("arrow keys move the focused mask, Shift and the arrows resize it", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(WithProbe, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(WithProbe, { seed: framed((d) => d.setBoxes([BOX])) });
   masks()[0].focus();
 
   await user.keyboard("{ArrowRight}{ArrowDown}");
@@ -158,7 +165,7 @@ test("arrow keys move the focused mask, Shift and the arrows resize it", async (
 test("a mask cannot leave the frame or shrink below a deliberate box", async () => {
   // The same floor a drag has (SMALLEST_BOX): anything smaller is a twitch, not a mask.
   const user = userEvent.setup({ document });
-  await renderInFlow(WithProbe, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(WithProbe, { seed: framed((d) => d.setBoxes([BOX])) });
   masks()[0].focus();
 
   await user.keyboard("{ArrowLeft>10/}{ArrowUp>10/}");
@@ -175,7 +182,7 @@ test("a mask cannot leave the frame or shrink below a deliberate box", async () 
 test("Delete removes the focused mask, and focus goes on to something that is there", async () => {
   // Focus left on a removed element falls to body, out of reach of anything on this screen.
   const user = userEvent.setup({ document });
-  await renderInFlow(WithProbe, { seed: (d) => d.setBoxes([BOX, { ...BOX, x: 60 }]) });
+  await renderInFlow(WithProbe, { seed: framed((d) => d.setBoxes([BOX, { ...BOX, x: 60 }])) });
   masks()[0].focus();
 
   await user.keyboard("{Delete}");
@@ -189,7 +196,7 @@ test("Delete removes the focused mask, and focus goes on to something that is th
 
 test("the box being dragged is not a mask yet, so it takes no focus and has no name", async () => {
   // It is not in draft.boxes until release, so a key pressed on it would act on nothing.
-  await renderInFlow(Mask);
+  await renderInFlow(Mask, { seed: framed() });
   const canvas = screen.getByText(COPY.maskHint).parentElement;
   canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 200 });
 
@@ -206,7 +213,7 @@ test("the box being dragged is not a mask yet, so it takes no focus and has no n
 test("the remove button hands focus on the same way", async () => {
   // It is the other way to remove a mask from a keyboard, and it dropped focus on body too.
   const user = userEvent.setup({ document });
-  await renderInFlow(WithProbe, { seed: (d) => d.setBoxes([BOX, { ...BOX, x: 60 }, { ...BOX, y: 60 }]) });
+  await renderInFlow(WithProbe, { seed: framed((d) => d.setBoxes([BOX, { ...BOX, x: 60 }, { ...BOX, y: 60 }])) });
 
   screen.getAllByRole("button", { name: "Remove mask" })[2].focus();
   await user.keyboard("{Enter}");
@@ -214,9 +221,52 @@ test("the remove button hands focus on the same way", async () => {
   assert.equal(document.activeElement, masks()[1], "removing the last in the list did not go to the one before");
 });
 
+// ---- no frame at all ------------------------------------------------------------------------
+//
+// "Continue without a clip", or a clip the browser would not decode, leaves no picture of the
+// person's in the flow. The screen still drew an empty canvas, offered Add a mask, held the
+// gate shut until somebody ticked "nothing in this frame identifies a person" about a frame
+// that did not exist — under a line saying there was nothing here to cover — and then asked
+// permission to send that frame for identification, sent nothing, and came back with a
+// species suggestion as if it had seen one. The safety line is about pixels that leave, and
+// here there are none, so there is nothing to mask and nothing to ask.
+
+const Leaving = () => {
+  const d = useDraft();
+  return <output data-boxes="[]" data-left={JSON.stringify({ cover: d.cover ?? null, suggestion: d.suggestion ?? null })} />;
+};
+const WithLeaving = (props) => <><Mask {...props} /><Leaving /></>;
+
+test("with no frame there is nothing to draw on and nothing to tick", async () => {
+  await renderInFlow(Mask);
+
+  assert.ok(screen.getByText(COPY.maskNoFrame));
+  assert.equal(screen.queryByText(COPY.maskHint), null, "an empty canvas to mask nothing on");
+  assert.equal(screen.queryByRole("button", { name: COPY.maskAdd }), null);
+  assert.equal(screen.queryByLabelText(COPY.maskNothing), null, "asked to vouch for a frame that is not there");
+  assert.equal(screen.queryByText(COPY.maskBlockedNow), null);
+  assert.equal(next().disabled, false);
+});
+
+test("with no frame, Next goes on to the species without asking to send one", async () => {
+  const user = userEvent.setup({ document });
+  // Left over from an earlier pass with a clip, before going back and continuing without one.
+  await renderInFlow(WithLeaving, {
+    id: "sb_jacaranda",
+    seed: (d) => { d.setSuggestion("Looks like a brushtail."); d.setCover("b2xk"); },
+  });
+
+  await user.click(next());
+  assert.equal(screen.queryByRole("dialog"), null, "asked permission to send a frame there is none of");
+  assert.deepEqual(navigated, [["push", "/b/sb_jacaranda/add/species"]]);
+  assert.deepEqual(JSON.parse(document.querySelector("output").dataset.left),
+                   { cover: null, suggestion: null },
+                   "a picture or a species suggestion came out of no picture");
+});
+
 test("the consent sheet is a dialog with a name a screen reader can read", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX])) });
 
   await user.click(next());
   const sheet = screen.getByRole("dialog");
@@ -228,7 +278,7 @@ test("the consent sheet is a dialog with a name a screen reader can read", async
 
 test("neither way out of the sheet is made quieter than the other", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX])) });
 
   await user.click(next());
   const send = screen.getByRole("button", { name: COPY.consentSend });
@@ -241,7 +291,7 @@ test("declining to send the frame still carries on to the species step", async (
   // Skipping identification is not skipping the flow. The masking has been done either way,
   // and their sighting carries their own picture rather than a stock photograph.
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask, { id: "sb_jacaranda", seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(Mask, { id: "sb_jacaranda", seed: framed((d) => d.setBoxes([BOX])) });
 
   await user.click(next());
   await user.click(screen.getByRole("button", { name: COPY.consentSkip }));
@@ -250,7 +300,7 @@ test("declining to send the frame still carries on to the species step", async (
 
 test("the sheet closes without going anywhere", async () => {
   const user = userEvent.setup({ document });
-  await renderInFlow(Mask, { seed: (d) => d.setBoxes([BOX]) });
+  await renderInFlow(Mask, { seed: framed((d) => d.setBoxes([BOX])) });
 
   await user.click(next());
   await user.keyboard("{Escape}");
