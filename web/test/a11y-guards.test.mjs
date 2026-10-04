@@ -111,6 +111,25 @@ test("reduced motion turns every animation and transition down", () => {
   assert.match(block[1], /transition-duration:\s*0\.01ms\s*!important/);
 });
 
+test("the storyboard footer goes to one row on a short screen", () => {
+  // Measured 2026-10-04 at 568x320: stacked, the footer was 45% of the viewport. jsdom
+  // evaluates no media queries, so this reads the rule; the browser walk is in the README.
+  const css = readFileSync(join(WEB, "app", "b", "[id]", "page.module.css"), "utf8");
+  const rule = css.match(/@media\s*\(max-height:\s*(\d+)px\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(rule, "the footer stacks three buttons however short the screen is");
+  assert.ok(Number(rule[1]) >= 430, "a landscape phone is taller than the cut-off");
+  assert.match(rule[2], /div\.dock\s*\{[^}]*flex-direction:\s*row/);
+  assert.doesNotMatch(rule[2], /position:\s*static/, "the way to add a sighting went off screen");
+  // And at 400% zoom (320x180) it lets go altogether.
+  const tiny = [...css.matchAll(/@media\s*\(max-height:\s*(\d+)px\)\s*\{\s*div\.dock\s*\{([^}]*)\}/g)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))[0];
+  assert.ok(tiny && Number(tiny[1]) >= 180 && Number(tiny[1]) < Number(rule[1]),
+            "a footer stays stuck over half of a 180px screen");
+  assert.match(tiny[2], /position:\s*static/);
+  const page = readFileSync(join(WEB, "app", "b", "[id]", "page.js"), "utf8");
+  assert.match(page, /ui\.footerSticky, styles\.dock/);
+});
+
 test("nothing scrolls smoothly from script, where the reduced-motion rule cannot reach", () => {
   // CSS durations do not touch scrollIntoView({behavior: "smooth"}) or scrollTo with it.
   const found = [...sources(join(WEB, "app")), ...sources(join(WEB, "components")), ...sources(join(WEB, "lib"))]

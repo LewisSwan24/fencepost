@@ -499,6 +499,18 @@ handed focus back to the button, and a mask placed by keyboard and moved left wa
 the masked cover where it ended up, not where it started — black at 25–55% across a white
 400×300 photograph, white at the spot it was first placed.
 
+Every walk until then was at 390 wide, so the same day every route was loaded into 320×568
+frames, once as drawn and once with WCAG 1.4.12 text spacing forced on, checking for
+sideways scroll, anything past the edge, and text clipped by its box. Nothing scrolled
+sideways and nothing spilled; the one cut-off title is the thread's top bar, whose full text
+is the h1 under it. Turned sideways the storyboard was another matter (#48): at 568×320 its
+three stacked buttons were 144px, 45% of the screen, and the timeline scrolled through what
+was left. Below 480px tall they share one row at 44px, sized by their words, which is 60px
+(19%) and still on screen; below 260px tall (a page zoomed to 400%, 320×180) the footer lets
+go and sits at the end, since one row was still 53% there. Upright at 390×844 it is
+unchanged. jsdom evaluates no media queries, so `test/a11y-guards.test.mjs` reads the rules
+and these numbers are from the browser.
+
 **Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
 for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from
 video and the pixels that come out are only ever seen in a browser. So is layout, and so is
