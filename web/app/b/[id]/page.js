@@ -445,7 +445,7 @@ export default function Storyboard({ params }) {
       </div>
 
       {view ? (
-        <div className={[ui.footer, ui.footerSticky].join(" ")}>
+        <div className={[ui.footer, ui.footerSticky, styles.dock].join(" ")}>
           {canContribute ? (
             <button type="button" className={ui.btn} onClick={() => router.push("/b/" + id + "/add")}>
               {COPY.addSighting}

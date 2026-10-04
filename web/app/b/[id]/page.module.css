@@ -160,3 +160,26 @@
 }
 
 .since { color: var(--text-dim); }
+
+/* The footer on a short screen (#48). Stacked, its three buttons came to 144px of a phone
+   turned sideways — 45% of a 320px viewport — and the timeline scrolled through what was
+   left. Below 480px tall they share one row at 44px, and the footer stays where it is so the
+   way to add a sighting is still on screen. `div.dock` outranks the shared .footer it sits on,
+   which CSS module order alone would not. */
+@media (max-height: 480px) {
+  div.dock {
+    flex-direction: row; align-items: stretch;
+    padding-top: 6px; padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  /* Sized by their words rather than in equal shares: the column is about 430px wide here,
+     and equal shares broke "Ask Possum Help" onto two lines. Wrapping is still allowed, so a
+     page zoomed to 320 wide grows taller instead of spilling sideways. */
+  div.dock > button { flex: 1 1 auto; width: auto; min-height: 44px; padding: 6px 14px; font-size: 15px; }
+  div.dock .actions { flex: 1 1 auto; }
+  div.dock .action { flex: 1 1 auto; min-height: 44px; padding: 6px 12px; }
+}
+/* At a page zoomed to 400% (320x180) even one row was 53% of the screen. That short, nothing
+   stuck to the bottom leaves room to read, so the footer sits at the end of the page. */
+@media (max-height: 260px) {
+  div.dock { position: static; background: none; }
+}
