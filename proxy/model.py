@@ -1,4 +1,9 @@
-"""Thin wrapper over DashScope compatible mode: timeouts, retries, error redaction."""
+"""Thin wrapper over an OpenAI-compatible chat endpoint: timeouts, retries, error redaction.
+
+Two providers speak the same protocol, so the switch is a table, not a second client.
+MODEL_PROVIDER picks the row (default dashscope); each row names its own key variable,
+base-URL variable and default model, and CHAT_MODEL / SCREENER_MODEL still override.
+"""
 
 import os
 import sys
@@ -7,6 +12,25 @@ from .env import load_env
 from .ports import CEILINGS
 
 DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+
+# Added 2026-10-04 (#50): the owner may stop using Bailian. OpenAI's gpt-6-luna is the
+# low-cost row. Switching rows changes the model the red lines were measured on, so re-run
+# tests/run_redline.py and tests/run_nonenglish.py before production follows.
+PROVIDERS = {
+    "dashscope": {"key": "DASHSCOPE_API_KEY", "base_url_env": "DASHSCOPE_BASE_URL",
+                  "base_url": DEFAULT_BASE_URL, "model": "qwen3.8-max"},
+    "openai": {"key": "OPENAI_API_KEY", "base_url_env": "OPENAI_BASE_URL",
+               "base_url": "https://api.openai.com/v1", "model": "gpt-6-luna"},
+}
+
+
+def provider() -> dict:
+    """The selected row, with its name. An unknown name is a configuration error, raised as
+    UpstreamError so it behaves like a missing key rather than silently picking a default."""
+    name = (os.getenv("MODEL_PROVIDER") or "dashscope").strip().lower()
+    if name not in PROVIDERS:
+        raise UpstreamError("unknown_provider")
+    return {"name": name, **PROVIDERS[name]}
 
 # Thinking levels from qwen-integration.md §1. "none" was confirmed a valid value by
 # measurement on 2026-09-12, see §5.
@@ -17,7 +41,7 @@ class UpstreamError(Exception):
     """Any upstream failure lands here. The detail goes to the server log, never the client."""
 
 
-_SECRET_ENV = ("DASHSCOPE_API_KEY", "FENCEPOST_TOKEN_SECRET", "TURSO_AUTH_TOKEN",
+_SECRET_ENV = ("DASHSCOPE_API_KEY", "OPENAI_API_KEY", "FENCEPOST_TOKEN_SECRET","TURSO_AUTH_TOKEN",
                "LIBSQL_AUTH_TOKEN", "TURSO_DATABASE_URL")
 
 
@@ -56,10 +80,12 @@ class DashScope:
         load_env()
         from openai import OpenAI
 
-        key = os.getenv("DASHSCOPE_API_KEY")
+        row = provider()
+        key = os.getenv(row["key"])
         if not key:
             raise UpstreamError("no_api_key")
-        self.chat_model = chat_model or os.getenv("CHAT_MODEL", "qwen3.8-max")
+        self.provider = row["name"]
+        self.chat_model = chat_model or os.getenv("CHAT_MODEL", row["model"])
         # Settled 2026-09-13: the Screener and the chat share one model, held down to a
         # usable latency by reasoning_effort=none. To change models edit here or set
         # SCREENER_MODEL, and re-run the red-line suite afterwards.
@@ -69,7 +95,7 @@ class DashScope:
         # quietly retry on its own.
         self._client = OpenAI(
             api_key=key,
-            base_url=base_url or os.getenv("DASHSCOPE_BASE_URL", DEFAULT_BASE_URL),
+            base_url=base_url or os.getenv(row["base_url_env"], row["base_url"]),
             max_retries=0,
         )
 

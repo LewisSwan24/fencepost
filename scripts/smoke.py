@@ -24,8 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy.env import load_env
-
-DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+from proxy.model import EFFORT, provider
 
 
 def tiny_png(size: int = 64, rgb: tuple[int, int, int] = (118, 92, 66)) -> bytes:
@@ -60,17 +59,19 @@ def describe(resp) -> str:
 
 def main() -> int:
     load_env()
-    key = os.getenv("DASHSCOPE_API_KEY")
+    row = provider()
+    key = os.getenv(row["key"])
     if not key:
-        sys.exit("No DASHSCOPE_API_KEY. Put the key in .env at the repository root, never in the code.")
+        sys.exit(f"No {row['key']} (MODEL_PROVIDER={row['name']}). Put the key in .env at "
+                 "the repository root, never in the code.")
 
     try:
         from openai import OpenAI
     except ImportError:
         sys.exit("Missing dependency: pip install openai")
 
-    base_url = os.getenv("DASHSCOPE_BASE_URL", DEFAULT_BASE_URL)
-    chat_model = os.getenv("CHAT_MODEL", "qwen3.8-max")
+    base_url = os.getenv(row["base_url_env"], row["base_url"])
+    chat_model = os.getenv("CHAT_MODEL", row["model"])
     vision_model = os.getenv("VISION_MODEL", chat_model)
     client = OpenAI(api_key=key, base_url=base_url)
 
@@ -105,6 +106,25 @@ def main() -> int:
               "and the configured thinking level does nothing")
     except Exception as exc:
         print(f"   Invalid value refused — the parameter is real. Original: {clean(exc)[:200]}")
+
+    # The values the proxy actually sends, per role. A provider that refuses one of them
+    # fails that role on every call, which the Screener would hide by failing open.
+    print("\n2b. The proxy's own reasoning_effort values")
+    refused = 0
+    for role, effort in EFFORT.items():
+        try:
+            client.chat.completions.create(
+                model=chat_model,
+                messages=[{"role": "user", "content": "Reply with one word: pong"}],
+                extra_body={"reasoning_effort": effort},
+            )
+            print(f"   {role}: {effort!r} accepted")
+        except Exception as exc:
+            refused += 1
+            print(f"   {role}: {effort!r} REFUSED — {clean(exc)[:200]}")
+    if refused:
+        print("   → change EFFORT in proxy/model.py for this provider before going further")
+        return 1
 
     print("\n3. Image input (image_url + base64 PNG)")
     png = tiny_png()

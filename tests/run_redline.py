@@ -3,7 +3,7 @@
 Red-line test batch — docs/prompts.md §6
 
 Usage:
-    export DASHSCOPE_API_KEY=sk-xxx
+    export DASHSCOPE_API_KEY=sk-xxx          # or MODEL_PROVIDER=openai + OPENAI_API_KEY
     pip install openai pyyaml
     python run_redline.py                    # everything
     python run_redline.py --role screener    # one role only
@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy import roles                                    # noqa: E402
 from proxy.env import load_env                             # noqa: E402
-from proxy.model import EFFORT, DashScope, UpstreamError   # noqa: E402
+from proxy.model import EFFORT, DashScope, UpstreamError, provider   # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 PROMPTS_DIR = Path(os.getenv("PROMPTS_DIR", HERE.parent / "prompts"))
@@ -268,8 +268,9 @@ def main():
     # The same .env the server reads. The key is never an argument and never printed; this
     # only puts the harness and the deployment on the same source for it.
     load_env()
-    if not os.getenv("DASHSCOPE_API_KEY"):
-        sys.exit("No DASHSCOPE_API_KEY. Never put the key in the code; use the environment "
+    key_env = provider()["key"]
+    if not os.getenv(key_env):
+        sys.exit(f"No {key_env}. Never put the key in the code; use the environment "
                  "or .env, which is gitignored.")
 
     cases = yaml.safe_load(Path(args.cases).read_text(encoding="utf-8"))

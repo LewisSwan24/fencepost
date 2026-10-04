@@ -83,6 +83,10 @@ def main() -> None:
         "",
         f"- Run: {datetime.now():%Y-%m-%d %H:%M}",
         f"- Prompt version: `{', '.join(sorted(versions)) or 'unknown'}`",
+        # The 2026-09-13 run was on qwen3.8-max; with a second provider (#50) a report that
+        # does not say which model agreed is not evidence about either.
+        f"- Model: `{getattr(client, 'screener_model', '?')}` "
+        f"({getattr(client, 'provider', '?')})",
         # Read off the corpus rather than named here. The file grew from three languages to
         # seven on 2026-09-17 and a hardcoded trio would have reported on three of them while
         # quietly running all seven — the report claiming less than the run covered.
