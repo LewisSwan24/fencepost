@@ -195,7 +195,8 @@ the new API in front of old front-end code for as long as the web build takes.
 vercel deploy
 ```
 
-Set `DASHSCOPE_API_KEY` and `FENCEPOST_TOKEN_SECRET` in the Vercel project first, with
+Set the model key (`OPENAI_API_KEY` with `MODEL_PROVIDER=openai`, as production runs since 2026-10-04,
+or `DASHSCOPE_API_KEY`) and `FENCEPOST_TOKEN_SECRET` in the Vercel project first, with
 `vercel env add`. Two things to know: new projects have deployment protection on, so a plain
 request gets Vercel's own 401 rather than ours (`vercel curl` carries your session through), and
 the API needs a hosted database. `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` come from
