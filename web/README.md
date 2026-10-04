@@ -511,6 +511,16 @@ go and sits at the end, since one row was still 53% there. Upright at 390×844 i
 unchanged. jsdom evaluates no media queries, so `test/a11y-guards.test.mjs` reads the rules
 and these numbers are from the browser.
 
+The mask screen had one more thing wrong that the keyboard work made easy to see (#49). With
+no clip at all it drew an empty canvas, offered Add a mask, and kept Next shut until somebody
+ticked "nothing in this frame identifies a person or a house" about a frame that did not
+exist, under a line saying there was nothing here to cover. Then it asked permission to send
+that frame, sent null, and came back with the fixture's species suggestion as if it had seen
+something. The safety line is about pixels that leave, and on that path there are none, so
+the canvas, the button, the tick and the gate are gone there, and Next goes straight to the
+species step with any cover or suggestion from an earlier pass cleared. With a frame nothing
+changed: walked both ways in the browser, the gate shut and the sheet asking as before.
+
 **Never covered by the tests, by construction.** `camera.test.mjs` and `add.test.mjs` stand in
 for `getUserMedia`, `Image` and the canvas, so a real permission prompt, a real frame drawn from
 video and the pixels that come out are only ever seen in a browser. So is layout, and so is
