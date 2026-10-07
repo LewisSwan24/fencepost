@@ -43,6 +43,12 @@
   margin: 12px 0 0; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--line);
   font-size: 13.5px; line-height: 1.55; color: var(--text-body); text-wrap: pretty;
 }
+.studyText { margin: 0; }
+.studyStop {
+  margin-top: 10px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--line);
+  background: none; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.studyStop:hover { background: rgba(244, 235, 220, 0.07); }
 .canned {
   margin: 10px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim);
 }

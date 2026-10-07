@@ -19,6 +19,7 @@ import { COPY } from "../lib/copy.js";
 import { GENERAL_REPLY, startStudy, studyRecord, STUDY_KEY } from "../lib/study.js";
 
 const UNMATCHED = "can I borrow a ladder from the council";
+const box = () => screen.getByLabelText("Ask Possum Help");
 
 async function openStudy() {
   await act(async () => { render(<StudyPage />); });
@@ -51,6 +52,27 @@ test("while a session is noting, the chat says so inside the log a screen reader
   await openChat();
   const notice = screen.getByText(COPY.studyNotice);
   assert.ok(within(screen.getByRole("log")).getByText(COPY.studyNotice) === notice);
+});
+
+test("a participant can stop it from the chat, which deletes what was noted", async () => {
+  // The owner's call (2026-10-07): a participant can opt out mid-session. A session is one
+  // participant, so stopping ends it and takes everything it noted with it.
+  startStudy();
+  const user = await openChat();
+  await user.type(box(), UNMATCHED);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(GENERAL_REPLY, {}, { timeout: 3000 });
+  assert.equal(studyRecord().misses.length, 1);
+
+  await user.click(screen.getByRole("button", { name: COPY.studyOptOut }));
+  assert.equal(studyRecord(), null, "stopping left the notes in the browser");
+  assert.equal(window.localStorage.getItem(STUDY_KEY), null);
+  assert.equal(screen.queryByText(COPY.studyNotice), null);
+  assert.ok(within(screen.getByRole("log")).getByText(COPY.studyOptedOut));
+  assert.equal(document.activeElement, box(), "focus fell out of the sheet with the button");
+
+  await askAssistant("another thing it won't know about", "sb_jacaranda");
+  assert.equal(window.localStorage.getItem(STUDY_KEY), null, "noting carried on after stopping");
 });
 
 test("a question the fixed replies miss is noted, and nothing goes on the network", async () => {

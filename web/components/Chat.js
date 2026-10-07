@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { askAssistant, assistantOffline, assistantIsLive } from "../lib/api";
 import { ASSISTANT_DISCLOSURE, ASSISTANT_SCRIPT } from "../lib/fixtures";
 import { COPY } from "../lib/copy";
-import { studyRecord } from "../lib/study";
+import { endStudy, studyRecord } from "../lib/study";
 import { Sheet, Spinner, ui } from "./ui";
 import styles from "./Chat.module.css";
 
@@ -19,13 +19,23 @@ export default function Chat({ storyboardId, onClose }) {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [offline, setOffline] = useState(assistantOffline);
-  const [studying] = useState(() => !assistantIsLive && studyRecord() !== null);
+  const [studying, setStudying] = useState(() => !assistantIsLive && studyRecord() !== null);
+  const [optedOut, setOptedOut] = useState(false);
   const bottom = useRef(null);
   const field = useRef(null);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages, thinking]);
+
+  function optOut() {
+    endStudy();
+    setStudying(false);
+    setOptedOut(true);
+    // The button goes with the notice; without this, focus falls to body, outside the
+    // sheet's Tab trap — the same reason the chips hand it to the field.
+    field.current?.focus();
+  }
 
   async function ask(text) {
     const question = text.trim();
@@ -68,9 +78,19 @@ export default function Chat({ storyboardId, onClose }) {
             {assistantIsLive ? null : (
               <p className={styles.canned}>{COPY.assistantCanned}</p>
             )}
-            {/* For as long as study mode is noting misses (#52), the person asking is told.
-                Read once on open: a session is started from /study, never mid-conversation. */}
-            {studying ? <p className={styles.study}>{COPY.studyNotice}</p> : null}
+            {/* For as long as study mode is noting misses (#52), the person asking is told,
+                and can stop it right here. Stopping ends the session and deletes its notes:
+                a session is one participant, so what it holds is theirs. Read once on open:
+                a session is started from /study, never mid-conversation. */}
+            {studying ? (
+              <div className={styles.study}>
+                <p className={styles.studyText}>{COPY.studyNotice}</p>
+                <button type="button" className={styles.studyStop} onClick={optOut}>
+                  {COPY.studyOptOut}
+                </button>
+              </div>
+            ) : null}
+            {optedOut ? <p className={styles.study}>{COPY.studyOptedOut}</p> : null}
           </>
         )}
 

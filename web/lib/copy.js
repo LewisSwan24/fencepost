@@ -54,16 +54,18 @@ export const COPY = {
   // this product explains itself where it stands: the QR placeholder does, the frame stills
   // do, /credits does. The assistant is the last one that should be vague about it.
   assistantCanned: "Pre-written answers for this demo. Nothing is generated live.",
-  // Study mode (#52). DRAFT: the wording, and whether a participant can opt out mid-session,
-  // wait on the owner (the issue is hitl for exactly this). The notice sits in the chat
-  // sheet for as long as recording is on, so nobody is noted without being told.
+  // Study mode (#52). The notice wording is the owner's (2026-10-07). It sits in the chat
+  // sheet for as long as noting is on, so nobody is noted without being told, and a
+  // participant can stop it from there: that ends the session and deletes what it noted.
   studyNotice:
     "This session is part of a study. Questions Possum Help can't answer are noted on this device so the team can see what it's missing. Nothing is sent anywhere.",
+  studyOptOut: "Stop noting my questions",
+  studyOptedOut: "Stopped. Nothing from this session is kept, and nothing more will be noted.",
   studyTitle: "Study mode",
   studyLede:
     "For evaluation sessions. While this is on, every question that gets Possum Help's general reply is noted word for word in this browser, and other questions are only counted. Nothing leaves the device until you export it.",
   studyTell:
-    "Before you start, tell the participant that questions Possum Help can't answer will be noted, and that the chat will say so while it's on.",
+    "Start a new session for each participant. Before you start, tell them that questions Possum Help can't answer will be noted, that the chat will say so while it's on, and that they can stop it from there at any time, which deletes everything noted in the session.",
   studyStart: "Start noting",
   studyOn: (time) => `Noting since ${time}`,
   studyCounts: (routed, missed) =>
