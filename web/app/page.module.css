@@ -73,3 +73,18 @@
 
 .credits { color: var(--text-dim); text-decoration: underline; text-underline-offset: 2px; }
 .credits:hover { color: var(--text-muted); }
+
+/* Got a code from a neighbour? (#54) */
+.codeForm { margin-top: 8px; }
+.codeForm label { display: block; }
+.codeHint { font-size: 12.5px; color: var(--text-dim); margin: -4px 0 10px; }
+.codeRow { display: flex; gap: 8px; }
+.codeInput {
+  flex: 1; min-width: 0; height: 48px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 15px;
+}
+.codeGo {
+  flex: none; height: 48px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: transparent; color: var(--text); font-size: 14px; font-weight: 600;
+}
+.codeGo:disabled { opacity: 0.45; }

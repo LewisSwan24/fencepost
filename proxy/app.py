@@ -50,6 +50,11 @@ LEVEL_RANK = {"view": 0, "contribute": 1, "reshare": 2}
 # scripts/issue_join_code.py defaults to 90 on purpose: the demo join code has to outlive the
 # exhibit it is printed for (operations.md). That is an exception, not drift.
 SHARE_LINK_DAYS = 7
+# A link issued with a short code (#54) defaults to a day and may live a week at most. A
+# code is handed over in person and used that evening; a short life keeps the number of
+# codes live at once small, which the guessing limits in ports.CEILINGS depend on.
+SHORT_CODE_DAYS = 1
+SHORT_CODE_MAX_DAYS = 7
 
 # Length caps for the two fields on an entry. A story is the same kind of free text as a
 # forum body, which is already capped at 4000, so it takes the same number. A fun fact is
@@ -208,6 +213,8 @@ COPY = {
     "rate_limited_login": "Too many sign-in attempts. Try again in a few minutes.",
     "rate_limited_password": "Too many sign-in or sign-up attempts from this network right now. Try again in a little while.",
     "rate_limited_session": "Too many new sessions from this network right now. Try again in a little while.",
+    "rate_limited_code": "Too many codes have been tried in the last hour. Try again later, or ask for a fresh code.",
+    "code_unavailable": "A short code could not be made just now. Try again.",
 }
 
 
@@ -1136,34 +1143,71 @@ def issue_share_link(body: dict, token: str, deps: Deps):
     if mine != "reshare" or LEVEL_RANK[level] > LEVEL_RANK[mine]:
         return 403, _error("cannot_share")
 
-    days = body.get("expires_in_days", SHARE_LINK_DAYS)
+    short = body.get("short_code", False)
+    if not isinstance(short, bool):
+        return 400, _error("bad_request")
+    days = body.get("expires_in_days", SHORT_CODE_DAYS if short else SHARE_LINK_DAYS)
     max_uses = body.get("max_uses")
-    if not isinstance(days, int) or not 1 <= days <= 90:
+    # A short code can be guessed where a token cannot, so it gets a shorter ceiling on its
+    # life: the guessing odds in ports.CEILINGS assume few codes are live at once.
+    if not isinstance(days, int) or isinstance(days, bool) \
+            or not 1 <= days <= (SHORT_CODE_MAX_DAYS if short else 90):
         return 400, _error("bad_request")
     if max_uses is not None and (not isinstance(max_uses, int) or max_uses < 1):
         return 400, _error("bad_request")
 
+    code = code_hash = None
+    if short:
+        # A clash is about one in a billion per live code; checked anyway, against every row
+        # ever issued (see db.share_link_by_code), and a handful of tries is plenty.
+        for _ in range(5):
+            code = auth.new_short_code()
+            code_hash = auth.hash_short_code(code)
+            if not deps.db.code_taken(code_hash):
+                break
+        else:
+            return 503, _error("code_unavailable")
+
     plain = auth.new_share_token()
     expires_at = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(timespec="seconds")
     link_id = deps.db.add_share_link(storyboard_id, user_id, auth.hash_share_token(plain),
-                                     level, expires_at, max_uses)
-    return 200, {"share_link_id": link_id, "token": plain, "level": level,
-                 "expires_at": expires_at, "max_uses": max_uses}
+                                     level, expires_at, max_uses, code_hash)
+    issued = {"share_link_id": link_id, "token": plain, "level": level,
+              "expires_at": expires_at, "max_uses": max_uses}
+    if code:
+        issued["short_code"] = code
+    return 200, issued
 
 
 def redeem_share_link(body: dict, token: str, deps: Deps):
     user_id, refusal = _identify(token, deps)
     if refusal:
         return refusal
-    code = body.get("token")
-    # A non-string code hashes through str.encode and 500s otherwise; a code that is not a
-    # string is not a link anybody issued, so the honest answer is the same 404 a wrong one
-    # gets. (The bearer token is a header; this body "token" is only the share code.)
-    if code is not None and not isinstance(code, str):
-        return 404, _error("invalid_link")
-    link = deps.db.share_link_by_hash(auth.hash_share_token(code or ""))
-    if link is None:
-        return 404, _error("invalid_link")
+    if body.get("token") is None and body.get("code") is not None:
+        # A short code (#54). Every attempt is counted before anything is looked up, hit or
+        # miss: counting only misses would mean checking first, and two instances racing
+        # between the check and the count could each let one more guess through.
+        if deps.ceilings is not None:
+            cap, window = CEILINGS["code"]
+            mine, mine_window = CEILINGS["code_user"]
+            if not deps.ceilings.claim("code:" + user_id, mine, mine_window) \
+                    or not deps.ceilings.claim("code", cap, window):
+                return 429, _error("rate_limited", "rate_limited_code", scope="code")
+        normal = auth.normalise_short_code(body.get("code"))
+        link = deps.db.share_link_by_code(auth.hash_short_code(normal)) if normal else None
+        if link is None:
+            return 404, _error("invalid_link")
+    else:
+        code = body.get("token")
+        # A non-string code hashes through str.encode and 500s otherwise; a code that is
+        # not a string is not a link anybody issued, so the honest answer is the same 404 a
+        # wrong one gets. (The bearer token is a header; this body "token" is only the
+        # share code.)
+        if code is not None and not isinstance(code, str):
+            return 404, _error("invalid_link")
+        link = deps.db.share_link_by_hash(auth.hash_share_token(code or ""))
+        if link is None:
+            return 404, _error("invalid_link")
     if link["revoked_at"]:
         return 403, _error("link_revoked")
     if link["expires_at"] and link["expires_at"] <= _stamp():

@@ -545,6 +545,7 @@ app/
   b/[id]/forum/              11 · Discussion (list and thread detail)
   b/[id]/share/              12 · Share: QR placeholder, three levels, expiry, codes issued, who has access
   s/[token]/                 13 · Scanning a code lands here, then into the storyboard
+  c/[code]/                  the same for a short code, three words typed or scanned (#54)
   no-access/                 14 · The link does not work
 app/credits/                 image credits (a CC BY-SA condition, so it lives in the app)
 app/study/                   study mode for evaluation sessions (#52); opened by address, never linked
