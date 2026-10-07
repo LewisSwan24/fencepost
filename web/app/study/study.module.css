@@ -1,0 +1,21 @@
+.page { padding: max(28px, env(safe-area-inset-top)) 20px max(32px, env(safe-area-inset-bottom)); }
+.back { font-size: 13px; color: var(--text-dim); text-decoration: none; }
+.back:hover { color: var(--text); }
+.title { font-size: 26px; margin: 16px 0 14px; }
+.lede { font-size: 14.5px; line-height: 1.65; color: var(--text-body); margin: 0 0 18px; text-wrap: pretty; }
+.note { font-size: 14px; line-height: 1.6; color: var(--text-muted); margin: 0 0 16px; text-wrap: pretty; }
+.status { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.counts { font-size: 13.5px; color: var(--text-dim); margin: 0 0 16px; }
+
+.list { list-style: none; padding: 0; margin: 0 0 20px; }
+.item {
+  display: flex; gap: 12px; align-items: baseline;
+  padding: 10px 12px; margin-bottom: 8px;
+  border-radius: var(--radius-md); background: var(--surface);
+}
+.time { flex: none; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.question { font-size: 14.5px; line-height: 1.5; color: var(--text-body); overflow-wrap: anywhere; }
+
+.actions { display: flex; flex-direction: column; gap: 10px; }
+.confirm { display: flex; flex-direction: column; gap: 10px; }
+.confirm .note { margin: 0; }

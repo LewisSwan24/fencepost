@@ -21,6 +21,7 @@
 import * as fixtures from "./fixtures.js";
 import { COPY } from "./copy.js";
 import { toHandle } from "./handle.js";
+import { noteExchange } from "./study.js";
 
 export const BASE = process.env.NEXT_PUBLIC_FENCEPOST_API || "http://127.0.0.1:8787";
 export const MODE = process.env.NEXT_PUBLIC_FENCEPOST_MODE || "hybrid";
@@ -674,7 +675,13 @@ export async function deleteEntry(entryId) {
 
 // ── Assistant ──────────────────────────
 export async function askAssistant(message, storyboardId) {
-  if (!assistantIsLive) return delayed(fixtures.assistantReply(message));
+  if (!assistantIsLive) {
+    const answer = fixtures.assistantReply(message);
+    // An evaluation session notes what the fixed replies could not answer (#52). Here and
+    // only here: the live path already records server-side, and study.js sends nothing.
+    noteExchange(message, answer.reply);
+    return delayed(answer);
+  }
   return call("/api/assistant", {
     body: { role: "neighbour", storyboard_id: storyboardId, message },
   });
