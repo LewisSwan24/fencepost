@@ -521,11 +521,14 @@ class Database:
         """
         rows = self.conn.execute(
             "SELECT l.id, l.level, l.expires_at, l.max_uses, l.used_count, "
-            "l.revoked_at, l.created_by, u.handle AS created_by_handle "
+            "l.revoked_at, l.created_by, u.handle AS created_by_handle, "
+            # Whether it can also be redeemed by a short code (#54). The code itself is
+            # never here, for the same reason the token is not.
+            "l.code_hash IS NOT NULL AS has_code "
             "FROM share_links l JOIN users u ON u.id = l.created_by "
             "WHERE l.storyboard_id = ? ORDER BY l.rowid DESC",
             (storyboard_id,)).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "has_code": bool(row["has_code"])} for row in rows]
 
     def storyboard_status(self, storyboard_id: str):
         row = self.conn.execute("SELECT status FROM storyboards WHERE id = ?",
@@ -616,12 +619,13 @@ class Database:
     # ---------- share links ----------
 
     def add_share_link(self, storyboard_id: str, created_by: str, token_hash: str,
-                       level: str, expires_at, max_uses) -> str:
+                       level: str, expires_at, max_uses, code_hash: str = None) -> str:
         link_id = new_id()
         self.conn.execute(
             "INSERT INTO share_links (id, storyboard_id, token_hash, created_by, level, "
-            "expires_at, max_uses, used_count) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-            (link_id, storyboard_id, token_hash, created_by, level, expires_at, max_uses))
+            "expires_at, max_uses, used_count, code_hash) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+            (link_id, storyboard_id, token_hash, created_by, level, expires_at, max_uses,
+             code_hash))
         self.conn.commit()
         return link_id
 
@@ -629,6 +633,17 @@ class Database:
         row = self.conn.execute("SELECT * FROM share_links WHERE token_hash = ?",
                                 (token_hash,)).fetchone()
         return dict(row) if row else None
+
+    def share_link_by_code(self, code_hash: str):
+        """The link a short code redeems. At most one row, because issuing refuses a code
+        any row already holds (code_taken), dead links included: a new code that matched
+        an expired one would otherwise answer "expired" to the person it was meant for."""
+        row = self.conn.execute("SELECT * FROM share_links WHERE code_hash = ?",
+                                (code_hash,)).fetchone()
+        return dict(row) if row else None
+
+    def code_taken(self, code_hash: str) -> bool:
+        return self.share_link_by_code(code_hash) is not None
 
     def share_link(self, link_id: str):
         row = self.conn.execute("SELECT * FROM share_links WHERE id = ?", (link_id,)).fetchone()

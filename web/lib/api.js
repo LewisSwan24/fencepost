@@ -796,16 +796,47 @@ export async function myRecord() {
 }
 
 // ── Sharing and access ─────────────────
-export async function issueShareLink({ storyboardId, level, expiresInDays }) {
-  if (!usesNetwork) return fixtures.issueShareLink({ storyboardId, level, expiresInDays });
-  return call("/api/share-links", {
-    body: { storyboard_id: storyboardId, level, expires_in_days: expiresInDays },
-  });
+// With shortCode, the link can also be redeemed by three words (#54), and the answer carries
+// them once as short_code, the same once-only rule as the token. The server allows such a
+// link a week at most.
+export async function issueShareLink({ storyboardId, level, expiresInDays, shortCode = false }) {
+  if (!usesNetwork) {
+    const issued = fixtures.issueShareLink({ storyboardId, level, expiresInDays });
+    return shortCode ? withOfflineCode(issued) : issued;
+  }
+  const body = { storyboard_id: storyboardId, level, expires_in_days: expiresInDays };
+  if (shortCode) body.short_code = true;
+  return call("/api/share-links", { body });
 }
 
 export async function redeemShareLink(token) {
   if (!usesNetwork) return fixtures.redeemShareLink(token);
   return call("/api/share-links/redeem", { body: { token } });
+}
+
+// A short code, sent as typed: the server is the one that knows the word list, so it does
+// the tidying (capitals, spaces, words run together) and answers like a token would.
+export async function redeemShortCode(code) {
+  if (!usesNetwork) {
+    const token = OFFLINE_CODES.get(String(code).toLowerCase().match(/[a-z]+/g)?.join("-"));
+    return fixtures.redeemShareLink(token || "");
+  }
+  return call("/api/share-links/redeem", { body: { code } });
+}
+
+// Offline short codes. fixtures.js knows nothing about them and is left that way, so the
+// code is made here and remembered against the fixture token it stands in for, and the link
+// it belongs to is marked has_code when the list comes back.
+const OFFLINE_WORDS = ["wattle", "moon", "possum", "gum", "fern", "dusk", "jacaranda", "creek"];
+const OFFLINE_CODES = new Map();
+const OFFLINE_CODED_LINKS = new Set();
+
+function withOfflineCode(issued) {
+  const pick = () => OFFLINE_WORDS[Math.floor(Math.random() * OFFLINE_WORDS.length)];
+  const code = [pick(), pick(), pick()].join("-");
+  OFFLINE_CODES.set(code, issued.token);
+  OFFLINE_CODED_LINKS.add(issued.share_link_id);
+  return { ...issued, short_code: code };
 }
 
 export async function grants(storyboardId) {
@@ -851,7 +882,10 @@ export async function closeStoryboard({ storyboardId, closedNote }) {
 // level, who issued it, when it expires and whether it still works, not what the code is.
 // Revoked ones are listed too: after turning one off you have to see that it took.
 export async function shareLinks(storyboardId) {
-  if (!usesNetwork) return fixtures.shareLinks(storyboardId);
+  if (!usesNetwork) {
+    const view = fixtures.shareLinks(storyboardId);
+    return { ...view, links: view.links.map((l) => ({ ...l, has_code: OFFLINE_CODED_LINKS.has(l.id) })) };
+  }
   return call("/api/share-links?storyboard_id=" + encodeURIComponent(storyboardId));
 }
 

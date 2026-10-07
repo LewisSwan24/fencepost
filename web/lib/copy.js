@@ -253,6 +253,16 @@ export const COPY = {
   // somebody is about to point another person's phone at it.
   qrNote: "Placeholder graphic. A real code is generated when you share.",
   qrLive: "Point a camera at this. It opens the storyboard at the access above, until it expires or you turn it off.",
+  // Short codes (#54): three words said at the fence and typed in. The owner's call
+  // (2026-10-07): the code first, the QR beside it as the other way in.
+  shortCodeOption: "Also give a short code",
+  shortCodeSub: "Three words they can type in instead of scanning. Lasts a week at most.",
+  shortCodeLabel: "They can type this in",
+  shortCodeWhere: "On Fencepost: Got a code from a neighbour?",
+  codeHasWords: "Short code",
+  haveCode: "Got a code from a neighbour?",
+  haveCodeHint: "Three words, like the ones on their screen.",
+  haveCodeGo: "Open",
   whatTheyCanDo: "What they can do",
   linkExpires: "Link expires",
   whoHasAccess: "Who has access",
@@ -395,6 +405,12 @@ export const EXPIRY = [
 // fails if the two part. It must also be one of the ids above, or the screen opens with no
 // chip selected and sends a number the owner never saw — lib/fixtures.test.mjs checks that.
 export const DEFAULT_EXPIRY_DAYS = 7;
+
+// With a short code (#54) the server takes a week at most and defaults to a day, because a
+// code that can be guessed should not be left live for long (SHORT_CODE_MAX_DAYS and
+// SHORT_CODE_DAYS in proxy/app.py; tests/test_short_codes.py holds the two sides together).
+export const SHORT_CODE_MAX_DAYS = 7;
+export const SHORT_CODE_DAYS = 1;
 
 // The Screener returns only reason_codes. What an author sees is these sentences; they
 // never see the verdict or the note.

@@ -17,7 +17,10 @@ import hashlib
 import hmac
 import secrets
 import os
+import re
 import time
+
+from .words import WORDS
 
 
 class AuthError(Exception):
@@ -113,6 +116,48 @@ def new_share_token() -> str:
 
 def hash_share_token(token: str) -> str:
     return hashlib.sha256((token or "").encode()).hexdigest()
+
+
+# Short codes (#54): three words a neighbour can be told at the fence and type in.
+SHORT_CODE_WORDS = 3
+_WORD_SET = frozenset(WORDS)
+_WORD_LENGTHS = range(min(map(len, WORDS)), max(map(len, WORDS)) + 1)
+
+
+def new_short_code() -> str:
+    return "-".join(secrets.choice(WORDS) for _ in range(SHORT_CODE_WORDS))
+
+
+def normalise_short_code(text) -> str | None:
+    """The canonical `word-word-word`, or None for anything that is not one.
+
+    Typed codes arrive in every shape: capitals, spaces, dots, an autocorrected word
+    break, or all three run together. Splitting on anything that is not a letter covers
+    most of it. Run together, the letters are split into three listed words, and only an
+    unambiguous split counts: two readings means the code is not knowable, and guessing
+    between them could hand over somebody else's link.
+    """
+    if not isinstance(text, str) or len(text) > 64:
+        return None
+    runs = re.findall(r"[a-z]+", text.lower())
+    if len(runs) == SHORT_CODE_WORDS and all(r in _WORD_SET for r in runs):
+        return "-".join(runs)
+    letters = "".join(runs)
+    readings = [
+        (letters[:i], letters[i:j], letters[j:])
+        for i in _WORD_LENGTHS for j in (i + n for n in _WORD_LENGTHS)
+        if j < len(letters)
+        and letters[:i] in _WORD_SET and letters[i:j] in _WORD_SET and letters[j:] in _WORD_SET
+    ]
+    return "-".join(readings[0]) if len(readings) == 1 else None
+
+
+def hash_short_code(code: str) -> str:
+    """Keyed, unlike hash_share_token. A full token has 256 bits and its plain SHA-256 cannot
+    be walked back; a short code is one of about a billion and a half, which a laptop hashes
+    through in minutes. So a copy of the table alone must not be enough to read the codes off
+    it. The `code|` prefix keeps this material apart from a token signature's."""
+    return _sign("code|" + code)
 
 
 def issue(user_id: str, issued_at: int = None) -> str:

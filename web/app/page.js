@@ -22,6 +22,7 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(null);
+  const [code, setCode] = useState("");
 
   useEffect(() => {
     dashboard().then(setBoards, (e) => setError(e.message));
@@ -88,6 +89,26 @@ export default function Home() {
             )}
           </>
         ) : null}
+
+        {/* Where a short code is typed (#54): three words read off a neighbour's screen.
+            Sent as typed; the server knows the word list and does the tidying. */}
+        <form className={styles.codeForm}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (code.trim()) router.push("/c/" + encodeURIComponent(code.trim()));
+              }}>
+          <label htmlFor="have-code" className={ui.kicker}>{COPY.haveCode}</label>
+          <p id="have-code-hint" className={styles.codeHint}>{COPY.haveCodeHint}</p>
+          <div className={styles.codeRow}>
+            <input id="have-code" className={styles.codeInput} value={code}
+                   onChange={(e) => setCode(e.target.value)} maxLength={64}
+                   autoComplete="off" autoCapitalize="none" spellCheck={false}
+                   aria-describedby="have-code-hint" placeholder="wattle moon possum" />
+            <button type="submit" className={styles.codeGo} disabled={!code.trim()}>
+              {COPY.haveCodeGo}
+            </button>
+          </div>
+        </form>
       </div>
 
       <div className={styles.newWrap}>

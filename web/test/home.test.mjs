@@ -27,7 +27,8 @@ function half(name) {
   const kicker = screen.getByText(name);
   const out = [];
   for (let node = kicker.nextElementSibling; node; node = node.nextElementSibling) {
-    if (node.textContent === "Active" || node.textContent === "Past") break;
+    // The code box (#54) follows the last half; it is not a storyboard.
+    if (node.textContent === "Active" || node.textContent === "Past" || node.tagName === "FORM") break;
     out.push(node);
   }
   return out;

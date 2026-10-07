@@ -33,6 +33,13 @@ CEILINGS = {
     # unbounded rows. Capped per address like sessions, and generous for the same reason: a
     # lecture theatre of markers can sit behind one campus NAT.
     "password": (int(os.getenv("LIMIT_PASSWORD_PER_15MIN", "30")), 900),
+    # Short-code redemptions (#54), counted per attempt whether or not it hits. `code` is
+    # everyone together and is the one that bounds guessing, because open sign-up mints a
+    # fresh user per handle: with about ten live codes among ~1.5 billion, 200 an hour is
+    # 4,800 guesses a day, about 1 in 30,000 of finding one. `code_user` keeps a single
+    # caller from spending that shared allowance on everybody else's behalf.
+    "code": (int(os.getenv("LIMIT_CODE_ATTEMPTS_PER_HOUR", "200")), 3600),
+    "code_user": (int(os.getenv("LIMIT_CODE_ATTEMPTS_PER_USER_HOUR", "20")), 3600),
 }
 
 

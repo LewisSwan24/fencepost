@@ -60,7 +60,11 @@ CREATE TABLE share_links (             -- what sits behind a QR code
   expires_at    TIMESTAMP,
   max_uses      INTEGER,
   used_count    INTEGER NOT NULL DEFAULT 0,
-  revoked_at    TIMESTAMP
+  revoked_at    TIMESTAMP,
+  code_hash     TEXT                    -- the short code's keyed hash (#54), never the code
+  -- A short code (three words) is a second way to redeem the same link, so expiry, use
+  -- limit and revocation cover it with no rules of their own. Not UNIQUE: a column with a
+  -- constraint cannot be added to a populated table in place, so issuing checks for a clash.
 );
 
 CREATE TABLE chat_messages (
@@ -144,6 +148,9 @@ CREATE TABLE ceilings (             -- the two ceilings that belong to no user, 
   -- key is an HMAC of the client address, never the address itself. Not in rate_limits
   -- because that table's user_id is NOT NULL with an enforced foreign key, and these
   -- counts are taken before, or regardless of, any user. Same one-row-per-call counting.
+  -- Since #54 also 'code' (every short-code redemption attempt, whoever made it) and
+  -- 'code:<user_id>'. Open sign-up mints a fresh user per handle, so only the first of
+  -- the two bounds how many guesses get made, and it is what the odds in app.py rest on.
 );
 
 CREATE INDEX ceilings_lookup ON ceilings (bucket, used_at);

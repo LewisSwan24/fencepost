@@ -13,12 +13,13 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { grants, issueShareLink, revokeGrant, shareLinks, revokeShareLink, me }
   from "../../../../lib/api";
-import { COPY, LEVELS, EXPIRY, DEFAULT_EXPIRY_DAYS } from "../../../../lib/copy";
+import { COPY, LEVELS, EXPIRY, DEFAULT_EXPIRY_DAYS, SHORT_CODE_DAYS, SHORT_CODE_MAX_DAYS }
+  from "../../../../lib/copy";
 import { monthDay, until } from "../../../../lib/format";
 import { BackButton, ErrorNote, ui } from "../../../../components/ui";
 import QrPlaceholder from "../../../../components/QrPlaceholder";
 import QrCode from "../../../../components/QrCode";
-import { shareUrl } from "../../../../lib/qr";
+import { codeUrl, shareUrl } from "../../../../lib/qr";
 import styles from "./share.module.css";
 
 // Has this date been and gone. One definition, because stateOf() deciding a code has
@@ -31,6 +32,7 @@ export default function Share({ params }) {
   const router = useRouter();
   const [level, setLevel] = useState("contribute");
   const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);   // proxy/app.py SHARE_LINK_DAYS
+  const [withCode, setWithCode] = useState(false);
   const [issued, setIssued] = useState(null);
   const [access, setAccess] = useState(null);
   const [links, setLinks] = useState(null);
@@ -42,9 +44,23 @@ export default function Share({ params }) {
   // placeholder in place. window is read here rather than at module scope because this file
   // is prerendered on the server, where there is no origin — and because issued is null on
   // the first render, the branch that reads it cannot run before hydration.
+  // With a short code the square carries /c/<code>: the same link, a much shorter address,
+  // so fewer and bigger modules (#54).
   const live = issued && typeof window !== "undefined"
-    ? shareUrl(window.location.origin, issued.token)
+    ? (issued.short_code
+        ? codeUrl(window.location.origin, issued.short_code)
+        : shareUrl(window.location.origin, issued.token))
     : null;
+
+  // A short code may live a week at most, so the longer choices go while it is on, and
+  // turning it on drops a longer choice to a day rather than leave a chip the server refuses.
+  const expiryChoices = withCode ? EXPIRY.filter((o) => o.id <= SHORT_CODE_MAX_DAYS) : EXPIRY;
+  function toggleCode() {
+    const on = !withCode;
+    setWithCode(on);
+    if (on && days > SHORT_CODE_MAX_DAYS) setDays(SHORT_CODE_DAYS);
+    setIssued(null);
+  }
 
   // The server answers cannot_share to anybody below reshare, so this whole screen should
   // not be offered to them. The Share button on the storyboard page is already gated on
@@ -76,7 +92,8 @@ export default function Share({ params }) {
     setBusy(true);
     setError(null);
     try {
-      setIssued(await issueShareLink({ storyboardId: id, level, expiresInDays: days }));
+      setIssued(await issueShareLink({ storyboardId: id, level, expiresInDays: days,
+                                       shortCode: withCode }));
       loadLinks();
     } catch (e) {
       setError(e.message);
@@ -145,6 +162,15 @@ export default function Share({ params }) {
             QrCode returns null when it cannot encode a value, so the same fallback covers a
             token the library refuses. */}
         <div className={styles.qrWrap}>
+          {/* The code first, the square beside it as the other way in (#54). Spelled out
+              in words so it can be read aloud at the fence, and announced as one thing. */}
+          {issued?.short_code ? (
+            <div className={styles.words} role="group" aria-label={COPY.shortCodeLabel}>
+              <span className={styles.wordsLabel}>{COPY.shortCodeLabel}</span>
+              <span className={styles.wordsCode}>{issued.short_code.split("-").join(" ")}</span>
+              <span className={styles.wordsWhere}>{COPY.shortCodeWhere}</span>
+            </div>
+          ) : null}
           {live ? <QrCode value={live} /> : <QrPlaceholder />}
           <p className={styles.qrNote}>{live ? COPY.qrLive : COPY.qrNote}</p>
           {live ? <div className={styles.link}>{live}</div> : null}
@@ -166,9 +192,19 @@ export default function Share({ params }) {
           );
         })}
 
+        <button type="button" aria-pressed={withCode}
+                className={[styles.option, styles.codeOption, withCode ? styles.optionOn : ""].join(" ")}
+                onClick={toggleCode}>
+          <span className={[styles.pip, styles.pipSquare, withCode ? styles.pipOn : ""].join(" ")} />
+          <span className={styles.optionText}>
+            <span className={styles.optionLabel}>{COPY.shortCodeOption}</span>
+            <span className={styles.optionSub}>{COPY.shortCodeSub}</span>
+          </span>
+        </button>
+
         <div className={ui.kicker}>{COPY.linkExpires}</div>
         <div className={styles.chips}>
-          {EXPIRY.map((option) => (
+          {expiryChoices.map((option) => (
             <button key={option.id} type="button"
                     className={[styles.chip, days === option.id ? styles.chipOn : ""].join(" ")}
                     onClick={() => { setDays(option.id); setIssued(null); }}>
@@ -203,6 +239,7 @@ export default function Share({ params }) {
                   {/* share_links has no created_at column, so it cannot say "issued three
                       days ago". All it can say is the expiry and the number of uses. */}
                   {lifetime(link)}
+                  {link.has_code ? " · " + COPY.codeHasWords : ""}
                   {link.used_count
                     ? " · " + COPY.codeUses + " " + link.used_count
                       + (link.max_uses ? "/" + link.max_uses : "")

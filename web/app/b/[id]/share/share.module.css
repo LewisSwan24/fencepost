@@ -24,6 +24,20 @@
 .optionLabel { font-size: 15.5px; font-weight: 600; }
 .optionSub { font-size: 12.5px; line-height: 1.4; color: var(--text-dim); font-weight: 400; }
 
+/* The short-code switch sits apart from the three levels and has a square mark, because it
+   is an extra rather than a fourth choice among them. */
+.codeOption { margin-top: 18px; }
+.pipSquare { border-radius: 5px; }
+
+/* The short code itself (#54): large enough to read aloud from, set apart from the square. */
+.words { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.wordsLabel { font-size: 12px; color: var(--text-dim); }
+.wordsCode {
+  font-size: 24px; font-weight: 700; letter-spacing: 0.01em; color: var(--text);
+  overflow-wrap: anywhere;
+}
+.wordsWhere { font-size: 12px; line-height: 1.5; color: var(--text-dim); max-width: 260px; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   min-height: 40px; padding: 0 16px; border-radius: var(--radius-pill);
