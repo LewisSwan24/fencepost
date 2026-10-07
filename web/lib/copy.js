@@ -54,6 +54,30 @@ export const COPY = {
   // this product explains itself where it stands: the QR placeholder does, the frame stills
   // do, /credits does. The assistant is the last one that should be vague about it.
   assistantCanned: "Pre-written answers for this demo. Nothing is generated live.",
+  // Study mode (#52). DRAFT: the wording, and whether a participant can opt out mid-session,
+  // wait on the owner (the issue is hitl for exactly this). The notice sits in the chat
+  // sheet for as long as recording is on, so nobody is noted without being told.
+  studyNotice:
+    "This session is part of a study. Questions Possum Help can't answer are noted on this device so the team can see what it's missing. Nothing is sent anywhere.",
+  studyTitle: "Study mode",
+  studyLede:
+    "For evaluation sessions. While this is on, every question that gets Possum Help's general reply is noted word for word in this browser, and other questions are only counted. Nothing leaves the device until you export it.",
+  studyTell:
+    "Before you start, tell the participant that questions Possum Help can't answer will be noted, and that the chat will say so while it's on.",
+  studyStart: "Start noting",
+  studyOn: (time) => `Noting since ${time}`,
+  studyCounts: (routed, missed) =>
+    `${routed} answered by a fixed reply · ${missed} got the general reply`,
+  studyNoMisses: "Nothing has got the general reply yet.",
+  studyExport: "Export notes",
+  studyEnd: "End and delete notes",
+  studyEndConfirm: "This deletes the notes from this browser. Export them first if you need them.",
+  studyEndYes: "Delete notes",
+  studyEndNo: "Keep them",
+  studyLive:
+    "This site runs the live assistant, which keeps its own record. Study mode only notes the pre-written answers, so it would note nothing here.",
+  studyNoStorage:
+    "This browser won't keep anything for this site, so study mode can't note anything here. Try a normal window.",
 
   // Asked once, on the first visit, before anything exists to write. It cannot be a setting
   // on the profile screen: changing a handle makes you a different user on the server and

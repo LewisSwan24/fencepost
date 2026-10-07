@@ -547,6 +547,8 @@ app/
   s/[token]/                 13 · Scanning a code lands here, then into the storyboard
   no-access/                 14 · The link does not work
 app/credits/                 image credits (a CC BY-SA condition, so it lives in the app)
+app/study/                   study mode for evaluation sessions (#52); opened by address, never linked
+lib/study.js                 what the pre-written answers missed, kept in this browser until exported
 components/ui.js             the shared shell and controls
 components/Shot.js           one frame: picture, night grading, dark wash
 components/Chat.js           10 · The Possum Help conversation

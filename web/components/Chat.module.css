@@ -39,6 +39,10 @@
 
 /* These answers are pre-written. Quiet, but in the drawer rather than the footer — the
    thought that you are talking to an AI forms right here. */
+.study {
+  margin: 12px 0 0; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--line);
+  font-size: 13.5px; line-height: 1.55; color: var(--text-body); text-wrap: pretty;
+}
 .canned {
   margin: 10px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim);
 }

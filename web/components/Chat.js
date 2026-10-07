@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { askAssistant, assistantOffline, assistantIsLive } from "../lib/api";
 import { ASSISTANT_DISCLOSURE, ASSISTANT_SCRIPT } from "../lib/fixtures";
 import { COPY } from "../lib/copy";
+import { studyRecord } from "../lib/study";
 import { Sheet, Spinner, ui } from "./ui";
 import styles from "./Chat.module.css";
 
@@ -18,6 +19,7 @@ export default function Chat({ storyboardId, onClose }) {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [offline, setOffline] = useState(assistantOffline);
+  const [studying] = useState(() => !assistantIsLive && studyRecord() !== null);
   const bottom = useRef(null);
   const field = useRef(null);
 
@@ -66,6 +68,9 @@ export default function Chat({ storyboardId, onClose }) {
             {assistantIsLive ? null : (
               <p className={styles.canned}>{COPY.assistantCanned}</p>
             )}
+            {/* For as long as study mode is noting misses (#52), the person asking is told.
+                Read once on open: a session is started from /study, never mid-conversation. */}
+            {studying ? <p className={styles.study}>{COPY.studyNotice}</p> : null}
           </>
         )}
 
