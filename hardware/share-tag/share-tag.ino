@@ -245,19 +245,21 @@ void startSetup() {
   char name[32];
   snprintf(name, sizeof name, "Fencepost-tag-%02X%02X", mac[4], mac[5]);
   apName = name;
+
+  // The radio goes on first: with it off, esp_random() is only pseudo-random.
+  WiFi.mode(WIFI_AP);
+
   // A fresh password every time setup opens, shown only on the tag's own screen, so the
-  // page that changes the code is reachable only by whoever is holding the tag.
-  char pass[9];
-  for (int i = 0; i < 8; i++) pass[i] = '0' + (esp_random() % 10);
-  pass[8] = 0;
+  // page that changes the code is reachable only by whoever is holding the tag. Ten
+  // characters from 31 (about 2^49), because anyone in range who catches the phone joining
+  // can try passwords offline; eight digits would fall in minutes. No 0/o, 1/l/i.
+  static const char ALPHABET[] = "abcdefghjkmnpqrstuvwxyz23456789";
+  char pass[11];
+  for (int i = 0; i < 10; i++) pass[i] = ALPHABET[esp_random() % (sizeof ALPHABET - 1)];
+  pass[10] = 0;
   apPassword = pass;
 
-  WiFi.mode(WIFI_AP);
   WiFi.softAP(apName.c_str(), apPassword.c_str());
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/save", HTTP_POST, handleSave);
-  server.on("/forget", HTTP_POST, handleForget);
-  server.onNotFound(handleRoot);
   server.begin();
   inSetup = true;
   setupUntil = millis() + SETUP_MS;
@@ -279,7 +281,16 @@ void setup() {
   M5.begin(cfg);
   M5.Display.setRotation(0);                 // portrait, 135 x 240
   M5.BtnA.setHoldThresh(2000);
+  // Most of its life is waiting for a button, so the CPU runs at the lowest clock the
+  // access point still works at; the battery is 120 mAh.
+  setCpuFrequencyMhz(80);
   WiFi.mode(WIFI_OFF);
+  // Registered once: WebServer keeps every handler it is given, so doing this on each
+  // setup would add another set every time.
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/save", HTTP_POST, handleSave);
+  server.on("/forget", HTTP_POST, handleForget);
+  server.onNotFound(handleRoot);
   load();
   showCode();                                // a moment on power-up, then dark
 }

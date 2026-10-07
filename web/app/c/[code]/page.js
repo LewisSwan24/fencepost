@@ -16,6 +16,17 @@ import { ui } from "../../../components/ui";
 
 const STAYS = new Set(["unreachable", "session_ended", "rate_limited"]);
 
+// The code is typed by hand, so the address can hold a stray "%" that is not an escape
+// ("50% moon", or a mangled /c/%E0). decodeURIComponent throws on those; the raw text is
+// a wrong code like any other and goes to /no-access rather than the error screen.
+function typed(code) {
+  try {
+    return decodeURIComponent(code);
+  } catch {
+    return code;
+  }
+}
+
 export default function RedeemCode({ params }) {
   const { code } = use(params);
   const router = useRouter();
@@ -25,7 +36,7 @@ export default function RedeemCode({ params }) {
   useEffect(() => {
     let alive = true;
     const timer = setTimeout(() => alive && setSlow(true), 900);
-    redeemShortCode(decodeURIComponent(code)).then(
+    redeemShortCode(typed(code)).then(
       (granted) => alive && router.replace("/b/" + granted.storyboard_id + "?via=link"),
       (err) => {
         if (!alive) return;

@@ -19,7 +19,7 @@ import { monthDay, until } from "../../../../lib/format";
 import { BackButton, ErrorNote, ui } from "../../../../components/ui";
 import QrPlaceholder from "../../../../components/QrPlaceholder";
 import QrCode from "../../../../components/QrCode";
-import { codeUrl, shareUrl } from "../../../../lib/qr";
+import { shareUrl } from "../../../../lib/qr";
 import styles from "./share.module.css";
 
 // Has this date been and gone. One definition, because stateOf() deciding a code has
@@ -44,21 +44,23 @@ export default function Share({ params }) {
   // placeholder in place. window is read here rather than at module scope because this file
   // is prerendered on the server, where there is no origin — and because issued is null on
   // the first render, the branch that reads it cannot run before hydration.
-  // With a short code the square carries /c/<code>: the same link, a much shorter address,
-  // so fewer and bigger modules (#54).
+  // The square carries /s/<token> even when there is a short code (#54). Every attempt at a
+  // code counts against one shared hourly allowance, so someone burning through it would
+  // stop scans as well as typing if the square went through /c/. The token is unguessable
+  // and is not counted. The share tag holds only the words, so its square has to use /c/.
   const live = issued && typeof window !== "undefined"
-    ? (issued.short_code
-        ? codeUrl(window.location.origin, issued.short_code)
-        : shareUrl(window.location.origin, issued.token))
+    ? shareUrl(window.location.origin, issued.token)
     : null;
 
-  // A short code may live a week at most, so the longer choices go while it is on, and
-  // turning it on drops a longer choice to a day rather than leave a chip the server refuses.
+  // A short code may live a week at most, so the longer choices go while it is on. Turning
+  // it on sets a day: three words are guessable in a way a token is not, so the default is
+  // the short end, and the owner can still pick up to a week. Leaving it at the page's own
+  // default would send that default every time, and the server's day would never apply.
   const expiryChoices = withCode ? EXPIRY.filter((o) => o.id <= SHORT_CODE_MAX_DAYS) : EXPIRY;
   function toggleCode() {
     const on = !withCode;
     setWithCode(on);
-    if (on && days > SHORT_CODE_MAX_DAYS) setDays(SHORT_CODE_DAYS);
+    if (on) setDays(SHORT_CODE_DAYS);
     setIssued(null);
   }
 

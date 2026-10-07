@@ -35,15 +35,6 @@ export function shareUrl(origin, token) {
 }
 
 /**
- * Where a short code lands (#54). Far shorter than /s/<token>, so a square that carries it
- * has fewer, bigger modules: easier to read off a small screen held out at the fence.
- */
-export function codeUrl(origin, code) {
-  if (!origin || !code) return null;
-  return origin.replace(/\/+$/, "") + "/c/" + code;
-}
-
-/**
  * A square matrix of booleans, true where a module is dark.
  *
  * Returns null for an empty or unencodable value rather than throwing. The only caller is a

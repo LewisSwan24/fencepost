@@ -25,7 +25,7 @@ import api.index as entry                                          # noqa: E402
 import test_resources as base                                      # noqa: E402
 from proxy import auth                                             # noqa: E402
 from proxy.app import SHORT_CODE_DAYS, SHORT_CODE_MAX_DAYS         # noqa: E402
-from proxy.db import SqliteCeilings                                # noqa: E402
+from proxy.db import Database, SqliteCeilings                                # noqa: E402
 from proxy.ports import CEILINGS                                   # noqa: E402
 from proxy.words import WORDS                                      # noqa: E402
 
@@ -210,6 +210,35 @@ class ShortCodes(base.Fixture):
         self.assertEqual(200, status)
         self.assertEqual(fresh, second["short_code"])
 
+    def test_issuing_gives_up_after_five_clashes_and_leaves_no_row(self):
+        owner, board = self.board()
+        _, first = self.link(owner["token"], board)
+        before = self.db.conn.execute("SELECT COUNT(*) AS n FROM share_links").fetchone()["n"]
+        with mock.patch.object(auth, "new_short_code", return_value=first["short_code"]) as made:
+            status, payload = self.link(owner["token"], board)
+        self.assertEqual((503, "code_unavailable"), (status, payload["error"]["code"]))
+        self.assertEqual(5, made.call_count)
+        after = self.db.conn.execute("SELECT COUNT(*) AS n FROM share_links").fetchone()["n"]
+        self.assertEqual(before, after, "a link was made without the code it was asked for")
+
+
+class AnOlderDatabase(unittest.TestCase):
+    """share_links.code_hash reaches a database made before #54, as every deployed one was."""
+
+    def test_the_column_is_added_and_a_lookup_by_code_works(self):
+        db = Database()
+        db.conn.execute("DROP TABLE share_links")
+        db.conn.execute(
+            "CREATE TABLE share_links (id TEXT PRIMARY KEY, storyboard_id TEXT NOT NULL, "
+            "token_hash TEXT NOT NULL UNIQUE, created_by TEXT NOT NULL, level TEXT NOT NULL, "
+            "expires_at TIMESTAMP, max_uses INTEGER, used_count INTEGER NOT NULL DEFAULT 0, "
+            "revoked_at TIMESTAMP)")
+        db.conn.commit()
+        db._apply_schema()
+        columns = {r["name"] for r in db.conn.execute("PRAGMA table_info(share_links)").fetchall()}
+        self.assertIn("code_hash", columns)
+        self.assertIsNone(db.share_link_by_code(auth.hash_short_code("wattle-moon-possum")))
+
 
 class GuessingIsBounded(base.Fixture):
     """CEILINGS['code'] and ['code_user']: every attempt counts, hit or miss."""
@@ -249,6 +278,30 @@ class GuessingIsBounded(base.Fixture):
             self.assertEqual(200, status)
             status, _ = self.attempt(self.session("second"))
         self.assertEqual(429, status)
+
+    def test_a_capped_caller_is_refused_even_with_the_right_code(self):
+        # Counted before the lookup: a ceiling that only counted misses, or claimed after
+        # looking, would let this one through.
+        owner, board = self.board()
+        _, issued = self.post("/api/share-links", {"storyboard_id": board, "short_code": True},
+                              token=owner["token"])
+        with mock.patch.dict(CEILINGS, {"code_user": (1, 3600), "code": (100, 3600)}):
+            guesser = self.session("guesser")
+            self.assertEqual(404, self.attempt(guesser)[0])
+            status, _ = self.post("/api/share-links/redeem", {"code": issued["short_code"]},
+                                  token=guesser["token"])
+        self.assertEqual(429, status)
+
+    def test_a_body_with_both_takes_the_token_and_is_not_counted(self):
+        owner, board = self.board()
+        _, issued = self.post("/api/share-links", {"storyboard_id": board}, token=owner["token"])
+        with mock.patch.dict(CEILINGS, {"code_user": (1, 3600), "code": (1, 3600)}):
+            who = self.session("both")
+            for _ in range(3):
+                status, _ = self.post("/api/share-links/redeem",
+                                      {"token": issued["token"], "code": "wattle-moon-possum"},
+                                      token=who["token"])
+                self.assertEqual(200, status)
 
     def test_a_token_redemption_is_not_counted(self):
         owner, board = self.board()

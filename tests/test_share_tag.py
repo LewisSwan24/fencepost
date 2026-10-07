@@ -34,6 +34,15 @@ class NeverGoesOnline(unittest.TestCase):
     def test_the_setup_access_point_has_a_password(self):
         self.assertRegex(CODE, r"WiFi\.softAP\(\s*apName\.c_str\(\),\s*apPassword\.c_str\(\)\s*\)")
 
+    def test_the_password_is_long_and_drawn_once_the_radio_is_on(self):
+        # Eight digits fall to an offline attack on a captured handshake in minutes, and
+        # with the radio off esp_random() is only pseudo-random.
+        setup = CODE[CODE.index("void startSetup() {"):CODE.index("void finishSetup() {")]
+        self.assertLess(setup.index("WiFi.mode(WIFI_AP)"), setup.index("esp_random()"))
+        length = int(re.search(r"char pass\[(\d+)\]", setup).group(1)) - 1
+        self.assertGreaterEqual(length, 10)
+        self.assertNotIn("'0' + (esp_random() % 10)", setup)
+
     def test_no_sensor_that_listens_or_watches(self):
         for unused in ["M5.Mic", "M5.Imu", "IrSender", "M5.Speaker.record"]:
             self.assertNotIn(unused, CODE)
