@@ -14,7 +14,7 @@ import userEvent from "@testing-library/user-event";
 import Share from "../app/b/[id]/share/page.js";
 import Home from "../app/page.js";
 import RedeemCode from "../app/c/[code]/page.js";
-import { issueShareLink } from "../lib/api.js";
+import { issueShareLink, shareLinks } from "../lib/api.js";
 import { COPY, EXPIRY, SHORT_CODE_DAYS, SHORT_CODE_MAX_DAYS } from "../lib/copy.js";
 import { renderScreen } from "./harness.mjs";
 import { navigated, reset } from "./stubs/navigation.mjs";
@@ -46,15 +46,33 @@ test("asking for a short code takes away the lifetimes the server would refuse",
   await user.click(toggle());
   assert.equal(toggle().getAttribute("aria-pressed"), "true");
   for (const o of long) assert.equal(chip(o.label), null, `${o.label} still offered`);
-  // The default was a week, which a short code may have; a longer pick would drop to a day.
+  // A longer pick made before the switch drops to a day as well.
   await user.click(toggle());
   await user.click(chip(long[0].label));
   await user.click(toggle());
-  const on = [...document.querySelectorAll(".chip")].find((c) => c.className.includes("chipOn"));
-  assert.equal(on.textContent, EXPIRY.find((o) => o.id === SHORT_CODE_DAYS).label);
+  assert.equal(chosen(), EXPIRY.find((o) => o.id === SHORT_CODE_DAYS).label);
 });
 
-test("the code is shown in words, and the square carries the short address", async () => {
+const chosen = () =>
+  [...document.querySelectorAll(".chip")].find((c) => c.className.includes("chipOn")).textContent;
+
+test("turning the short code on picks a day, and a day is what the server is asked for", async () => {
+  const id = fresh();
+  const user = await openShare(id);
+  assert.notEqual(chosen(), EXPIRY.find((o) => o.id === SHORT_CODE_DAYS).label,
+                  "the page default is already a day, so this test proves nothing");
+  await user.click(toggle());
+  assert.equal(chosen(), EXPIRY.find((o) => o.id === SHORT_CODE_DAYS).label);
+  await user.click(screen.getByRole("button", { name: /^Make a code$/ }));
+  await screen.findByRole("group", { name: COPY.shortCodeLabel });
+  const { links } = await shareLinks(id);
+  const coded = links.filter((l) => l.has_code);
+  assert.equal(coded.length, 1);
+  const days = (Date.parse(coded[0].expires_at) - Date.now()) / 86400000;
+  assert.ok(days > SHORT_CODE_DAYS - 0.1 && days <= SHORT_CODE_DAYS, `lives ${days.toFixed(2)} days`);
+});
+
+test("the code is shown in words, and the square still carries the token", async () => {
   const user = await openShare(fresh());
   await user.click(toggle());
   await user.click(screen.getByRole("button", { name: /^Make a code$/ }));
@@ -62,8 +80,9 @@ test("the code is shown in words, and the square carries the short address", asy
   const group = await screen.findByRole("group", { name: COPY.shortCodeLabel });
   const words = group.querySelector(".wordsCode").textContent;
   assert.match(words, /^[a-z]+ [a-z]+ [a-z]+$/);
-  assert.equal(document.querySelector(".link").textContent,
-               window.location.origin + "/c/" + words.split(" ").join("-"));
+  // The square goes through the token, not /c/: scans must not share the hourly allowance
+  // that every attempt at a code counts against.
+  assert.match(document.querySelector(".link").textContent, /\/s\/fixture-/);
   assert.ok(screen.getByRole("img"), "no square beside the code");
   await waitFor(() => assert.match(document.querySelector(".code").textContent, new RegExp(COPY.codeHasWords)));
 });
@@ -85,6 +104,11 @@ test("a short code lands in the storyboard, however it was typed", async () => {
 
 test("a wrong code goes to /no-access like any refused link", async () => {
   await land("not-a-code");
+  await waitFor(() => assert.deepEqual(navigated, [["replace", "/no-access"]]));
+});
+
+test("a stray % in the address is a wrong code, not a crash", async () => {
+  await land("50%-moon");
   await waitFor(() => assert.deepEqual(navigated, [["replace", "/no-access"]]));
 });
 

@@ -4,7 +4,7 @@ A short code is three of these joined by hyphens, `wattle-moon-gum`, read off a 
 a phone at the fence and typed in by a neighbour. So every word here has to survive being
 said out loud and typed by somebody who only heard it:
 
-- plain lowercase letters, three to six of them;
+- plain lowercase letters, three to seven of them;
 - one spelling only, so nothing with an Australian and an American form (colour, grey);
 - no homophones of each other or of a commoner word (no sea/see, tail/tale, flour/flower),
   because a code read aloud is heard, not seen;
