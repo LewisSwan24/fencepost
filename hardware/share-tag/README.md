@@ -49,5 +49,26 @@ arduino-cli upload --fqbn esp32:esp32:m5stack_stickc_plus -p COM10 hardware/shar
 Replace `COM10` with the tag's port (`arduino-cli board list`). Flashing replaces whatever
 firmware the stick had; M5Burner can put the factory one back.
 
+### On an M5StickS3
+
+The same source runs on a StickS3: M5Unified detects the board, and the screen and buttons
+match. There is no StickS3 board in the esp32 core, so build for the S3 with its options:
+
+```bash
+arduino-cli compile --fqbn "esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc" --output-dir build-s3 hardware/share-tag
+```
+
+Write the bootloader, the partition table, `boot_app0.bin` and the app. `boot_app0.bin` is
+not optional: firmware installed over the air may be booting from `app1`, and without it the
+stick keeps running that.
+
+```bash
+esptool --chip esp32s3 --port COM8 write-flash --flash-mode dio --flash-size 8MB 0x0 build-s3/share-tag.ino.bootloader.bin 0x8000 build-s3/share-tag.ino.partitions.bin 0xe000 <esp32 core>/tools/partitions/boot_app0.bin 0x10000 build-s3/share-tag.ino.bin
+```
+
+Port numbers change when a stick is replugged, so check the chip and MAC with
+`esptool --port COMx chip-id` before writing, and take a full `read-flash` backup first.
+On the S3 reading only works reliably with `--no-stub`.
+
 `BASE_URL` at the top of `share-tag.ino` is the front end's address and must match `WEB` in
 `scripts/check_deploy.py`; the test checks the two agree.
