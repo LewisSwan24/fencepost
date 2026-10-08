@@ -48,6 +48,55 @@ class NeverGoesOnline(unittest.TestCase):
             self.assertNotIn(unused, CODE)
 
 
+def body(name):
+    """The source of one function, from its definition to the next top-level one."""
+    start = CODE.index(name + " {")
+    end = re.search(r"\n(?:void|bool|String|int) \w+\(", CODE[start + 1:])
+    return CODE[start:start + 1 + end.start()] if end else CODE[start:]
+
+
+class RefusesWhatCannotOpenAnything(unittest.TestCase):
+    """Found on the device, 2026-10-08: the owner typed three words of their own, the tag took
+    them, and its square could only ever land on "link not valid", with nothing on screen
+    saying why or how to change it.
+    """
+
+    def test_the_tag_carries_the_servers_word_list(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from build_tag_words import render
+        from proxy.words import WORDS
+        header = (ROOT / "hardware" / "share-tag" / "words.h").read_text(encoding="utf-8")
+        self.assertEqual(render(WORDS), header,
+                         "words.h is out of step: run python scripts/build_tag_words.py")
+        self.assertIn('#include "words.h"', CODE)
+
+    def test_saving_refuses_words_no_share_screen_hands_out(self):
+        save = body("void handleSave()")
+        self.assertIn("unlisted(newCode)", save)
+        self.assertLess(save.index("unlisted(newCode)"), save.index("save(newCode"),
+                        "the code is saved before it is checked")
+
+    def test_a_saved_code_off_the_list_is_not_shown_as_a_square(self):
+        show = body("void showCode()")
+        self.assertLess(show.index("unlisted(code)"), show.index("qrcode("))
+
+    def test_the_example_is_not_a_code_that_passes(self):
+        from proxy.words import WORDS
+        for example in re.findall(r'placeholder=\\"([^\\"]*)\\"', SOURCE):
+            words = re.findall(r"[a-z]+", example.lower())
+            self.assertFalse(len(words) == 3 and all(w in WORDS for w in words),
+                             f"typing the example {example!r} in would be accepted")
+
+    def test_setup_can_be_cancelled_and_the_screen_put_away(self):
+        loop = body("void loop()")
+        setup_branch = loop[loop.index("if (inSetup)"):loop.index("return;")]
+        self.assertIn("M5.BtnB.wasClicked()", setup_branch)
+        self.assertIn("finishSetup()", setup_branch)
+        self.assertRegex(loop, r"if \(screenUntil\) screenOff\(\); else showCode\(\);")
+        self.assertIn('"hold to change"', CODE)
+        self.assertIn('"side key: cancel"', CODE)
+
+
 class PointsAtTheFrontEnd(unittest.TestCase):
     def test_the_square_carries_the_short_code_route(self):
         self.assertIn('String(BASE_URL) + "/c/" + code', CODE)

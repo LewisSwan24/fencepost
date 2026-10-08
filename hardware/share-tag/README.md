@@ -10,8 +10,12 @@ case is not weatherproof.
 - **Never talks to Fencepost, never joins a network, holds no account token.** It holds a
   short code and nothing else. If it is lost, turn that code off on the storyboard's Share
   screen. `tests/test_share_tag.py` checks the source for any way out to the internet.
-- Screen off unless a button was pressed: front (A) shows the code for 30 seconds, side (B)
-  shows when it expires, if that was typed in at setup.
+- Screen off unless a button was pressed: front (A) shows the code for 30 seconds and a
+  second press puts it away; side (B) shows when it expires, if that was typed in at setup.
+- **Only codes Fencepost made.** The tag carries the server's word list (`words.h`, generated
+  by `scripts/build_tag_words.py`) and refuses words no Share screen hands out, both when
+  saving and when a code saved earlier is shown. It cannot tell whether a code of listed
+  words was ever issued; that only shows when someone scans it.
 - No microphone, IMU or IR. Sensing at the street is the line the project turned down.
 
 ## Using it
@@ -19,12 +23,15 @@ case is not weatherproof.
 1. On the storyboard's **Share** screen, turn on **Also give a short code** and make a code.
 2. **Hold the tag's front button for two seconds.** It opens its own Wi-Fi access point and
    shows the network name, a fresh password and an address (192.168.4.1).
-3. On your phone, join that network, open the address, type the three words (and, if you
-   like, when the code expires) and press **Save to the tag**. The access point closes.
+3. On your phone, join that network, open `http://192.168.4.1`, type the three words (and,
+   if you like, when the code expires) and press **Save to the tag**. The access point
+   closes. Turn mobile data off first: a phone that sees no internet on this network sends
+   the request over mobile data instead, and the page times out.
 4. At the fence, press the front button. The neighbour types the three words into
    **Got a code from a neighbour?** on Fencepost, or scans the square.
 
-Setup closes by itself after five minutes if nothing is saved.
+Setup closes by itself after five minutes if nothing is saved; the side button closes it
+at once. Either way the saved code is left as it was.
 
 ## The square is small
 
