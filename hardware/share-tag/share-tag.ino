@@ -13,8 +13,12 @@
 //   - The microphone, the IMU and the IR LED are not used. Listening or sensing at the
 //     street is the surveillance line the project turned down.
 //
-// Buttons: front (A) shows the code for 30 seconds; held for two seconds it opens setup.
-// Side (B) shows when the code expires, if the owner typed that in at setup.
+// Buttons: front (A) shows the code for 30 seconds, and a second press puts it away; held
+// for two seconds it opens setup. Side (B) shows when the code expires, if the owner typed
+// that in at setup, and during setup it cancels without changing the saved code.
+//
+// The tag cannot ask the server whether a code exists, but it carries the server's word
+// list (words.h) and refuses words no Share screen hands out, at setup and on screen.
 //
 // Build and flash: see README.md beside this file.
 
@@ -22,6 +26,8 @@
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
+
+#include "words.h"
 
 // Where a short code lands. The square carries BASE_URL + "/c/" + code.
 static const char* BASE_URL = "https://fencepost-app.vercel.app";
@@ -62,6 +68,32 @@ String normalise(const String& typed) {
   for (size_t i = 0; i < out.length(); i++) if (out[i] == '-') words++;
   if (words != 3 || out.length() > 40) return "";
   return out;
+}
+
+// The server's word list, generated into words.h. The tag cannot ask the server whether a
+// code was ever issued, but it can refuse words no Share screen hands out: an owner's own
+// three words, or a typo, which otherwise sat on the tag as a square that could only fail.
+bool listed(const String& word) {
+  int lo = 0, hi = WORDS_COUNT - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2;
+    int cmp = strcmp(word.c_str(), WORDS[mid]);
+    if (cmp == 0) return true;
+    if (cmp < 0) hi = mid - 1; else lo = mid + 1;
+  }
+  return false;
+}
+
+// The first of the three words that is not on the list, or empty when all three are.
+String unlisted(const String& normalised) {
+  int start = 0;
+  while (true) {
+    int dash = normalised.indexOf('-', start);
+    String word = normalised.substring(start, dash < 0 ? normalised.length() : dash);
+    if (!listed(word)) return word;
+    if (dash < 0) return "";
+    start = dash + 1;
+  }
 }
 
 void load() {
@@ -111,6 +143,18 @@ void showCode() {
     centred("button to set one", 138, &fonts::Font2, TFT_LIGHTGREY);
     return;
   }
+  // A code saved before the tag checked the word list, or by an older firmware, can hold
+  // words no Share screen hands out. Showing its square would only send a neighbour to
+  // "link not valid", so say what is wrong and how to fix it instead.
+  if (unlisted(code).length()) {
+    centred("Not a", 60, &fonts::FreeSansBold9pt7b, TFT_WHITE);
+    centred("Fencepost code", 84, &fonts::FreeSansBold9pt7b, TFT_WHITE);
+    centred("Make one on the", 124, &fonts::Font2, TFT_LIGHTGREY);
+    centred("Share screen, then", 142, &fonts::Font2, TFT_LIGHTGREY);
+    centred("hold the front", 160, &fonts::Font2, TFT_LIGHTGREY);
+    centred("button to set it", 178, &fonts::Font2, TFT_LIGHTGREY);
+    return;
+  }
   // The square on a light ground with its quiet margin, so a camera can find its edges.
   const int side = M5.Display.width() - 8;
   M5.Display.fillRect(4, 4, side, side, TFT_WHITE);
@@ -119,16 +163,19 @@ void showCode() {
   M5.Display.qrcode(url.c_str(), 4, 4, side, 1, true);
 
   // The code itself, one word to a line, large enough to read aloud from.
-  int y = side + 14;
+  int y = side + 10;
   int start = 0;
   while (start <= (int)code.length()) {
     int dash = code.indexOf('-', start);
     String word = code.substring(start, dash < 0 ? code.length() : dash);
     centred(word, y, &fonts::FreeSansBold12pt7b, TFT_WHITE);
-    y += 30;
+    y += 26;
     if (dash < 0) break;
     start = dash + 1;
   }
+  // Nothing on the screen said how to change the code, so the only way to find out was to
+  // already know. A press turns the screen off early; a hold opens setup.
+  centred("hold to change", 222, &fonts::Font2, TFT_LIGHTGREY);
 }
 
 void showExpiry() {
@@ -154,6 +201,7 @@ void showSetup() {
   centred(apPassword, 124, &fonts::FreeSansBold9pt7b, TFT_WHITE);
   centred("then open", 160, &fonts::Font2, TFT_LIGHTGREY);
   centred(WiFi.softAPIP().toString(), 180, &fonts::FreeSansBold9pt7b, TFT_WHITE);
+  centred("side key: cancel", 216, &fonts::Font2, TFT_LIGHTGREY);
 }
 
 // ---------- setup over the tag's own access point ----------
@@ -187,13 +235,15 @@ button.quiet{background:none;border:1px solid #4a4236;color:#f4ebdc}
 void handleRoot() {
   String page = FPSTR(PAGE_HEAD);
   page += "<h1>Share tag</h1>";
-  page += "<p>Make a code on the storyboard's Share screen with <b>Also give a short code</b> on, "
-          "then type the three words here. The tag shows them, with the square, when you press "
-          "its front button. It never goes online and keeps nothing but this code.</p>";
+  page += "<p>First make a code on Fencepost: open the storyboard's <b>Share</b> screen, turn "
+          "on <b>Also give a short code</b> and press <b>Make a code</b>. Then type the three "
+          "words it shows here. Words you choose yourself won't open anything.</p>"
+          "<p>The tag shows the code, with the square, when you press its front button. It "
+          "never goes online and keeps nothing but this code.</p>";
   page += "<form method=\"post\" action=\"/save\">";
   page += "<label for=\"code\">Short code</label>";
   page += "<input id=\"code\" name=\"code\" autocomplete=\"off\" autocapitalize=\"none\" "
-          "spellcheck=\"false\" placeholder=\"wattle moon possum\" value=\"" +
+          "spellcheck=\"false\" placeholder=\"the three words from Share\" value=\"" +
           escapeHtml(code) + "\">";
   page += "<label for=\"expires\">When it expires (optional)</label>";
   page += "<input id=\"expires\" name=\"expires\" type=\"datetime-local\" value=\"" +
@@ -213,9 +263,22 @@ void handleSave() {
   String newCode = normalise(server.arg("code"));
   if (!newCode.length()) {
     String page = FPSTR(PAGE_HEAD);
-    page += "<h1>That isn't three words</h1><p>A short code is three words, like "
-            "<b>wattle moon possum</b>. Nothing was changed.</p><p><a href=\"/\" "
+    page += "<h1>That isn't three words</h1><p>A short code is the three words the "
+            "Share screen shows. Nothing was changed.</p><p><a href=\"/\" "
             "style=\"color:#d9804c\">Try again</a></p></body></html>";
+    server.send(400, "text/html; charset=utf-8", page);
+    return;
+  }
+  String stray = unlisted(newCode);
+  if (stray.length()) {
+    String page = FPSTR(PAGE_HEAD);
+    page += "<h1>That code didn't come from Fencepost</h1><p><b>" + escapeHtml(stray) +
+            "</b> isn't one of the words a Share screen hands out, so nobody could open it. "
+            "Words you choose yourself won't work either: the code has to be made by "
+            "Fencepost.</p><p>On the storyboard, open <b>Share</b>, turn on <b>Also give a "
+            "short code</b>, press <b>Make a code</b>, and type the three words it shows. "
+            "Nothing was changed.</p><p><a href=\"/\" style=\"color:#d9804c\">Try again</a>"
+            "</p></body></html>";
     server.send(400, "text/html; charset=utf-8", page);
     return;
   }
@@ -300,7 +363,9 @@ void loop() {
 
   if (inSetup) {
     server.handleClient();
-    if ((int32_t)(millis() - setupUntil) > 0) finishSetup();
+    // The side button backs out of setup and leaves the saved code as it was. Before, the
+    // only ways out were saving, forgetting, or waiting five minutes for the timeout.
+    if (M5.BtnB.wasClicked() || (int32_t)(millis() - setupUntil) > 0) finishSetup();
     delay(2);
     return;
   }
@@ -308,7 +373,8 @@ void loop() {
   if (M5.BtnA.wasHold()) {
     startSetup();
   } else if (M5.BtnA.wasClicked()) {
-    showCode();
+    // A press while something is on screen puts it away, rather than waiting it out.
+    if (screenUntil) screenOff(); else showCode();
   } else if (M5.BtnB.wasClicked()) {
     showExpiry();
   }
