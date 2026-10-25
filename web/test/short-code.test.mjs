@@ -12,7 +12,7 @@ import { screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import Share from "../app/b/[id]/share/page.js";
-import Home from "../app/page.js";
+import Home from "../app/LegacyHome.js";
 import RedeemCode from "../app/c/[code]/page.js";
 import { issueShareLink, shareLinks } from "../lib/api.js";
 import { COPY, EXPIRY, SHORT_CODE_DAYS, SHORT_CODE_MAX_DAYS } from "../lib/copy.js";

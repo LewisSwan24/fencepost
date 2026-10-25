@@ -1,5 +1,7 @@
 # Fencepost
 
+> This preview branch adds the Wildlife Neighbours public park workflow at `/` and `/park`. The original dashboard is preserved at `/legacy`. See [WILDLIFE-PREVIEW.md](WILDLIFE-PREVIEW.md) for the new workflow, backend setup and limitations; the legacy API documentation below remains applicable to the existing storyboard routes.
+
 The server side of Fencepost: residents in Brisbane film a possum, write up what they saw, and
 build a shared storyboard that reaches other people through a permissioned QR code. This
 repository holds the proxy that talks to the model, the data layer behind it, and the tests. The
