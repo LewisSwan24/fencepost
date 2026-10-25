@@ -18,6 +18,13 @@ import {
   setupImages,
   modeNote,
 } from "./ui.js";
+import { demoAccounts, demoAccountNotice } from "./demo-accounts.js";
+import { checkComment, reportReasons } from "./comment-safety.js";
+import {
+  demoWritingHelp,
+  validateWritingInput,
+  validatedSuggestion,
+} from "./writing.js";
 import { mountActivity } from "./activities.js";
 import { opportunityCard, outcomeCard, outcomeDetail } from "./presentation.js";
 const CHECK_LABELS = {
@@ -27,7 +34,20 @@ const CHECK_LABELS = {
   location: "Exact location removed from public wording",
   welfare: "Animal welfare risk checked",
 };
-export async function mount(root) {
+export async function mount(
+  root,
+  { writingHelp = demoWritingHelp, writingMode = "prewritten-demo" } = {},
+) {
+  let writerController,
+    writerOriginal = null,
+    writerVariant = 0,
+    writerGeneration = 0,
+    aiApplied = false,
+    requestOriginal = "";
+  let replyTo = null,
+    editingComment = null,
+    reportingComment = null,
+    commentDraft = "";
   let activityCleanup;
   let disposed = false,
     version = 0,
@@ -60,15 +80,35 @@ export async function mount(root) {
   const tick = (label, key) =>
     `<label class="tick"><input type="checkbox" name="${key}" required aria-describedby="error-${key}">${label}<span id="error-${key}" class="field-error" data-error="${key}" aria-live="polite"></span></label>`;
   function storeReceipt(r) {
-    const receipts = JSON.parse(localStorage.getItem("wn-receipts") || "[]");
-    receipts.push(r);
-    localStorage.setItem("wn-receipts", JSON.stringify(receipts));
+    api.keepReceipt(r);
   }
   function regs() {
-    return JSON.parse(localStorage.getItem("wn-registrations") || "[]");
+    return api.registrationList();
   }
-  function putRegs(r) {
-    localStorage.setItem("wn-registrations", JSON.stringify(r));
+  function putRegs(records) {
+    api.saveRegistrations(records);
+  }
+  function authHeader() {
+    const user = api.account();
+    return user
+      ? `<div class="account-header"><span>◉ ${esc(user.displayName)} <small>${user.role === "moderator" ? "Moderator" : "Resident"}</small></span><a href="#${user.role === "moderator" ? "moderator" : "profile"}">${user.role === "moderator" ? "Moderator dashboard" : "My activity"}</a>${button("Logout", "logout")}</div>`
+      : '<div class="account-header"><a href="#stories">◇ Browse</a><a href="#login">↪ Sign in</a></div>';
+  }
+  function loginHtml() {
+    return `<section class="login-panel"><p class="eyebrow">Fencepost / Exhibition accounts</p><h1>Sign in to Fencepost</h1><p>${demoAccountNotice}</p><form id="account-login" novalidate>${field("Email", "email", "email", "", 'required autocomplete="username"')}${field("Password", "password", "password", "", 'required autocomplete="off"')}${button("Show password", "toggle-password", 'aria-pressed="false"')}<p id="login-error" role="alert"></p><button type="submit">Sign in</button></form>${button("Continue browsing as guest", "guest")}<details class="demo-accounts" open><summary>Demonstration accounts</summary>${demoAccounts.map((a) => `<article><strong>${esc(a.role === "moderator" ? "Moderator" : "Community user")} · ${esc(a.displayName)}</strong><p>${esc(a.email)}<br>Password: <code>${esc(a.password)}</code></p>${button(a.role === "moderator" ? "Use moderator account" : "Use resident account", "fill-account", `data-id="${a.id}"`)}</article>`).join("")}<p class="small">Hardcoded accounts protect only the prototype interface. They are not production-level security. Do not enter real personal information.</p>${api.live ? '<p class="notice">This connected instance uses Supabase accounts. Hardcoded accounts apply only to local demo data and never grant backend access.</p>' : ""}</details></section>`;
+  }
+  async function profileHtml(section) {
+    const user = api.account(),
+      observations = await api.myObservations();
+    if (section === "my-observations")
+      return `<h1>My observations</h1><p>Your own public wording and status only. Private rescue details and moderator notes are not shown.</p>${observations.map((o) => `<article class="notice"><span class="status-label">${{ pending: "Awaiting review", approved: "Approved", rejected: "Rejected", urgent: "Urgent", clarification: "Clarification requested", removed: "Removed" }[o.status] || esc(o.status)}</span><h2>Possible ${esc(name(o.possibleSpecies))}</h2><p>${esc(o.description)}</p><p>${esc(o.publicArea)} · ${esc(o.approximateTime)}</p></article>`).join("") || "<p>You have not submitted any observations yet.</p>"}<a class="link-button" href="#share">Share an observation</a>`;
+    const saved = await api.savedStories(),
+      writingDraft = api.writingDraft();
+    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a href="#my-observations">My observations (${observations.length}) →</a><a href="#registrations">My prototype volunteer registrations →</a><a href="#share">Share an observation →</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${writingDraft ? `<section class="notice"><p class="status-label">AI-assisted draft · Not submitted</p><h2>A writing draft to continue</h2><p>${esc(writingDraft.description)}</p>${button("Continue draft", "continue-draft")}</section>` : ""}${button("Logout", "logout")}`;
+  }
+  function discussionHtml(storyId, comments) {
+    const user = api.account();
+    return `<section class="discussion"><h2>Discussion</h2><p>Share experiences respectfully. Do not include exact wildlife locations or personal information.</p><p class="small">Comments appear immediately after validation. Automated checks are imperfect; reporting and human moderation remain available.</p><div class="comment-list">${comments.map((c) => `<article class="comment-card" id="comment-${esc(c.id)}"><header><strong>${esc(c.authorDisplayName || "Community member")}</strong><span>${c.updatedAt ? "Updated" : "Comment"}</span></header>${c.parentCommentId ? `<p class="small">↳ Reply to ${esc(comments.find((parent) => parent.id === c.parentCommentId)?.authorDisplayName || "a comment that is no longer visible")}</p>` : ""}<p>${esc(c.body)}</p><div class="comment-actions">${user ? button("Reply", "reply-comment", `data-id="${esc(c.id)}"`) : ""}${user?.id === c.authorId ? button("Edit", "edit-comment", `data-id="${esc(c.id)}"`) + button("Delete", "delete-comment", `data-id="${esc(c.id)}"`) : button("Report", "report", `data-id="${esc(c.id)}"`) + ""}</div></article>`).join("") || "<p>No comments yet.</p>"}</div>${user ? `<form id="comment-form" data-story="${esc(storyId)}"><p id="reply-state">${replyTo ? "Replying to a comment." : ""}${editingComment ? "Editing your comment." : ""}</p>${text("Your comment", "body", commentDraft, 500)}<div id="comment-validation" role="alert"></div><label class="tick"><input type="checkbox" name="warningAcknowledged">I checked any caution shown and want to post this wording.</label><button>${editingComment ? "Save comment" : "Post comment"}</button>${button("Cancel reply or edit", "cancel-comment")}</form>` : '<p><a class="link-button" href="#login">Sign in to comment</a> Guests can read the discussion.</p>'}${reportingComment ? `<form id="report-form"><h3>Report a comment</h3>${select("Reason", "reason", reportReasons)}${field("Details (optional)", "details", "text", "", 'maxlength="500"')}<button>Send report</button>${button("Cancel", "cancel-report")}</form>` : ""}</section>`;
   }
   function storyCard(s, featured = false) {
     return `<article class="mobile-card ${featured ? "featured-story" : ""}">${image(api.publicImage(s.mediaUrl) || species.find((x) => x.id === s.species)?.image || "illustration:park", `Possible ${name(s.species)}`)}<div class="card-body"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h${featured ? "2" : "3"}>Possible ${esc(name(s.species))}</h${featured ? "2" : "3"}><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><p>${esc(s.storyText)}</p><p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p><a class="link-button" href="#story/${esc(s.id)}">Read story →</a></div></article>`;
@@ -89,16 +129,106 @@ export async function mount(root) {
       .map((o) => outcomeCard(o, "#update/" + o.id))
       .join("")}</div></section>`;
   }
+  function clearEditor() {
+    writerController?.abort();
+    writerGeneration++;
+    draft = {};
+    queueData = null;
+    writerOriginal = null;
+    aiApplied = false;
+    editRegistration = null;
+    replyTo = null;
+    editingComment = null;
+    reportingComment = null;
+    commentDraft = "";
+    if (photo) URL.revokeObjectURL(photo);
+    photo = null;
+    photoBlob = null;
+  }
+  const writingNotice =
+    "AI can help organise your writing, but it may make mistakes. Check the wording before submitting.";
+  function writingPanel() {
+    const input = $("#observation-form [name=description]");
+    if (!api.account()) {
+      go("login/share");
+      return;
+    }
+    const original = input.value;
+    validateWritingInput(original);
+    requestOriginal = original;
+    if (writerOriginal === null) writerOriginal = original;
+    $("#writing-panel").innerHTML =
+      `<section class="writing-helper" aria-labelledby="writing-title"><h2 id="writing-title">Ask AI for writing help</h2><p>${writingNotice}</p><p class="status-label">${writingMode === "prewritten-demo" ? "Local prewritten demonstration — no live AI request" : writingMode === "legacy-fixture" ? "Existing Fencepost fixture writer — local demonstration" : "Existing Fencepost writing service"}</p><label>Original text<textarea id="writer-original" readonly>${esc(original)}</textarea></label><p class="small">Only this description is used. Uploaded media and private rescue fields are never sent. Do not include exact locations or personal information.</p><label class="tick"><input id="writer-consent" type="checkbox">I agree to request optional writing help with this description only.</label>${button("Prepare writing suggestion", "request-writing")}${button("Cancel", "cancel-writing")}<div id="writer-result" role="status"></div></section>`;
+    $("#writing-title").setAttribute("tabindex", "-1");
+    $("#writing-title").focus();
+  }
+  async function requestWriting() {
+    if (!$("#writer-consent")?.checked) {
+      $("#writer-result").textContent =
+        "Confirm that you want writing help for this description only.";
+      return;
+    }
+    validateWritingInput(requestOriginal);
+    writerController?.abort();
+    writerController = new AbortController();
+    const generation = ++writerGeneration;
+    $("#writer-result").innerHTML =
+      '<p role="status">Preparing a writing suggestion…</p>';
+    try {
+      const raw = await writingHelp({
+        text: requestOriginal,
+        variant: writerVariant++,
+        signal: writerController.signal,
+      });
+      if (generation !== writerGeneration || !$("#writer-result")) return;
+      const result = validatedSuggestion(raw, requestOriginal);
+      $("#writer-result").innerHTML =
+        `<p>Review this suggestion before adding it to your post.</p><label>Suggested version — editable<textarea id="writer-suggestion" maxlength="600">${esc(result.suggestion)}</textarea></label>${result.question ? `<p class="small">${esc(result.question)}</p>` : ""}<p class="small">Possible animal — not confirmed. This wording is not verified wildlife information.</p><label class="tick"><input id="writer-confirm" type="checkbox">I checked the final wording and want to use it as my draft.</label>${button("Use suggestion", "use-writing")}${button("Edit suggestion", "edit-writing")}${button("Try another suggestion", "request-writing")}${button("Keep original", "keep-original")}`;
+    } catch (err) {
+      if (generation !== writerGeneration || writerController.signal.aborted)
+        return;
+      $("#writer-result").innerHTML =
+        '<p role="alert">Writing help is unavailable right now. You can continue editing and submit your own description.</p>';
+    }
+  }
   async function render() {
     activityCleanup?.();
     activityCleanup = null;
+    writerController?.abort();
+    writerGeneration++;
     const current = ++version;
-    root.innerHTML = `<div class="fencepost-app"><header class="mobile-header"><a href="#stories" class="brand">Fencepost<span> ●</span></a><span>Wildlife Neighbours</span></header>${modeNote(api.live)}<nav class="mobile-nav" aria-label="Fencepost navigation">${["Stories", "Learn", "Share", "Help", "Community"].map((n) => `<a href="#${n.toLowerCase()}">${n}</a>`).join("")}</nav><main class="mobile-main"><div id="feedback" tabindex="-1" role="status"></div><div id="content"><p>Loading…</p></div></main><footer><a href="#moderator">Moderator</a><a href="#receipts">My submission receipts</a><a href="#credits">Image credits</a><a href="${asset("index.html")}">Public display</a></footer></div>`;
+    const requested = hash(),
+      sectionRequested = requested.split("/")[0],
+      user = api.account();
+    if (sectionRequested === "moderator" && !user) {
+      root.innerHTML = "<p>Redirecting to sign in…</p>";
+      go("login/" + encodeURIComponent(requested));
+      return;
+    }
+    if (sectionRequested === "moderator" && user.role !== "moderator") {
+      root.innerHTML = "<p>Moderator access is required.</p>";
+      go("denied");
+      return;
+    }
+    if (["profile", "my-observations"].includes(sectionRequested) && !user) {
+      root.innerHTML = "<p>Redirecting to sign in…</p>";
+      go("login/" + sectionRequested);
+      return;
+    }
+
+    root.innerHTML = `<div class="fencepost-app"><header class="mobile-header"><a href="#stories" class="brand">Fencepost<span> ●</span></a><span>Wildlife Neighbours</span></header>${authHeader()}${modeNote(api.live)}<nav class="mobile-nav" aria-label="Fencepost navigation">${["Stories", "Learn", "Share", "Help", "Community"].map((n) => `<a href="#${n.toLowerCase()}">${n}</a>`).join("")}</nav><main class="mobile-main"><div id="feedback" tabindex="-1" role="status"></div><div id="content"><p>Loading…</p></div></main><footer><a href="#login">Sign in</a><a href="#receipts">My submission receipts</a><a href="#credits">Image credits</a><a href="${asset("index.html")}">Public display</a></footer></div>`;
     try {
       const route = hash(),
         [section, param] = route.split("/");
       let html = "";
-      if (section === "stories") {
+      if (section === "login") {
+        html = loginHtml();
+      } else if (section === "denied") {
+        html =
+          '<h1>Moderator access is required.</h1><p>This page is available only to the moderator account.</p><a class="link-button" href="#profile">Return to my activity</a>';
+      } else if (["profile", "my-observations"].includes(section)) {
+        html = await profileHtml(section);
+      } else if (section === "stories") {
         const [all, opportunities, updates] = await Promise.all([
           api.stories(),
           api.opportunities(),
@@ -113,7 +243,7 @@ export async function mount(root) {
         else {
           const sp = species.find((x) => x.id === s.species);
           const comments = await api.comments(s.id);
-          html = `<a href="#stories">← Stories</a><h1>Possible ${esc(name(s.species))}</h1>${image(api.publicImage(s.mediaUrl), name(s.species), "detail-image")}<p class="label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h2>Resident observation</h2><p>${esc(s.storyText)}</p><p>${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Reference information; source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p><h2>Safe Response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><h2>Public privacy information</h2><p>Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p>Reviewed by ${esc(s.reviewedBy)}</p><h2>Discussion</h2><p>Share experiences, not exact locations. Verified advice is labelled separately.</p><p class="small">No personal attacks, identifying details, feeding/handling instructions or unverified rescue advice. Every comment is reviewed before publication.</p>${comments.map((c) => `<article class="notice"><p>${esc(c.body)}</p>${button("Report comment", "report", `data-id="${esc(c.id)}"`)}</article>`).join("") || "<p>No approved comments yet.</p>"}<form id="comment-form" data-story="${esc(s.id)}">${text("Your experience", "body", "", 500)}<button>Send comment for review</button></form>`;
+          html = `<a href="#stories">← Stories</a><h1>Possible ${esc(name(s.species))}</h1>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h2>Resident observation</h2><p>${esc(s.storyText)}</p><p>${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Reference information; source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p><h2>Safe Response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><h2>Public privacy information</h2><p>Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p>Reviewed by ${esc(s.reviewedBy)}</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}${discussionHtml(s.id, comments)}`;
         }
       } else if (section === "learn") {
         html = `<h1>Meet the animal</h1>${species.map((s) => `<article class="mobile-card">${image(s.image, s.name)}<div><h2>${esc(s.name)}</h2><p>${esc(s.fact)}</p><a href="#species/${s.id}">Learn together →</a></div></article>`).join("")}`;
@@ -130,11 +260,9 @@ export async function mount(root) {
       } else if (section === "preview") {
         html = `<h1>This is what may become public after review</h1><article class="notice"><p>Public nickname preference: ${esc(draft.nickname || "Anonymous")} (removed from public-display stories)</p><h2>Possible ${esc(name(draft.possibleSpecies))}</h2><p>${esc(draft.publicArea)} · ${esc(draft.approximateTime)}</p><p>${esc(draft.description)}</p>${photo ? image(photo, "Your optional image awaiting human review") : ""}</article><p>Hidden: exact rescue location, condition details, submission receipt and internal moderation notes. Images remain private until reviewed.</p>${draft.injuryConcern ? '<p class="notice">This welfare report remains private. It will not become a public story without a separate human privacy review.</p>' : ""}${button("Edit", "edit-draft")}${button("Cancel", "cancel-draft")}${button("Send for review", "submit-observation")}`;
       } else if (section === "sent") {
-        html = `<p class="status-label opportunity-label">Sent for Review</p><h1>Sent for review — not yet public</h1><p>A human moderator will review the content. Private details will not be published. The submission may be edited, rejected or approved. Submission does not guarantee publication.</p><p class="notice">This is not a rescue dispatch service.</p><a href="#receipts">View receipts or request removal</a>`;
+        html = `<p class="status-label opportunity-label">Sent for Review</p><h1>Sent for review — not yet public</h1><p>Your observation will remain private until a moderator checks its content, location and optional media.</p><p>A human moderator will review the content. Private details will not be published. The submission may be edited, rejected or approved. Submission does not guarantee publication.</p><p class="notice">This is not a rescue dispatch service.</p><a href="#receipts">View receipts or request removal</a>`;
       } else if (section === "receipts") {
-        const receipts = JSON.parse(
-          localStorage.getItem("wn-receipts") || "[]",
-        );
+        const receipts = api.receipts();
         html = `<h1>My submission receipts</h1><p>Receipts are kept only in this browser. Save them if you need to request removal.</p>${receipts.map((r) => `<article class="notice"><p>${esc(r.id)}</p><p>This observation is still being reviewed unless a moderator has published it. A receipt does not grant access to private queue data.</p>${button("Request removal", "removal", `data-id="${esc(r.id)}"`)}</article>`).join("") || "<p>No receipts in this browser.</p>"}`;
       } else if (section === "credits") {
         html = `<h1>Image credits</h1><p>The original illustrated atlas was generated with OpenAI image generation for this prototype. It depicts six Australian animals and habitat-care scenes; it is not evidence of real sightings or events. Local WebP encoding changes format and file size only.</p><p>Brushtail photograph: Andrew Mercer · CC BY-SA 4.0. Illustrative use, resized/cropped by the layout; not a contributor’s sighting.</p>${sourceLink("https://commons.wikimedia.org/wiki/File:Brushtail_Possum_IMG_5017.jpg", "Original photograph")}${sourceLink("https://creativecommons.org/licenses/by-sa/4.0/", "CC BY-SA 4.0 licence")}<p>The neutral park fallback is original SVG artwork authored for the prototype. No third-party animal audio was added. See IMAGE-ATTRIBUTIONS.md in the source repository for the complete provenance record.</p>`;
@@ -192,12 +320,12 @@ export async function mount(root) {
           regs()
             .map(
               (r) =>
-                `<article class="notice"><h2>${esc(r.reference)}</h2><p>${esc(r.nickname)} · ${esc(r.email)}</p><p>${r.adults} adults · ${r.children} supervised children · ${esc(r.preferredRole)}</p><p>Status: ${esc(r.status)}</p>${button("Edit", "edit-registration", `data-id="${r.id}"`)}${button(r.status === "cancelled" ? "Restore" : "Cancel", "toggle-registration", `data-id="${r.id}"`)}</article>`,
+                `<article class="notice"><h2>${esc(r.reference)}</h2><p>${esc(r.nickname)} · ${esc(r.email)}</p><p>${r.adults} adults · ${r.children} supervised children · ${esc(r.preferredRole)}</p><p>Status: ${r.status === "cancelled" ? "Registration cancelled" : "Registration active"}</p>${button("Edit", "edit-registration", `data-id="${r.id}"`)}${button(r.status === "cancelled" ? "Restore" : "Cancel", "toggle-registration", `data-id="${r.id}"`)}</article>`,
             )
             .join("") || "<p>No registrations in this browser.</p>"
         }<a href="#register/habitat-demo">Submit a new registration</a>`;
       } else if (section === "moderator") {
-        html = await moderatorHtml();
+        html = await moderatorHtml(param);
       } else
         html =
           '<h1>Page unavailable</h1><a href="#stories">Return to stories</a>';
@@ -244,7 +372,7 @@ export async function mount(root) {
   }
   function submissionForm(rescue) {
     const d = draft;
-    return `<form id="observation-form" data-rescue="${rescue}">${field("Nickname (optional)", "nickname", "text", d.nickname, 'maxlength="60"')}${select("Possible animal", "possibleSpecies", [...species, { id: "not-sure", name: "Not sure" }], d.possibleSpecies)}${select("Approximate time", "approximateTime", times, d.approximateTime)}${select("General area (no exact address)", "publicArea", areas, d.publicArea)}${field("Observed behaviour", "behaviour", "text", d.behaviour, 'required maxlength="160"')}${text("Short description", "description", d.description)}${!rescue ? '<label class="tick"><input name="injuryRoute" type="checkbox">Animal may be injured or trapped — switch to private help route</label>' : ""}${rescue ? `${field("Exact location (optional, private)", "privateRescueLocation", "text", d.privateRescueLocation, 'maxlength="500"')}${field("Animal condition", "condition", "text", d.condition, 'required maxlength="300"')}${select("Is it moving?", "moving", ["Not sure", "Yes", "No"], d.moving)}<label class="tick"><input name="nearTraffic" type="checkbox" ${d.nearTraffic ? "checked" : ""}>Near traffic</label>` : ""}<label>Optional photograph or short video (max 5 MB)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"></label><p class="small">Do not upload children, faces, house numbers or number plates. A video is converted to one still image; the original is not stored. Metadata is stripped before storage.</p><div id="photo-preview">${photo ? image(photo, "Optional photograph preview") + button("Remove photograph", "remove-photo") : ""}</div>${tick("I observed safely and any photograph contains no identifying details or children.", "safeConsent")}<button>Preview submission</button></form>`;
+    return `<form id="observation-form" data-rescue="${rescue}">${field("Nickname (optional)", "nickname", "text", d.nickname, 'maxlength="60"')}${select("Possible animal", "possibleSpecies", [...species, { id: "not-sure", name: "Not sure" }], d.possibleSpecies)}${select("Approximate time", "approximateTime", times, d.approximateTime)}${select("General area (no exact address)", "publicArea", areas, d.publicArea)}${field("Observed behaviour", "behaviour", "text", d.behaviour, 'required maxlength="160"')}${text("Short description", "description", d.description)}${api.account() ? button("Ask AI for writing help", "writing-help") + button("Undo AI suggestion / restore original", "undo-writing", writerOriginal === null ? "hidden" : "") : '<p class="small"><a href="#login">Sign in for optional AI writing help</a>. You can still submit your own text as a guest.</p>'}<div id="writing-panel"></div>${!rescue ? '<label class="tick"><input name="injuryRoute" type="checkbox">Animal may be injured or trapped — switch to private help route</label>' : ""}${rescue ? `${field("Exact location (optional, private)", "privateRescueLocation", "text", d.privateRescueLocation, 'maxlength="500"')}${field("Animal condition", "condition", "text", d.condition, 'required maxlength="300"')}${select("Is it moving?", "moving", ["Not sure", "Yes", "No"], d.moving)}<label class="tick"><input name="nearTraffic" type="checkbox" ${d.nearTraffic ? "checked" : ""}>Near traffic</label>` : ""}<label>Optional photograph or short video (max 5 MB)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"></label><p class="small">Do not upload children, faces, house numbers or number plates. A video is converted to one still image; the original is not stored. Metadata is stripped before storage.</p><div id="photo-preview">${photo ? image(photo, "Optional photograph preview") + button("Remove photograph", "remove-photo") : ""}</div>${tick("I observed safely and any photograph contains no identifying details or children.", "safeConsent")}<button>Preview submission</button></form>`;
   }
   async function helpHtml() {
     const contacts = [...config.contacts, ...(await api.sources())].filter(
@@ -275,41 +403,112 @@ export async function mount(root) {
     const d = editRegistration || {};
     return `${image("illustration:volunteers", "Illustrative seated volunteer seedling preparation", "registration-image")}<h1>Register interest — prototype</h1><p>Use fictional contact details. Stored in this browser only, not sent to an organiser; no place is reserved.</p><form id="registration-form" data-opportunity="${esc(o.id)}" novalidate>${field("First name or nickname", "nickname", "text", d.nickname, 'required maxlength="60"')}${field("Email (fictional for demo)", "email", "email", d.email, 'required maxlength="254"')}${field("Number of adults", "adults", "number", d.adults ?? 1, 'required min="1" max="20"')}${field("Number of supervised children", "children", "number", d.children ?? 0, 'required min="0" max="20"')}${field("Accessibility requirements (optional)", "accessibilityNeeds", "text", d.accessibilityNeeds, 'maxlength="300"')}${select("Preferred role", "preferredRole", o.tasks || opportunity.tasks, d.preferredRole)}${tick("I understand this is a demonstration, not a real booking.", "prototypeConsent")}${tick("I understand volunteers will not handle wildlife.", "wildlifeConsent")}${tick("I agree to follow organiser safety instructions and supervise children.", "safetyConsent")}<button>Record prototype registration</button></form>`;
   }
-  async function moderatorHtml() {
-    if (!api.moderatorSession())
-      return `<h1>Moderator access</h1>${api.live ? `<form id="login-form">${field("Moderator email", "email", "email", "", "required")}${field("Password", "password", "password", "", "required")}<button>Sign in</button></form>` : `<p class="notice">Local demo role only. This is not authentication or secure storage. Anyone using this browser can inspect demo data. Never enter real information.</p>${button("Enter local demo moderator", "demo-login")}`}`;
+  async function moderatorHtml(tab = "") {
     queueData = await api.queue();
-    return `<h1>Human moderation</h1>${button("Sign out", "logout")}<p>Observation → Review → Approved Story → Optional Opportunity → Community Outcome</p><p>Card 1: private observation · Card 2: approved story · Card 4: opportunity · Card 3: community update.</p>${[
-      "pending",
-      "urgent",
-      "clarification",
-      "approved",
-      "rejected",
-      "removed",
-    ]
-      .map(
-        (status) =>
-          `<h2>${esc(status)} observations</h2>${
-            queueData.observations
-              .filter((o) => o.status === status)
-              .map((o) => moderationForm(o))
-              .join("") || "<p>None.</p>"
-          }`,
-      )
-      .join(
-        "",
-      )}<h2>Comment review</h2>${queueData.comments.map((c) => `<article class="notice"><p>${esc(c.body)}</p><p>${esc(c.status)}</p>${button("Approve comment", "comment-approve", `data-id="${esc(c.id)}"`)}${button("Remove comment", "comment-remove", `data-id="${esc(c.id)}"`)}</article>`).join("") || "<p>No comments.</p>"}<h2>Reported comments / removal requests</h2><pre>${esc(JSON.stringify({ reports: queueData.reports, removals: queueData.removals }, null, 2))}</pre><h2>Moderation audit</h2><pre>${esc(
-      JSON.stringify(
-        queueData.records.map((r) => ({
-          action: r.action,
-          moderatorId: r.moderatorId,
-          reason: r.reason,
-          createdAt: r.createdAt,
-        })),
-        null,
-        2,
-      ),
-    )}</pre><h2>Community opportunities</h2><form id="opportunity-form"><p>Edit sample details; verification requires all fields and an official registration URL.</p>${field("Title", "title", "text", opportunity.title, "required")}${field("Organiser", "organiser", "text", opportunity.organiser, "required")}${field("Confirmed date", "date", "date")}${field("Start time", "startTime", "time")}${field("Official registration URL", "registrationUrl", "url")}${field("Official contact", "contact")}${field("Accessibility", "accessibility", "text", opportunity.accessibility, "required")}${field("Safety instructions", "safety", "text", opportunity.safety, "required")}${field("Verification date", "verifiedAt", "date")}<label class="tick"><input type="checkbox" name="organiserVerified">I verified the real organiser and all event details</label><button>Save opportunity</button></form><h2>Create Community Update</h2><form id="outcome-form">${field("Title", "title", "text", "", 'required maxlength="120"')}${select("General area", "publicArea", areas)}${field("Completion date", "completedAt", "date", "", "required")}${text("What volunteers did (no unverified impact claims)", "actionsCompleted")}${text("Why it matters (no unverified impact claims)", "whyItMatters")}${text("Community message", "communityMessage")}<label>Optional approved outcome photograph<input type="file" name="outcomePhoto" accept="image/jpeg,image/png,image/webp"></label><label>Next opportunity ID (optional; verified events only)<input name="nextOpportunityId" maxlength="80"></label>${tick("No wildlife handling; content and any image checked for faces, children, plates, addresses and welfare risks.", "checked")}<button>Publish Community Update</button></form><h2>Verified information sources</h2><form id="source-form">${field("Organisation", "name", "text", "", "required")}${field("Official contact number", "phone", "text", "", "required")}${field("Official source URL", "sourceUrl", "url", "", "required")}${field("Review date", "reviewedAt", "date", "", "required")}${tick("I checked these details against the official source.", "verified")}<button>Save reviewed contact</button></form>${!api.live ? button("Reset fictional demo data", "reset-demo") : ""}`;
+    const q = queueData;
+    const tabs = [
+      ["", "Overview"],
+      ["pending", "Posts awaiting approval"],
+      ["urgent", "Injured-animal reports"],
+      ["approved", "Approved stories"],
+      ["rejected", "Rejected posts"],
+      ["comments", "Comments"],
+      ["reports", "Reported Comments"],
+      ["opportunities", "Community opportunities"],
+      ["updates", "Community Updates"],
+      ["sources", "Information sources"],
+      ["history", "Moderation history"],
+      ["settings", "Settings"],
+    ];
+    let content = "";
+    if (!tab)
+      content = `<h2>Dashboard overview</h2><div class="admin-summary">${[
+        [
+          "Pending posts",
+          q.observations.filter((o) => o.status === "pending").length,
+        ],
+        [
+          "Urgent wildlife reports",
+          q.observations.filter((o) => o.status === "urgent").length,
+        ],
+        [
+          "Reported comments",
+          q.reports.filter((r) => r.status === "open").length,
+        ],
+        [
+          "Approved stories",
+          q.observations.filter((o) => o.status === "approved").length,
+        ],
+        [
+          "Rejected posts",
+          q.observations.filter((o) => o.status === "rejected").length,
+        ],
+      ]
+        .map(
+          ([label, count]) =>
+            `<article><strong>${count}</strong><span>${label}</span></article>`,
+        )
+        .join(
+          "",
+        )}</div><p>Posts require human approval. Comments are published immediately after validation and may be reported for a separate human review.</p>`;
+    if (["pending", "urgent", "approved", "rejected"].includes(tab)) {
+      const list = q.observations.filter((o) =>
+        tab === "pending"
+          ? ["pending", "clarification"].includes(o.status)
+          : o.status === tab,
+      );
+      content = `<h2>${{ pending: "Posts awaiting approval", urgent: "Injured-animal reports", approved: "Approved stories", rejected: "Rejected posts" }[tab]}</h2>${list.map(moderationForm).join("") || "<p>No posts in this section.</p>"}`;
+    }
+    if (tab === "comments" || tab === "reports") {
+      content = `<h2>${tab === "reports" ? "Reported Comments" : "Comments — visible or removed"}</h2><p>Comments do not await approval. Record a reason when removing a comment; restoration is available for moderator removals.</p>${
+        tab === "reports"
+          ? q.reports
+              .map((r) => {
+                const c = q.comments.find((c) => c.id === r.commentId);
+                return `<article class="notice"><span class="status-label">Report ${esc(r.status)}</span><p>${esc(r.reason)} · ${esc(r.details)}</p>${c ? `<blockquote>${esc(c.body)}</blockquote><p>By ${esc(c.authorDisplayName)} · Comment ${esc(c.status)}</p><a href="#story/${esc(c.storyId)}">Open related story in context →</a>${commentModeration(c)}` : "<p>Comment is unavailable.</p>"}${r.status === "open" ? button("Dismiss report", "dismiss-report", `data-id="${esc(r.id)}"`) : `<p class="small">Reviewed by ${esc(r.reviewedBy)} · ${esc(r.reviewedAt)}</p>`}</article>`;
+              })
+              .join("") || "<p>No reported comments.</p>"
+          : q.comments
+              .map(
+                (c) =>
+                  `<article class="notice"><strong>${esc(c.authorDisplayName)}</strong><p>${esc(c.body)}</p><p>Status: ${esc(c.status)} ${c.authorDeleted ? "· Deleted by author" : ""}</p><a href="#story/${esc(c.storyId)}">Open story in context →</a>${commentModeration(c)}</article>`,
+              )
+              .join("") || "<p>No comments.</p>"
+      }`;
+    }
+    if (tab === "opportunities") {
+      const allOpportunities = await api.opportunities();
+      const current =
+        allOpportunities.find((o) => o.id === hash().split("/")[2]) ||
+        allOpportunities.find((o) => o.id === "habitat-demo") ||
+        opportunity;
+      content = `<h2>Community opportunities</h2><nav class="activity-menu">${allOpportunities.map((o) => `<a href="#moderator/opportunities/${esc(o.id)}">Edit ${esc(o.title)}</a>`).join("")}</nav><form id="opportunity-form">${field("Activity ID (use a new ID to create another sample)", "id", "text", current.id, 'required pattern="[a-z0-9-]{3,80}"')}<p>Edit the sample activity. A verified badge requires a real organiser and complete confirmed details.</p>${field("Title", "title", "text", current.title, "required")}${field("Organiser", "organiser", "text", current.organiser, "required")}${field("Confirmed date", "date", "date", current.date || "")}${field("Start time", "startTime", "time", current.startTime || "")}${field("Official registration URL", "registrationUrl", "url", current.registrationUrl || "")}${field("Official contact", "contact", "text", current.contact || "")}${field("Accessibility", "accessibility", "text", current.accessibility, "required")}${field("Safety instructions", "safety", "text", current.safety, "required")}${field("Verification date", "verifiedAt", "date", current.verifiedAt || "")}<label class="tick"><input type="checkbox" name="organiserVerified" ${current.organiserVerified ? "checked" : ""}>I verified the real organiser and all event details</label><button>Save opportunity</button></form>`;
+    }
+    if (tab === "updates")
+      content = `<h2>Publish Community Update</h2><form id="outcome-form">${field("Title", "title", "text", "", 'required maxlength="120"')}${select("General area", "publicArea", areas)}${field("Completion date", "completedAt", "date", "", "required")}${text("What volunteers did (no unverified impact claims)", "actionsCompleted")}${text("Why it matters (no unverified impact claims)", "whyItMatters")}${text("Community message", "communityMessage")}<label>Optional approved outcome photograph<input type="file" name="outcomePhoto" accept="image/jpeg,image/png,image/webp"></label>${field("Next opportunity ID (optional; verified events only)", "nextOpportunityId")}${tick("No wildlife handling; content and any image checked for privacy and welfare risks.", "checked")}<button>Publish Community Update</button></form>`;
+    if (tab === "sources")
+      content = `<h2>Information sources</h2><form id="source-form">${field("Organisation", "name", "text", "", "required")}${field("Official contact number", "phone", "text", "", "required")}${field("Official source URL", "sourceUrl", "url", "", "required")}${field("Review date", "reviewedAt", "date", "", "required")}${tick("I checked these details against the official source.", "verified")}<button>Save reviewed contact</button></form>`;
+    if (tab === "history")
+      content = `<h2>Moderation history</h2><h3>Post actions</h3><pre>${esc(
+        JSON.stringify(
+          q.records.map((r) => ({
+            action: r.action,
+            moderatorId: r.moderatorId,
+            reason: r.reason,
+            createdAt: r.createdAt,
+          })),
+          null,
+          2,
+        ),
+      )}</pre><h3>Comment actions</h3><pre>${esc(JSON.stringify(q.commentHistory || [], null, 2))}</pre><h3>Contributor removal requests</h3><pre>${esc(JSON.stringify(q.removals, null, 2))}</pre>`;
+    if (tab === "settings")
+      content = `<h2>Moderator settings</h2><p>Exhibition data only. Reset restores the fictional observations, activities, updates, registrations, saved stories and draft while preserving the configured accounts and moderator session.</p>${!api.live ? button("Reset demonstration data", "reset-demo") : "<p>Reset is unavailable for connected data.</p>"}`;
+    return `<p class="eyebrow">${api.live ? "Authenticated backend moderator" : "Exhibition moderator · local demonstration"}</p><h1>Moderator dashboard</h1><div class="admin-layout"><nav class="admin-nav" aria-label="Moderator sections">${tabs.map(([id, label]) => `<a href="#moderator${id ? "/" + id : ""}" ${tab === id ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav><section class="admin-content">${content || "<h2>Section unavailable</h2>"}</section></div>`;
+  }
+  function commentModeration(c) {
+    if (c.authorDeleted)
+      return '<p class="small">Deleted by author; restoration is not available.</p>';
+    return `<form class="comment-moderation" data-id="${esc(c.id)}">${field(c.status === "visible" ? "Removal reason (required)" : "Restoration note (optional)", "reason", "text", c.removalReason || "", c.status === "visible" ? 'required minlength="3" maxlength="500"' : 'maxlength="500"')}<button name="action" value="${c.status === "visible" ? "remove" : "restore"}">${c.status === "visible" ? "Remove comment" : "Restore comment"}</button></form>`;
   }
   function moderationForm(o) {
     return `<details class="notice"><summary>${esc(name(o.possibleSpecies))} · ${esc(o.publicArea)} · ${esc(o.status)}</summary><h3>Submitted content (private)</h3><p>${esc(o.description)}</p><p>Nickname: ${esc(o.nickname || "Anonymous")} · ${esc(o.approximateTime)}</p><p>Private rescue location: ${esc(o.privateRescueLocation || "None")}</p><p>Condition: ${esc(o.condition || "Not reported")} · Moving: ${esc(o.moving || "Not reported")} · Near traffic: ${o.nearTraffic ? "Yes" : "No"}</p>${o.mediaUrl ? button("View private media (moderator only)", "view-media", `data-id="${esc(o.id)}"`) : "<p>No media.</p>"}<div id="media-${esc(o.id)}"></div><form class="moderation-form" data-id="${esc(o.id)}">${text("Edited public wording", "publicText", o.description)}${select("Possible species / identification confidence", "approvedSpecies", [...species, { id: "not-sure", name: "Not sure — no species assertion" }], o.possibleSpecies)}${select("Broad public area", "approvedPublicArea", areas, o.publicArea)}<fieldset><legend>Human privacy checklist (required for approval)</legend>${api.checks.map((k) => `<label class="tick"><input type="checkbox" name="${k}">${CHECK_LABELS[k]}</label>`).join("")}</fieldset>${o.mediaUrl ? '<label class="tick"><input type="checkbox" name="mediaApproved">Approve reviewed media (leave unchecked to remove it)</label>' : ""}${text("Moderator notes / reason (required for every action)", "reason", "", 500)}<div class="answers">${["approve", "reject", "clarification", "urgent", "remove"].map((a) => `<button name="action" value="${a}">${{ approve: "Approve and publish", reject: "Reject", clarification: "Request clarification", urgent: "Mark urgent", remove: "Remove story and media" }[a]}</button>`).join("")}</div><p class="small">Clarification is recorded only: no messaging service or contributor contact is collected. Urgent reports are not dispatched automatically.</p></form></details>`;
@@ -354,31 +553,115 @@ export async function mount(root) {
         feedback(err.message, true);
       }
     });
+    $("#account-login")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const email = form.email.value.trim(),
+        password = form.password.value;
+      root
+        .querySelectorAll("[data-error]")
+        .forEach((node) => (node.textContent = ""));
+      if (!email || !password) {
+        const target = root.querySelector(
+          `[data-error="${!email ? "email" : "password"}"]`,
+        );
+        target.textContent = "This field is required.";
+        form.elements[!email ? "email" : "password"].focus();
+        return;
+      }
+      try {
+        const previousUser = api.account()?.id;
+        const user = await api.login(email, password);
+        if (previousUser !== user.id) clearEditor();
+        form.password.value = "";
+        const next = hash().split("/")[1];
+        const wanted = next ? decodeURIComponent(next) : null;
+        go(
+          wanted &&
+            (!wanted.startsWith("moderator") || user.role === "moderator")
+            ? wanted
+            : user.role === "moderator"
+              ? "moderator"
+              : "profile",
+        );
+      } catch (err) {
+        $("#login-error").textContent = err.message;
+        form.password.setAttribute("aria-invalid", "true");
+      }
+    });
+    $("#comment-form")?.addEventListener("input", (e) => {
+      if (e.target.name === "body") commentDraft = e.target.value;
+    });
     $("#comment-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const form = e.currentTarget,
+        checked = checkComment(form.body.value);
+      if (
+        checked.errors.length ||
+        (checked.warnings.length && !form.warningAcknowledged.checked)
+      ) {
+        $("#comment-validation").textContent = [
+          ...checked.errors,
+          ...checked.warnings,
+        ].join(" ");
+        return;
+      }
       try {
-        await api.addComment(
-          e.currentTarget.dataset.story,
-          e.currentTarget.body.value,
-        );
-        e.target.reset();
-        feedback("Sent for review — not yet public");
-      } catch {
-        feedback("Comment could not be sent. Please try again.", true);
+        if (editingComment)
+          await api.editComment(
+            editingComment,
+            form.body.value,
+            form.warningAcknowledged.checked,
+          );
+        else
+          await api.addComment(
+            form.dataset.story,
+            form.body.value,
+            replyTo,
+            form.warningAcknowledged.checked,
+          );
+        editingComment = null;
+        replyTo = null;
+        commentDraft = "";
+        await render();
+        feedback("Your comment is visible now.");
+      } catch (err) {
+        feedback(err.message, true);
       }
     });
-    $("#login-form")?.addEventListener("submit", async (e) => {
+    $("#report-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        await api.login(
-          e.currentTarget.email.value,
-          e.currentTarget.password.value,
+        await api.reportComment(
+          reportingComment,
+          e.currentTarget.reason.value,
+          e.currentTarget.details.value,
         );
+        reportingComment = null;
         await render();
-      } catch {
-        feedback("Sign-in failed or moderator access is unavailable.", true);
+        feedback(
+          "Thanks for letting us know. The comment remains visible unless a moderator removes it.",
+        );
+      } catch (err) {
+        feedback(err.message, true);
       }
     });
+    root.querySelectorAll(".comment-moderation").forEach((form) =>
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          await api.moderateComment(
+            form.dataset.id,
+            e.submitter.value,
+            form.reason.value,
+          );
+          await render();
+          feedback("Comment action recorded.");
+        } catch (err) {
+          feedback(err.message, true);
+        }
+      }),
+    );
     root.querySelectorAll(".moderation-form").forEach((form) =>
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -491,7 +774,10 @@ export async function mount(root) {
         d = Object.fromEntries(new FormData(f));
       try {
         await api.saveOpportunity({
-          ...opportunity,
+          ...((await api.opportunities()).find((o) => o.id === d.id) || {
+            ...opportunity,
+            image: "illustration:volunteers",
+          }),
           ...d,
           dateConfirmed: !!d.date,
           organiserVerified: f.organiserVerified.checked,
@@ -553,6 +839,55 @@ export async function mount(root) {
     if (!el || !root.contains(el)) return;
     const a = el.dataset.action;
     try {
+      if (a === "writing-help") writingPanel();
+      if (a === "request-writing") await requestWriting();
+      if (a === "cancel-writing" || a === "keep-original") {
+        writerController?.abort();
+        writerGeneration++;
+        if (a === "keep-original") {
+          $("#observation-form [name=description]").value = requestOriginal;
+          aiApplied = false;
+        }
+        $("#writing-panel").innerHTML = "";
+      }
+      if (a === "edit-writing") $("#writer-suggestion")?.focus();
+      if (a === "use-writing") {
+        if (!$("#writer-confirm")?.checked) {
+          feedback(
+            "Confirm the final wording before using the suggestion.",
+            true,
+          );
+          return;
+        }
+        const suggestion = $("#writer-suggestion").value;
+        validateWritingInput(suggestion);
+        if (suggestion.length > 600)
+          throw Error("Keep the draft under 600 characters.");
+        $("#observation-form [name=description]").value = suggestion;
+        draft.description = suggestion;
+        aiApplied = true;
+        const form = $("#observation-form");
+        api.saveWritingDraft({
+          original: writerOriginal,
+          description: suggestion,
+          possibleSpecies: form.possibleSpecies.value,
+          approximateTime: form.approximateTime.value,
+          publicArea: form.publicArea.value,
+          behaviour: form.behaviour.value,
+          aiAssisted: true,
+        });
+        $("[data-action=undo-writing]").hidden = false;
+        $("#writing-panel").innerHTML = "";
+        feedback(
+          "Suggestion added as a draft only. Review and submit separately.",
+        );
+      }
+      if (a === "undo-writing") {
+        $("#observation-form [name=description]").value = writerOriginal || "";
+        draft.description = writerOriginal || "";
+        aiApplied = false;
+        feedback("Your original description has been restored.");
+      }
       if (a === "reload") await render();
       if (a === "safe" || a === "unsafe")
         $("#learning-result").textContent =
@@ -581,7 +916,13 @@ export async function mount(root) {
         el.disabled = true;
         try {
           const mediaUrl = photoBlob ? await api.uploadImage(photoBlob) : null;
-          lastReceipt = await api.submit({ ...draft, mediaUrl });
+          lastReceipt = await api.submit({
+            ...draft,
+            mediaUrl,
+            aiAssisted: aiApplied,
+          });
+          writerOriginal = null;
+          aiApplied = false;
           storeReceipt(lastReceipt);
           draft = {};
           photoBlob = null;
@@ -593,13 +934,11 @@ export async function mount(root) {
           el.disabled = false;
         }
       }
-      if (a === "demo-login") {
-        api.demoLogin();
-        await render();
-      }
+
       if (a === "logout") {
         api.logout();
-        await render();
+        clearEditor();
+        go("stories");
       }
       if (a === "view-media") {
         const o = queueData.observations.find((o) => o.id === el.dataset.id);
@@ -609,21 +948,85 @@ export async function mount(root) {
           "Private submitted image — review identifying details",
         );
       }
-      if (a === "comment-approve" || a === "comment-remove") {
-        await api.moderateComment(
-          el.dataset.id,
-          a === "comment-approve" ? "approved" : "removed",
+      if (a === "fill-account") {
+        const account = demoAccounts.find((u) => u.id === el.dataset.id),
+          form = $("#account-login");
+        form.email.value = account.email;
+        form.password.value = account.password;
+      }
+      if (a === "toggle-password") {
+        const input = $("#account-login").password;
+        input.type = input.type === "password" ? "text" : "password";
+        el.textContent =
+          input.type === "password" ? "Show password" : "Hide password";
+        el.setAttribute("aria-pressed", String(input.type === "text"));
+      }
+      if (a === "guest") {
+        api.logout();
+        clearEditor();
+        go("stories");
+      }
+      if (a === "save-story") {
+        api.toggleSaved(el.dataset.id);
+        feedback("Saved stories updated in My activity.");
+      }
+      if (a === "continue-draft") {
+        const saved = api.writingDraft();
+        draft = { ...saved };
+        writerOriginal = saved.original || saved.description;
+        aiApplied = !!saved.aiAssisted;
+        go("share");
+      }
+      if (a === "reply-comment") {
+        replyTo = el.dataset.id;
+        editingComment = null;
+        commentDraft = "";
+        await render();
+        $("#comment-form textarea")?.focus();
+      }
+      if (a === "edit-comment") {
+        const c = (await api.comments(hash().split("/")[1])).find(
+          (c) => c.id === el.dataset.id,
         );
+        if (c?.authorId !== api.account()?.id)
+          throw Error("You can only edit your own comment.");
+        editingComment = c.id;
+        replyTo = c.parentCommentId;
+        commentDraft = c.body;
+        await render();
+        $("#comment-form textarea")?.focus();
+      }
+      if (a === "delete-comment") {
+        await api.deleteComment(el.dataset.id);
+        await render();
+        feedback("Your comment was deleted.");
+      }
+      if (a === "cancel-comment") {
+        editingComment = null;
+        replyTo = null;
+        commentDraft = "";
         await render();
       }
       if (a === "report") {
-        await api.reportComment(el.dataset.id, "Reader requested human review");
-        feedback("Comment report sent to a moderator.");
+        if (!api.account()) {
+          go("login/" + encodeURIComponent(hash()));
+          return;
+        }
+        reportingComment = el.dataset.id;
+        await render();
+        $("#report-form select")?.focus();
+      }
+      if (a === "cancel-report") {
+        reportingComment = null;
+        await render();
+      }
+      if (a === "dismiss-report") {
+        await api.dismissReport(el.dataset.id);
+        await render();
+        feedback("Report dismissed after review.");
       }
       if (a === "removal") {
-        const receipts = JSON.parse(
-          localStorage.getItem("wn-receipts") || "[]",
-        );
+        const receipts = api.receipts();
         await api.removal(
           receipts.find((r) => r.id === el.dataset.id),
           "Contributor requested removal",
@@ -648,7 +1051,7 @@ export async function mount(root) {
           )
         ) {
           api.resetDemo();
-          await render();
+          go("moderator");
         }
       }
       if (a === "guidance") {
@@ -670,6 +1073,13 @@ export async function mount(root) {
     }
   }
   const onHash = () => render();
+  const onStorage = (e) => {
+    if (e.key === "wn-demo-session") {
+      clearEditor();
+      render();
+    }
+  };
+  window.addEventListener("storage", onStorage);
   root.addEventListener("click", action);
   window.addEventListener("hashchange", onHash);
   await render();
@@ -679,6 +1089,8 @@ export async function mount(root) {
     version++;
     root.removeEventListener("click", action);
     window.removeEventListener("hashchange", onHash);
+    window.removeEventListener("storage", onStorage);
+    writerController?.abort();
     if (photo) URL.revokeObjectURL(photo);
   };
 }

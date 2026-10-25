@@ -1,3 +1,14 @@
+import * as localAuth from "./auth.js";
+import * as store from "./storage.js";
+import {
+  accountObservations,
+  accountComments,
+  accountReports,
+  accountRegistration,
+  accountDraft,
+  residentId,
+} from "./account-seeds.js";
+import { requireSafeComment, reportReasons } from "./comment-safety.js";
 import { config } from "./config.js";
 import {
   areas,
@@ -35,8 +46,15 @@ const pickStory = (s) =>
   Object.fromEntries(publicFields.filter((k) => k in s).map((k) => [k, s[k]]));
 export function initialState() {
   return {
-    observations: structuredClone(observationSamples),
-    stories: structuredClone(sampleStories),
+    observations: [
+      ...structuredClone(observationSamples),
+      ...structuredClone(accountObservations),
+    ],
+    stories: structuredClone(sampleStories).map((story) =>
+      story.id === "story-brushtail"
+        ? { ...story, sourceObservationId: "taylor-approved-demo" }
+        : story,
+    ),
     opportunities: [
       ...structuredClone(sampleOpportunities),
       structuredClone(historicOpportunity),
@@ -44,23 +62,26 @@ export function initialState() {
     outcomes: structuredClone(sampleOutcomes),
     catalogVersion: 3,
     records: [],
-    comments: [],
-    reports: [],
+    comments: structuredClone(accountComments),
+    reports: structuredClone(accountReports),
+    registrations: [structuredClone(accountRegistration)],
+    receipts: [],
+    favorites: { [residentId]: ["story-brushtail"] },
+    drafts: { [residentId]: structuredClone(accountDraft) },
+    commentHistory: [],
+    accountVersion: 1,
     removals: [],
     sources: [],
   };
 }
 function state() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY));
-    if (!saved) return initialState();
+  return store.readDemo(initialState, (saved) => {
+    let changed = false;
     if (saved.catalogVersion !== 3) {
-      // Add exhibition records without deleting submissions, moderation or registrations.
       for (const seed of sampleOpportunities) {
         const found = saved.opportunities.find((o) => o.id === seed.id);
-        if (found) {
-          found.image = seed.image;
-        } else saved.opportunities.push(structuredClone(seed));
+        if (found) found.image = seed.image;
+        else saved.opportunities.push(structuredClone(seed));
       }
       for (const seed of sampleOutcomes)
         if (!saved.outcomes.some((o) => o.id === seed.id))
@@ -70,47 +91,91 @@ function state() {
         if (found) found.mediaUrl = seed.mediaUrl;
       }
       saved.catalogVersion = 3;
-      localStorage.setItem(KEY, JSON.stringify(saved));
+      changed = true;
     }
-    return saved;
-  } catch {
-    throw Error(
-      "Demo storage is unavailable. Enable browser storage and try again.",
-    );
-  }
+    if (saved.accountVersion !== 1) {
+      for (const observation of accountObservations)
+        if (!saved.observations.some((o) => o.id === observation.id))
+          saved.observations.push(structuredClone(observation));
+      const first = saved.stories.find((x) => x.id === "story-brushtail");
+      if (first && !first.sourceObservationId)
+        first.sourceObservationId = "taylor-approved-demo";
+      saved.comments ??= [];
+      for (const comment of accountComments)
+        if (!saved.comments.some((c) => c.id === comment.id))
+          saved.comments.push(structuredClone(comment));
+      // Existing pre-review comments remain unpublished for the moderator to remove or restore explicitly.
+      for (const c of saved.comments) {
+        if (c.status === "approved") c.status = "visible";
+        if (c.status === "pending") {
+          c.status = "removed";
+          c.removalReason =
+            "Legacy pre-approval comment retained privately during the direct-comment upgrade.";
+        }
+        c.authorId ??= "legacy-anonymous";
+        c.authorDisplayName ??= "Previous contributor (sample)";
+        c.parentCommentId ??= null;
+        c.reportCount ??= 0;
+      }
+      saved.reports ??= [];
+      for (const report of accountReports)
+        if (!saved.reports.some((r) => r.id === report.id))
+          saved.reports.push(structuredClone(report));
+      for (const report of saved.reports) {
+        report.status ??= "open";
+        report.reportedBy ??= "legacy-contributor";
+        report.reviewedBy ??= null;
+        report.reviewedAt ??= null;
+      }
+      saved.registrations = store
+        .readLocal(store.storageKeys.legacyRegistrations, [])
+        .map((r) => ({ ...r, ownerId: null }));
+      saved.registrations.push(structuredClone(accountRegistration));
+      saved.receipts = store
+        .readLocal(store.storageKeys.legacyReceipts, [])
+        .map((r) => ({ ...r, ownerId: null }));
+      saved.favorites ??= { [residentId]: ["story-brushtail"] };
+      saved.drafts ??= { [residentId]: structuredClone(accountDraft) };
+      saved.commentHistory ??= [];
+      saved.accountVersion = 1;
+      changed = true;
+    }
+    return changed;
+  });
 }
 function save(s) {
-  localStorage.setItem(KEY, JSON.stringify(s));
-  window.dispatchEvent(new Event("wn-data"));
+  store.saveDemo(s);
+}
+export function account() {
+  return live ? auth()?.profile || null : localAuth.currentUser();
+}
+function requireAccount() {
+  const user = account();
+  if (!user) throw Error("Sign in to continue.");
+  return user;
 }
 export function resetDemo() {
   if (live) throw Error("Demo reset is unavailable in connected mode.");
-  localStorage.removeItem(KEY);
-  sessionStorage.removeItem("wn-demo-moderator");
-  window.dispatchEvent(new Event("wn-data"));
-}
-export function demoLogin() {
-  if (live) throw Error("Use moderator sign-in.");
-  sessionStorage.setItem("wn-demo-moderator", "true");
+  requireModerator();
+  save(initialState());
+  store.removeLocal(store.storageKeys.legacyRegistrations);
+  store.removeLocal(store.storageKeys.legacyReceipts);
 }
 export function logout() {
-  sessionStorage.removeItem("wn-auth");
-  sessionStorage.removeItem("wn-demo-moderator");
+  store.writeSession(null);
+  localAuth.signOut();
 }
 function auth() {
-  try {
-    return JSON.parse(sessionStorage.getItem("wn-auth"));
-  } catch {
-    return null;
-  }
+  return store.readSession();
 }
 export function moderatorSession() {
-  return live
-    ? Boolean(auth()?.access_token)
-    : sessionStorage.getItem("wn-demo-moderator") === "true";
+  return (
+    account()?.role === "moderator" && (!live || Boolean(auth()?.access_token))
+  );
 }
 function requireModerator() {
-  if (!moderatorSession()) throw Error("Moderator sign-in required.");
+  if (!moderatorSession()) throw Error("Moderator access is required.");
+  return account();
 }
 const camel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const convert = (row) =>
@@ -138,20 +203,30 @@ const rpc = (name, payload) =>
     body: JSON.stringify(payload),
   });
 export async function login(email, password) {
+  if (!live) return localAuth.signIn(email, password);
   const session = await request("/auth/v1/token?grant_type=password", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  sessionStorage.setItem("wn-auth", JSON.stringify(session));
+  store.writeSession(session);
   try {
-    const result = await request("/rest/v1/rpc/is_moderator", {
+    const moderator = await request("/rest/v1/rpc/is_moderator", {
       method: "POST",
       body: "{}",
     });
-    if (result !== true) throw Error("No moderator role");
+    session.profile = {
+      id: session.user.id,
+      email: session.user.email,
+      displayName:
+        session.user.user_metadata?.display_name || "Community member",
+      role: moderator === true ? "moderator" : "user",
+    };
+    store.writeSession(session);
+    store.notify("wn-auth-change");
+    return session.profile;
   } catch {
     logout();
-    throw Error("This account does not have moderator access.");
+    throw Error("Sign-in could not be completed. Please try again.");
   }
 }
 export async function stories() {
@@ -206,7 +281,13 @@ export async function submit(o) {
     removalToken: id(),
     status: o.injuryConcern ? "urgent" : "pending",
   };
-  s.observations.push({ ...o, ...receipt, sample: true, submittedAt: stamp() });
+  s.observations.push({
+    ...o,
+    authorId: account()?.id || null,
+    ...receipt,
+    sample: true,
+    submittedAt: stamp(),
+  });
   save(s);
   return receipt;
 }
@@ -244,6 +325,9 @@ export async function queue() {
       removals: (await request("/rest/v1/removal_requests?select=*")).map(
         convert,
       ),
+      commentHistory: (await request("/rest/v1/comment_actions?select=*")).map(
+        convert,
+      ),
     };
   const s = state();
   return {
@@ -252,11 +336,18 @@ export async function queue() {
     comments: s.comments,
     reports: s.reports,
     removals: s.removals,
+    commentHistory: s.commentHistory,
   };
 }
 export const checks = ["face", "house", "plate", "location", "welfare"];
 export async function moderate(p) {
   requireModerator();
+  if (
+    !["approve", "reject", "clarification", "urgent", "remove"].includes(
+      p.action,
+    )
+  )
+    throw Error("Choose a moderation action.");
   if (!p.reason?.trim() || p.reason.trim().length < 3)
     throw Error("Give a reason for this action.");
   if (
@@ -280,12 +371,14 @@ export async function moderate(p) {
   const s = state(),
     o = s.observations.find((x) => x.id === p.id);
   if (!o) throw Error("Observation unavailable.");
+  const existingStory = s.stories.find((x) => x.sourceObservationId === o.id);
+  const publicStoryId = existingStory?.id || o.publicStoryId || id();
   s.stories = s.stories.filter((x) => x.sourceObservationId !== o.id);
   if (p.action === "approve") {
     const sp = species.find((x) => x.id === p.approvedSpecies);
     s.stories.unshift(
       pickStory({
-        id: id(),
+        id: publicStoryId,
         sourceObservationId: o.id,
         contentType: "neighbour-observation",
         species: p.approvedSpecies,
@@ -298,12 +391,13 @@ export async function moderate(p) {
           sp?.fact ||
           "Identification uncertain. Observe safely from a distance.",
         factSource: sp?.source || "",
-        reviewedBy: config.reviewerOrganisation,
+        reviewedBy: account().displayName,
         publishedAt: stamp(),
         sample: true,
       }),
     );
   }
+  if (p.action === "approve") o.publicStoryId = publicStoryId;
   o.status =
     { approve: "approved", reject: "rejected", remove: "removed" }[p.action] ||
     p.action;
@@ -315,56 +409,279 @@ export async function moderate(p) {
   s.records.push({
     ...p,
     id: id(),
-    moderatorId: "demo-moderator",
+    moderatorId: account().id,
+    moderatorName: account().displayName,
     createdAt: stamp(),
   });
   save(s);
 }
+const commentProjection = (c) =>
+  Object.fromEntries(
+    [
+      "id",
+      "storyId",
+      "parentCommentId",
+      "authorId",
+      "authorDisplayName",
+      "body",
+      "status",
+      "reportCount",
+      "createdAt",
+      "updatedAt",
+    ].map((k) => [k, c[k] ?? null]),
+  );
 export async function comments(storyId) {
-  return live
-    ? (
-        await request(
-          "/rest/v1/comments?select=id,story_id,body,status,created_at&story_id=eq." +
-            encodeURIComponent(storyId) +
-            "&status=eq.approved",
-        )
-      ).map(convert)
-    : state().comments.filter(
-        (x) => x.storyId === storyId && x.status === "approved",
-      );
+  if (live)
+    return (
+      await request(
+        "/rest/v1/comments?select=id,story_id,parent_comment_id,author_id,author_display_name,body,status,report_count,created_at,updated_at&story_id=eq." +
+          encodeURIComponent(storyId) +
+          "&status=eq.visible",
+      )
+    ).map(convert);
+  const s = state();
+  if (!s.stories.some((x) => x.id === storyId)) return [];
+  return s.comments
+    .filter(
+      (c) =>
+        c.storyId === storyId && c.status === "visible" && !c.authorDeleted,
+    )
+    .map(commentProjection);
 }
-export async function addComment(storyId, body) {
-  if (!body.trim() || body.length > 500)
-    throw Error("Write a comment of 1–500 characters.");
-  if (live) return rpc("submit_comment", { story_id: storyId, body });
+export async function addComment(
+  storyId,
+  body,
+  parentCommentId = null,
+  acknowledged = false,
+) {
+  const user = requireAccount();
+  body = requireSafeComment(body, acknowledged);
+  if (live)
+    return rpc("create_direct_comment", {
+      story_id: storyId,
+      body,
+      parent_comment_id: parentCommentId,
+    });
   const s = state();
   if (!s.stories.some((x) => x.id === storyId))
     throw Error("Story unavailable.");
-  s.comments.push({
+  if (
+    parentCommentId &&
+    !s.comments.some(
+      (c) =>
+        c.id === parentCommentId &&
+        c.storyId === storyId &&
+        c.status === "visible",
+    )
+  )
+    throw Error("The comment you are replying to is unavailable.");
+  const c = {
     id: id(),
     storyId,
+    parentCommentId,
+    authorId: user.id,
+    authorDisplayName: user.displayName,
     body,
-    status: "pending",
+    status: "visible",
+    reportCount: 0,
+    createdAt: stamp(),
+    updatedAt: null,
+  };
+  s.comments.push(c);
+  save(s);
+  return commentProjection(c);
+}
+export async function editComment(commentId, body, acknowledged = false) {
+  const user = requireAccount();
+  body = requireSafeComment(body, acknowledged);
+  if (live) return rpc("edit_own_comment", { comment_id: commentId, body });
+  const s = state(),
+    c = s.comments.find((c) => c.id === commentId);
+  if (!c || c.authorId !== user.id || c.status !== "visible")
+    throw Error("You can only edit your own visible comment.");
+  c.body = body;
+  c.updatedAt = stamp();
+  save(s);
+}
+export async function deleteComment(commentId) {
+  const user = requireAccount();
+  if (live) return rpc("delete_own_comment", { comment_id: commentId });
+  const s = state(),
+    c = s.comments.find((c) => c.id === commentId);
+  if (!c || c.authorId !== user.id)
+    throw Error("You can only delete your own comment.");
+  c.status = "removed";
+  c.authorDeleted = true;
+  c.updatedAt = stamp();
+  save(s);
+}
+export async function reportComment(commentId, reason, details = "") {
+  const user = requireAccount();
+  if (!reportReasons.includes(reason) || details.length > 500)
+    throw Error(
+      "Choose a reporting reason and keep details under 500 characters.",
+    );
+  if (live)
+    return rpc("report_direct_comment", {
+      comment_id: commentId,
+      reason,
+      details,
+    });
+  const s = state(),
+    c = s.comments.find((c) => c.id === commentId);
+  if (!c || c.status !== "visible" || c.authorId === user.id)
+    throw Error("You can only report another person’s visible comment.");
+  if (
+    s.reports.some(
+      (r) =>
+        r.commentId === commentId &&
+        r.reportedBy === user.id &&
+        r.status === "open",
+    )
+  )
+    throw Error("You have already reported this comment.");
+  s.reports.push({
+    id: id(),
+    commentId,
+    reportedBy: user.id,
+    reason,
+    details,
+    status: "open",
+    reviewedBy: null,
+    reviewedAt: null,
+    createdAt: stamp(),
+  });
+  c.reportCount = (c.reportCount || 0) + 1;
+  save(s);
+}
+export async function moderateComment(commentId, action, reason = "") {
+  const user = requireModerator();
+  if (!["remove", "restore"].includes(action))
+    throw Error("Choose remove or restore.");
+  if (action === "remove" && reason.trim().length < 3)
+    throw Error("Enter a reason for removing this comment.");
+  if (live)
+    return rpc("moderate_direct_comment", {
+      comment_id: commentId,
+      action,
+      reason,
+    });
+  const s = state(),
+    c = s.comments.find((c) => c.id === commentId);
+  if (!c) throw Error("Comment unavailable.");
+  if (c.authorDeleted && action === "restore")
+    throw Error("A comment deleted by its author cannot be restored.");
+  c.status = action === "remove" ? "removed" : "visible";
+  c.removalReason = action === "remove" ? reason : null;
+  c.updatedAt = stamp();
+  for (const report of s.reports.filter(
+    (r) => r.commentId === commentId && r.status === "open",
+  )) {
+    report.status = "actioned";
+    report.reviewedBy = user.id;
+    report.reviewedAt = stamp();
+  }
+  s.commentHistory.push({
+    id: id(),
+    commentId,
+    moderatorId: user.id,
+    action,
+    reason: reason || "Restored after review",
     createdAt: stamp(),
   });
   save(s);
 }
-export async function reportComment(commentId, reason) {
-  if (live) return rpc("report_comment", { comment_id: commentId, reason });
-  const s = state();
-  s.reports.push({ id: id(), commentId, reason, createdAt: stamp() });
+export async function dismissReport(reportId) {
+  const user = requireModerator();
+  if (live) return rpc("dismiss_comment_report", { report_id: reportId });
+  const s = state(),
+    r = s.reports.find((r) => r.id === reportId);
+  if (!r) throw Error("Report unavailable.");
+  r.status = "dismissed";
+  r.reviewedBy = user.id;
+  r.reviewedAt = stamp();
+  s.commentHistory.push({
+    id: id(),
+    commentId: r.commentId,
+    moderatorId: user.id,
+    action: "dismiss-report",
+    reason: "Report reviewed; no removal required.",
+    createdAt: stamp(),
+  });
   save(s);
 }
-export async function moderateComment(commentId, status) {
-  requireModerator();
-  if (live)
-    return request("/rest/v1/comments?id=eq." + encodeURIComponent(commentId), {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    });
+export async function myObservations() {
+  const user = requireAccount();
+  if (live) return (await rpc("my_observations", {})).map(convert);
+  return state()
+    .observations.filter((o) => o.authorId === user.id)
+    .map((o) =>
+      Object.fromEntries(
+        [
+          "id",
+          "possibleSpecies",
+          "publicArea",
+          "approximateTime",
+          "behaviour",
+          "description",
+          "status",
+          "submittedAt",
+          "aiAssisted",
+        ].map((k) => [k, o[k] ?? null]),
+      ),
+    );
+}
+export async function savedStories() {
+  const user = requireAccount();
+  const ids = state().favorites[user.id] || [];
+  return (await stories()).filter((story) => ids.includes(story.id));
+}
+export function toggleSaved(storyId) {
+  const user = requireAccount(),
+    s = state();
+  s.favorites[user.id] ??= [];
+  const list = s.favorites[user.id];
+  s.favorites[user.id] = list.includes(storyId)
+    ? list.filter((id) => id !== storyId)
+    : [...list, storyId];
+  save(s);
+}
+export function registrationList() {
+  const owner = account()?.id || null;
+  return state().registrations.filter((r) => (r.ownerId || null) === owner);
+}
+export function saveRegistrations(records) {
+  const owner = account()?.id || null,
+    s = state();
+  const other = s.registrations.filter((r) => (r.ownerId || null) !== owner);
+  for (const r of records) {
+    const existing = s.registrations.find((x) => x.id === r.id);
+    if (existing && (existing.ownerId || null) !== owner)
+      throw Error("You cannot change another person’s registration.");
+  }
+  s.registrations = [
+    ...other,
+    ...records.map((r) => ({ ...r, ownerId: owner })),
+  ];
+  save(s);
+}
+export function receipts() {
+  const owner = account()?.id || null;
+  return state().receipts.filter((r) => (r.ownerId || null) === owner);
+}
+export function keepReceipt(receipt) {
   const s = state();
-  const c = s.comments.find((c) => c.id === commentId);
-  if (c) c.status = status;
+  s.receipts.push({ ...receipt, ownerId: account()?.id || null });
+  save(s);
+}
+export function writingDraft() {
+  const user = requireAccount();
+  return state().drafts[user.id] || null;
+}
+export function saveWritingDraft(draft) {
+  const user = requireAccount(),
+    s = state();
+  s.drafts[user.id] = { ...draft, status: "draft" };
   save(s);
 }
 export async function saveOpportunity(o) {

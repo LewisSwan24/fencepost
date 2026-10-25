@@ -21,16 +21,16 @@ The separate Fencepost repository remains Next.js. Its new park entry points are
 
 ## Two explicit modes
 
-With empty backend fields in `shared/config.js`, **local demo mode** uses fictional seeds and browser localStorage. Moderation is an explicit demo role, not secure authentication. Anyone with browser access can inspect this data. Never enter real names, addresses, rescue reports or email addresses in demo mode. Tabs on the same origin update the display through storage events. Separate devices/origins do not share demo data.
+With empty backend fields in `shared/config.js`, **local demo mode** uses fictional seeds and browser localStorage. Two hardcoded exhibition accounts provide resident/moderator UI roles; their client-side authentication is not production security. Anyone with browser access can inspect this data. Never enter real names, addresses, rescue reports or email addresses in demo mode. Tabs on the same origin update the display through storage events. Separate devices/origins do not share demo data.
 
-With both Supabase URL and public **legacy anon JWT** key configured, **connected mode** uses REST/RPC, Supabase Auth for moderators and private Storage for pending media. It never silently falls back to demo on a backend error. Both deployments must use the same project. Live provisioning, actual Auth/Storage integration and deployment are not verified here; see setup below. Registrations are explicitly local demonstration records even in connected mode: they never contact an organiser or reserve a place.
+With both Supabase URL and public **legacy anon JWT** key configured, **connected mode** uses REST/RPC, Supabase Auth for residents/moderators and private Storage for pending media. It never silently falls back to demo on a backend error. Both deployments must use the same project. Live provisioning, actual Auth/Storage integration and deployment are not verified here; see setup below. Registrations are explicitly local demonstration records even in connected mode: they never contact an organiser or reserve a place.
 
 ## Shared Supabase setup
 
 Use a new development Supabase project, separate from existing storyboard data. The original Fencepost Python/Turso schema and generated files are untouched. Supabase is an additive, isolated moderation backend, not a migration or replacement for Turso. This separation avoids exposing permissioned legacy entries through anonymous public reading.
 
 1. Apply `supabase/001_schema.sql` in the Supabase SQL editor. It creates the new tables, RLS policies, RPCs and two Storage buckets. This is an initial migration, not a repeatable reset; do not run it against an unrelated existing schema.
-2. For an existing project, first apply `supabase/003_exhibition_updates.sql` to add the new outcome fields without deleting data. Load the fictional seeds from `supabase/002_seed.sql`. Regenerate them with `node scripts/seed.mjs > /tmp/wn-seed.sql`. Seeds are idempotent by deterministic IDs. They contain no real event or rescue address.
+2. For an existing project, first apply `supabase/003_exhibition_updates.sql` and `supabase/004_accounts_direct_comments.sql` to add the new outcome fields without deleting data. Load the fictional seeds from `supabase/002_seed.sql`. Regenerate them with `node scripts/seed.mjs > /tmp/wn-seed.sql`. Seeds are idempotent by deterministic IDs. They contain no real event or rescue address.
 3. In Supabase Authentication, create/invite the moderator account. Anonymous browsing/submission do not need an Auth user. Add the account's UUID to `public.moderators` from the SQL editor:
 
    ```sql
@@ -38,7 +38,7 @@ Use a new development Supabase project, separate from existing storyboard data. 
    values ('YOUR_AUTH_USER_UUID', 'YOUR RESPONSIBLE REVIEW ORGANISATION');
    ```
 
-   Never let clients add their own moderator membership. A valid Supabase login without this row is refused by the moderator UI and database policies.
+   Never let clients add their own moderator membership. A valid Supabase login without this row is a resident account and is refused access to moderator UI/data by the role guard and database policies.
 4. Put only the public project URL and legacy anon JWT key into `shared/config.js`. Never use service-role or `sb_secret_` keys. `.env.example` documents the public bindings; static GitHub Pages does not automatically inject `.env` files.
 5. Set `fencepostBaseUrl` to the actual preview deployment's `/park` URL (or deployed static companion). QR codes are generated locally from this configuration with a park query and story/opportunity hash. Do not point them at the unchanged production Fencepost deployment while testing new routes.
 6. In Fencepost's Vercel preview settings use `NEXT_PUBLIC_WN_SUPABASE_URL`, `NEXT_PUBLIC_WN_SUPABASE_ANON_KEY` and optionally `NEXT_PUBLIC_WN_FENCEPOST_URL`. `web/scripts/configure-wildlife.mjs` writes public configuration during `prebuild`; it rejects recognised service-role/secret keys. No secret values belong in the repository.
@@ -62,7 +62,7 @@ Fencepost hash routes: `#stories`, `#story/ID`, `#learn`, `#species/ID`, `#share
 
 No account gate is shown on the public park experience. Text-only posting and Not sure identification are first-class options. A photo or MP4/WebM clip under 5 MB is optional; clips become a single still. All media is re-encoded as JPEG to remove metadata; originals are not retained. Pending media is private in connected mode. Human privacy checks are required before approval. Contributors receive a browser-held receipt that supports a removal request, not access to the private queue.
 
-Discussion is only on the mobile approved-story detail, and every comment is pending until moderator approval. Reports and removal requests remain in the moderator view. No model-generated advice, permanent cameras, live animal tracking, public identities, exact location maps, popularity rankings or automatic posting is added.
+Discussion is only on approved-story details. Signed-in residents and moderators publish comments immediately after validation, can reply and edit/delete their own comments, and can report others. Posts still require human approval. Reported comments are a separate moderator list with dismissal, reasoned removal and restoration. Optional Ask AI writing help reuses the existing writer service and never publishes or supplies verified wildlife advice.
 
 ## Physical controls and reading
 
@@ -90,7 +90,7 @@ node scripts/sync-fencepost.mjs /path/to/fencepost
 
 Review and commit the copied `web/public/wildlife/` files on Fencepost's separate branch. This copy includes a same-origin static demo companion and display, enabling a browser-only demonstration inside one Vercel preview origin. Do not merge legacy storyboard content into the public story model.
 
-**Demo reset:** moderator → Reset fictional demo data (with confirmation) resets fictional observations/stories/comments/outcomes only. Registration records and receipts can contain independent demo activity; remove only `wn-registrations`, `wn-receipts`, `wn-demo-v2` in browser site storage for a complete local reset. Do not clear unrelated legacy Fencepost storage. Connected data is never reset by this button.
+**Demo reset:** sign in as the moderator → Settings → Reset demonstration data → confirm. This restores fictional posts, comments/reports, registrations, saved stories, drafts, activities and updates while preserving the active moderator session and configured hardcoded accounts. It is not available on public pages or connected data. Legacy storyboard storage is untouched.
 
 ## Validation
 
@@ -103,3 +103,9 @@ Review and commit the copied `web/public/wildlife/` files on Fencepost's separat
 See [TESTING.md](TESTING.md) for actual results and remaining manual checks. No live publishing, deployment, official-source verification or fresh-task restoration is claimed.
 
 The revised eight data tests and `tests/browser_revision.py` cover the new controls, activities, catalogue migration and community hierarchy. See REVISION.md for the ten requested screenshots and current acceptance evidence.
+
+## Current exhibition accounts and writing help
+
+Open `#login`, select Use resident account or Use moderator account, then press Sign in. Quick-fill does not authenticate by itself. Taylor uses resident@fencepost.demo / resident123; Wildlife Moderator uses moderator@fencepost.demo / moderator123. These intentionally public credentials are configured in shared/demo-accounts.js; passwords are never stored in localStorage. Guest browsing and anonymous text-only observation submission remain available.
+
+[ACCOUNTS-AND-WRITING.md](ACCOUNTS-AND-WRITING.md) documents the source port from main, protected routes, immediate-comment model, reports, safe persistence, existing AI environment variables, 004 migration and test results. `tests/browser_accounts.py` and `tests/browser_writing_failure.py` exercise the new journeys. The default static/Next fixture modes require no model credentials.
