@@ -5,8 +5,9 @@ const body = localFont({src:[{path:"./fonts/figtree-latin-400-normal.woff2",weig
 const display = localFont({src:"./fonts/caprasimo-latin-400-normal.woff2",variable:"--font-display",display:"swap"});
 
 export const metadata = {
-  title: "Fencepost",
-  description: "Possum sightings, kept by the street that filmed them.",
+  title: "Fencepost — Wildlife Neighbours",
+  description: "Moderated neighbourhood wildlife observations, practical guidance and optional habitat care.",
+  icons: {icon:"/wildlife/assets/neutral-fallback.svg"},
 };
 
 export const viewport = {

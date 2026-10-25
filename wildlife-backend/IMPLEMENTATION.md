@@ -4,9 +4,9 @@
 
 The display keeps the existing static technology and theme, adding a shared browser data/API layer, a Supabase migration and a responsive Fencepost park flow. The actual Fencepost source was inspected and modified on `wildlife-neighbours-preview`; its Next.js framework, legacy components, routes, tests and Python/Turso services are retained. New root/park routes reuse the same shared workflow; anonymous park browsing bypasses the legacy name gate. The original dashboard moves to `/legacy`, with its regression tests now importing `LegacyHome`.
 
-- `app.js`, five HTML entry points and `styles.css`: four-zone display, dynamic approved stories, help, six species and secondary action.
+- `app.js`, nine HTML entry points and `styles.css`: four-zone display, dynamic approved stories, help, six species and secondary action.
 - `shared/config.js`: single hardware mapping, public backend configuration, idle/rotation and contact requirements.
-- `shared/data.js`, `models.d.ts`: six species, six fictional approved stories, pending/rejected/uncertain/welfare examples, one sample activity and one sample outcome.
+- `shared/data.js`, `models.d.ts`: six species, six fictional approved stories, pending/rejected/uncertain/welfare examples, four sample activities and four sample Community Updates.
 - `shared/api.js`: explicit local/connected adapters, safe public projection, moderator auth, submission/media, moderation, comments, sources and outcomes.
 - `shared/mobile.js`/`mobile.css`, `fencepost/index.html`: mobile hash routes and complete demo state transitions.
 - `shared/controls.js`: three-button input, focus cycling, source-overlay Back, idle and configurable volume.
@@ -27,7 +27,7 @@ Local demo mode cannot provide privacy/security between people using the same br
 
 ## Journeys and moderation
 
-Browse anonymously → story detail separates resident observation, source-linked reference, safe response and privacy notes → learn species and one responsible-response activity → help situations. No phone is necessary for display learning or guidance.
+Browse anonymously → story detail separates resident observation, source-linked reference, safe response and privacy notes → learn species and one short quiz or matching/habitat activity → help situations. No phone is necessary for display learning or guidance.
 
 Share text or optional image/video still → preview and edit/cancel → Sent for review → moderator edits public wording/species/area, checks privacy and chooses approval, rejection, clarification, urgent or removal → public display updates (storage event locally; 30-second public-feed poll when connected). Clarification is recorded for demonstration, with no invented notification channel.
 
@@ -51,7 +51,7 @@ The six genuine participant summary is the research basis. Four coding-practice 
 
 ## Accessibility and removed features
 
-Touch controls meet at least 44 CSS pixels; keyboard focus uses outline, shadow and text. Macro navigation uses only Back/Choose/Next, with no separate Previous hardware button. The on-screen previous-story action remains reachable by cycling. Forms have visible labels, required fields, inline registration errors and preserved input on errors; status feedback is announced. Text alternatives accompany narration. Reduced motion pauses rotation. Responsive mobile and display layouts were checked; physical reach and outdoor glare remain hardware checks.
+Touch controls meet at least 44 CSS pixels; keyboard focus uses outline, shadow and text. Macro navigation uses only Back/Choose/Next, with no separate Previous hardware button. The on-screen previous-story action remains reachable by cycling. Forms have visible labels, required fields, inline registration errors and preserved input on errors; status feedback is announced. Text alternatives accompany narration. Reduced motion disables automatic rotation. Responsive mobile and display layouts were checked; physical reach and outdoor glare remain hardware checks.
 
 Statistics, exact pins, separate quiz/sounds/family/story pages, language switching, share codes, mandatory identity and AI advice are absent from the new primary flow. Legacy display URLs redirect; legacy Fencepost functionality remains at its routes rather than deleting dependent data or generated schemas.
 
@@ -59,7 +59,7 @@ Statistics, exact pins, separate quiz/sounds/family/story pages, language switch
 
 - No Supabase project credentials were provided. PostgreSQL migration/RLS/RPC tests passed using disposable PostgreSQL with Supabase auth/storage shims, not the hosted Auth/Storage service. Hosted login, signed media URLs, cross-origin polling and production deployment must still be validated.
 - Official wildlife sites were blocked by the cloud proxy. Facts have source fields, but editorial verification is pending. Unverified contacts are not displayed; the moderator can add reviewed contacts with source/date. This is not a verified emergency service.
-- Five species use clearly labelled placeholders because licensed, verified photographs were not available. Only the existing brushtail photograph is reused, with in-product attribution. Do not claim the large-photo requirement is complete for all six species.
+- All six species and community scenes now have locally hosted original illustrations, with provenance and labels in IMAGE-ATTRIBUTIONS.md. The existing licensed brushtail photograph retains attribution; no image is presented as evidence of a real sighting or event.
 - No copyrighted animal sounds were added. The allowed responsible-response activity is used instead. Narration relies on browser Web Speech; hardware/voices may vary.
 - Videos become a single still; full-video playback/storage is intentionally not offered. Raw media originals are not retained.
 - Registrations remain local demonstration records on all modes; no real event date, verified organiser or booking is supplied.
@@ -68,4 +68,8 @@ Statistics, exact pins, separate quiz/sounds/family/story pages, language switch
 
 ## Screenshots and testing checklist
 
-[Seven browser screenshots](docs/screenshots/README.md) show the actual public display and mobile flows. [TESTING.md](TESTING.md) records executed checks separately from hardware, official-source and hosted-service checks still required.
+[Ten browser screenshots](docs/screenshots/README.md) show the actual public display and mobile flows. [TESTING.md](TESTING.md) records executed checks separately from hardware, official-source and hosted-service checks still required.
+
+## Superseding interaction revision
+
+REVISION.md records the current contract: Back moves to the previous option, Return links are selectable, stories rotate only after idle and never during a full-story read, species have mixed mini-quizzes including keyboard pick/place habitat planning, and Fencepost has a clear featured-story/guidance/feed/community hierarchy. The ten new screenshots replace the earlier design captures.

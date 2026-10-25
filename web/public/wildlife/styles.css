@@ -1,3 +1,4 @@
+@import url("shared/experience.css");
 :root {
   --paper: #f5f1e7;
   --ink: #193c31;
@@ -799,4 +800,117 @@ main {
     position: static;
   }
 }
-@media(min-width:1100px){.story-copy{padding:24px 28px}.story-copy h1{font-size:44px}.story-copy>p{font-size:17px;margin-bottom:12px}.story-copy .small{font-size:12px;margin:8px 0}.story-copy .fact{padding:12px 16px;margin-bottom:12px}.story-copy .fact p{font-size:16px}.story-copy .story-meta{margin-bottom:12px;padding-top:12px}.hero-photo{min-height:520px}.story-copy .answers button,.story-copy .story-controls button{min-height:44px;font-size:14px}.story-copy .story-controls{margin-top:10px}.home-zones .zone{padding:16px}.zone h2{font-size:23px}.site-header{padding-top:18px;padding-bottom:18px}.macro-focus::before{top:-23px;font-size:10px}}
+@media (min-width: 1100px) {
+  .story-copy {
+    padding: 24px 28px;
+  }
+  .story-copy h1 {
+    font-size: 44px;
+  }
+  .story-copy > p {
+    font-size: 17px;
+    margin-bottom: 12px;
+  }
+  .story-copy .small {
+    font-size: 12px;
+    margin: 8px 0;
+  }
+  .story-copy .fact {
+    padding: 12px 16px;
+    margin-bottom: 12px;
+  }
+  .story-copy .fact p {
+    font-size: 16px;
+  }
+  .story-copy .story-meta {
+    margin-bottom: 12px;
+    padding-top: 12px;
+  }
+  .hero-photo {
+    min-height: 520px;
+  }
+  .story-copy .answers button,
+  .story-copy .story-controls button {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .story-copy .story-controls {
+    margin-top: 10px;
+  }
+  .home-zones .zone {
+    padding: 16px;
+  }
+  .zone h2 {
+    font-size: 23px;
+  }
+  .site-header {
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+  .macro-focus::before {
+    top: -23px;
+    font-size: 10px;
+  }
+}
+/* Keep the marker in layout so it cannot cover guidance or story text. */
+.macro-focus::before {
+  content: none !important;
+}
+.macro-focus::after {
+  content: "▶︎ Selected";
+  display: inline-block;
+  position: static;
+  margin: 4px 7px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #193c31;
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+.control-guide {
+  font-size: 12px;
+}
+.control-guide span {
+  max-width: 100%;
+  text-align: center;
+}
+.story-position {
+  margin-bottom: 12px;
+}
+.activity-links a {
+  font-size: 16px;
+}
+.return-options {
+  scroll-margin-top: 16px;
+}
+/* Stable focus geometry supports pointer dragging as well as the three keys. */
+.macro-focus::after {
+  content: none !important;
+}
+#selected-option {
+  display: block;
+  flex-basis: 100%;
+  min-height: 18px;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #193c31;
+  font-weight: 700;
+}
+html {
+  scroll-padding-top: 20px;
+  scroll-padding-bottom: 220px;
+}
+.mini-game button,
+.return-options a,
+.story-controls button,
+.story-controls a {
+  scroll-margin-top: 60px;
+  scroll-margin-bottom: 220px;
+}
