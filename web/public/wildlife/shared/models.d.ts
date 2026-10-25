@@ -4,3 +4,6 @@ export interface ModerationRecord {id:string;observationId:string;moderatorId:st
 export interface PublicStory {id:string;sourceObservationId?:string;contentType:'neighbour-observation';species:string;publicArea:string;approximateTime:string;behaviour:string;storyText:string;mediaUrl?:string;verifiedFact:string;factSource:string;reviewedBy:string;publishedAt:string}
 export interface Registration {id:string;opportunityId:string;nickname:string;email:string;adults:number;children:number;accessibilityNeeds?:string;preferredRole:string;status:'active'|'cancelled';createdAt:string}
 export interface CommunityOutcome {id:string;opportunityId:string;title:string;publicArea:string;completedAt:string;actionsCompleted:string;activity?:string;whyItMatters?:string;demonstrationDate?:string;approvedImage?:string;communityMessage:string;nextOpportunityId?:string}
+export interface DemoUser {id:string;displayName:string;email:string;role:'user'|'moderator'}
+export interface WildlifeComment {id:string;storyId:string;parentCommentId:string|null;authorId:string;authorDisplayName:string;body:string;status:'visible'|'removed';reportCount:number;createdAt:string;updatedAt:string|null}
+export interface CommentReport {id:string;commentId:string;reportedBy:string;reason:string;details:string;status:'open'|'dismissed'|'actioned';reviewedBy:string|null;reviewedAt:string|null}

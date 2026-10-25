@@ -3,8 +3,8 @@
 ## Executed
 
 - Static build validation: passed.
-- Eight Node data/security-behaviour tests: passed.
-- Fencepost existing frontend suite: 524 passed, zero failed, with `TZ=Australia/Brisbane`. The same suite without the expected timezone exposed an existing calendar-boundary expectation; no unrelated date implementation was changed.
+- Sixteen Node data/security-behaviour tests: passed.
+- Fencepost existing frontend suite: 527 passed, zero failed, with `TZ=Australia/Brisbane`. The same suite without the expected timezone exposed an existing calendar-boundary expectation; no unrelated date implementation was changed.
 - Fencepost production build: passed after bundling the same Figtree/Caprasimo font families locally.
 - Chromium: text-only Not sure observation → preview → pending hidden publicly → moderator checks/approval → public story visible; no private rescue location in feed.
 - Chromium: optional photograph → preview/private moderator image → rejection; rejected description absent from public projection.
@@ -27,7 +27,7 @@
 - [ ] Check all control targets, focus, font scaling, contrast, screen-reader errors and source overlays on the final kiosk dimensions.
 - [ ] Test Back/Choose/Next on the actual USB macro keyboard and OS volume knob; verify speaker level, narration pause, idle audio stop and seated/child reach.
 - [ ] Repeat empty-feed and backend-failure checks against the actual hosted backend; local intercepted-failure checks passed.
-- [ ] Exercise comments pending → approval → report → removal, contributor removal request and outcome publication with the responsible moderator.
+- [ ] Exercise comments immediate publication → report → removal/restoration, contributor removal request and outcome publication with the responsible moderator.
 - [ ] Confirm opportunity organiser, date, official registration/contact, accessibility, safety and review date before allowing a verified badge.
 - [ ] Use only fictional details for local registration; agree a privacy/retention and messaging approach before real registration.
 - [ ] Review both branch diffs; deploy previews, verify QR destinations on a real phone, then decide whether to merge.
@@ -38,4 +38,8 @@ The committed browser tests require Python Playwright and `/usr/bin/chromium`. S
 
 `browser_revision.py` exercises Back/Next wrap, Choose/Return, idle-only rotation, reduced-motion, uninterrupted full-story reading, all quiz types, keyboard habitat item placement/repositioning, pointer drag, four sample updates, mobile hierarchy and additional-activity registration at iPad/mobile dimensions. The additive SQL upgrade preserves the four existing private sample observations and adds four detailed sample updates. Actual cardboard hardware is not available in the cloud and remains a manual check.
 
-The 524 existing Fencepost frontend tests were rerun after this revision and passed. Native pointer dragging also passed at 1280×720, 1024×768 and 1440×1080 using a drag gesture started before scrolling to the target. The final screenshots are indexed in docs/screenshots/README.md.
+The Fencepost frontend suite (524 existing tests plus three writer-adapter tests) were rerun after this revision and passed. Native pointer dragging also passed at 1280×720, 1024×768 and 1440×1080 using a drag gesture started before scrolling to the target. The final screenshots are indexed in docs/screenshots/README.md.
+
+## Account/comment/writing verification
+
+The account and direct-comment correction passes 16 Node tests and the 527-test Fencepost suite. Browser journeys cover guest browsing, both demo accounts, quick-fill without automatic login, wrong passwords, refresh/logout, role-protected routes, owner-only views, immediate comments, own edits/deletions, report-without-hiding, moderator removal/restoration, post approval, reset, and mobile layout. Writing tests exercise comparison, editable output, explicit application, undo, cancellation, identifying-input preflight and service failure with successful manual submission. `tests/direct-comments-security.sql` passed against PostgreSQL auth/storage shims: guests cannot comment, residents cannot edit another author or read private rescue fields, comments are immediately visible, reports do not hide them, and moderator remove/restore actions are audited. Hosted model-provider and Supabase-service connectivity still require configuration.

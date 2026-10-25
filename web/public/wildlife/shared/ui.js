@@ -86,4 +86,4 @@ export const sourceLink = (url, label = "Information source") =>
     ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">${label} ↗</a>`
     : "";
 export const modeNote = (live) =>
-  `<p class="mode-note">${live ? "Connected prototype · human review before publication" : "Local demo only · fictional content · stored in this browser, not shared between devices. Do not enter real personal or rescue details."}</p>`;
+  `<p class="mode-note">${live ? "Connected prototype · wildlife posts require human review" : "Local demo only · fictional content · stored in this browser, not shared between devices. Do not enter real personal or rescue details."}</p>`;

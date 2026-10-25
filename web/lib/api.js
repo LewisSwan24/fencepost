@@ -336,7 +336,7 @@ export async function me() {
   return { user_id, handle };
 }
 
-async function request(path, { method, body, auth } = {}) {
+async function request(path, { method, body, auth, signal } = {}) {
   const headers = {};
   if (body) headers["content-type"] = "application/json";
   if (auth) headers.authorization = "Bearer " + auth;
@@ -346,6 +346,7 @@ async function request(path, { method, body, auth } = {}) {
       method: method || (body ? "POST" : "GET"),
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      ...(signal ? {signal} : {}),
     });
   } catch (cause) {
     // fetch rejects before there is a response at all: the network is down, DNS failed,
@@ -687,10 +688,12 @@ export async function askAssistant(message, storyboardId) {
   });
 }
 
-export async function writerHelp(species, story) {
+export async function writerHelp(species, story, {signal} = {}) {
+  if(signal?.aborted)throw new DOMException("Cancelled","AbortError");
   if (!assistantIsLive) return delayed(fixtures.writer(species, story));
   return call("/api/assistant", {
     body: { role: "writer", species_selected: species, story_draft: story },
+    signal,
   });
 }
 
