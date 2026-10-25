@@ -1,0 +1,260 @@
+.mobile-body {
+  background: #193c31;
+}
+.fencepost-app {
+  --paper: #f5f1e7;
+  --ink: #193c31;
+  --muted: #526458;
+  --line: #ced4c6;
+  --accent: #944124;
+  --sage: #e3e9da;
+  --white: #fffcf5;
+  background: var(--paper);
+  color: var(--ink);
+  max-width: 760px;
+  margin: auto;
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
+}
+.fencepost-app * {
+  box-sizing: border-box;
+}
+.mobile-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px;
+  align-items: center;
+}
+.mobile-header > span {
+  font-size: 12px;
+}
+.mobile-nav {
+  display: flex;
+  justify-content: space-around;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  background: var(--ink);
+  z-index: 10;
+  padding: 8px;
+}
+.mobile-nav a {
+  color: white;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  padding: 6px;
+  text-decoration: none;
+}
+.mobile-main {
+  padding: 24px;
+  width: 100%;
+  min-height: 60vh;
+}
+.fencepost-app h1 {
+  font-size: 38px;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+.fencepost-app h2 {
+  font-size: 27px;
+  margin-top: 24px;
+  line-height: 1.15;
+}
+.fencepost-app h3 {
+  font-size: 22px;
+}
+.fencepost-app p {
+  margin: 0 0 16px;
+}
+.fencepost-app a {
+  color: inherit;
+  text-decoration: underline;
+}
+.fencepost-app .mobile-nav a {
+  color: white;
+}
+.fencepost-app .mode-note {
+  margin: 0 16px 16px;
+  font-size: 13px;
+}
+.mobile-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--white);
+  border-radius: 14px;
+  margin: 24px 0;
+}
+.mobile-card img {
+  display: block;
+  width: 100%;
+  height: 230px;
+  object-fit: cover;
+}
+.mobile-card > div {
+  padding: 22px;
+}
+.mobile-card h2 {
+  margin-top: 0;
+}
+.fencepost-app .label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.fencepost-app .small {
+  font-size: 13px;
+  color: var(--muted);
+}
+.detail-image {
+  width: 100%;
+  max-height: 400px;
+  object-fit: cover;
+  border-radius: 14px;
+}
+.fencepost-app label {
+  display: block;
+  font-weight: 700;
+  margin: 18px 0;
+}
+.fencepost-app input,
+.fencepost-app select,
+.fencepost-app textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid #526458;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  border-radius: 7px;
+  margin-top: 6px;
+}
+.fencepost-app textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+.fencepost-app input[type="file"] {
+  max-width: 100%;
+  font-size: 13px;
+}
+.fencepost-app .tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-weight: 400;
+}
+.fencepost-app input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+  margin-top: 0;
+}
+.fencepost-app button,
+.fencepost-app .link-button {
+  font: inherit;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  padding: 12px 16px;
+  margin: 6px 6px 6px 0;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  cursor: pointer;
+  text-decoration: none;
+}
+.fencepost-app button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.fencepost-app :focus-visible {
+  outline: 4px solid var(--accent);
+  outline-offset: 4px;
+}
+.fencepost-app .notice {
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: var(--sage);
+  border-radius: 10px;
+  margin: 20px 0;
+}
+.fencepost-app summary {
+  cursor: pointer;
+  min-height: 44px;
+  font-weight: 700;
+}
+.fencepost-app pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  max-height: 300px;
+  overflow: auto;
+}
+.fencepost-app .field-error {
+  color: #943323;
+  display: block;
+  font-size: 14px;
+}
+.fencepost-app [aria-invalid="true"] {
+  border: 2px solid #943323;
+}
+.fencepost-app #feedback:not(:empty) {
+  border: 2px solid var(--accent);
+  padding: 16px;
+  margin-bottom: 18px;
+}
+.fencepost-app footer {
+  position: static;
+  background: var(--paper);
+  font-size: 13px;
+  padding: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.fencepost-app dt {
+  font-weight: 700;
+}
+.fencepost-app dd {
+  margin: 0 0 16px;
+}
+.fencepost-app fieldset {
+  border: 1px solid var(--line);
+  padding: 14px;
+  min-width: 0;
+}
+.fencepost-app img {
+  max-width: 100%;
+}
+.fencepost-app .help-options {
+  display: flex;
+  flex-direction: column;
+}
+.fencepost-app .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  font-weight: 700;
+}
+@media (max-width: 400px) {
+  .mobile-main {
+    padding: 18px;
+  }
+  .fencepost-app h1 {
+    font-size: 33px;
+  }
+  .mobile-nav a {
+    font-size: 13px;
+  }
+  .fencepost-app button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}

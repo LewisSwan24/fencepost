@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { screen, cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import Home from "../app/page.js";
+import Home from "../app/LegacyHome.js";
 import { COPY, reasonSentence } from "../lib/copy.js";
 import { BLOCKED_TRIGGER } from "../lib/fixtures.js";
 import { renderScreen } from "./harness.mjs";
