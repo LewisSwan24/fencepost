@@ -8,6 +8,8 @@ import {
   opportunity,
   historicOpportunity,
   sampleOutcome,
+  sampleOutcomes,
+  sampleOpportunities,
 } from "./data.js";
 export const live = Boolean(config.supabaseUrl && config.supabaseAnonKey);
 const KEY = "wn-demo-v2";
@@ -36,10 +38,11 @@ export function initialState() {
     observations: structuredClone(observationSamples),
     stories: structuredClone(sampleStories),
     opportunities: [
-      structuredClone(opportunity),
+      ...structuredClone(sampleOpportunities),
       structuredClone(historicOpportunity),
     ],
-    outcomes: [structuredClone(sampleOutcome)],
+    outcomes: structuredClone(sampleOutcomes),
+    catalogVersion: 3,
     records: [],
     comments: [],
     reports: [],
@@ -49,7 +52,27 @@ export function initialState() {
 }
 function state() {
   try {
-    return JSON.parse(localStorage.getItem(KEY)) || initialState();
+    const saved = JSON.parse(localStorage.getItem(KEY));
+    if (!saved) return initialState();
+    if (saved.catalogVersion !== 3) {
+      // Add exhibition records without deleting submissions, moderation or registrations.
+      for (const seed of sampleOpportunities) {
+        const found = saved.opportunities.find((o) => o.id === seed.id);
+        if (found) {
+          found.image = seed.image;
+        } else saved.opportunities.push(structuredClone(seed));
+      }
+      for (const seed of sampleOutcomes)
+        if (!saved.outcomes.some((o) => o.id === seed.id))
+          saved.outcomes.push(structuredClone(seed));
+      for (const seed of sampleStories) {
+        const found = saved.stories.find((o) => o.id === seed.id && o.sample);
+        if (found) found.mediaUrl = seed.mediaUrl;
+      }
+      saved.catalogVersion = 3;
+      localStorage.setItem(KEY, JSON.stringify(saved));
+    }
+    return saved;
   } catch {
     throw Error(
       "Demo storage is unavailable. Enable browser storage and try again.",

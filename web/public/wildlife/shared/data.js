@@ -37,7 +37,7 @@ export const species = [
     fact: "Flying foxes help disperse seeds and pollinate flowering trees.",
     source:
       "https://australian.museum/learn/animals/mammals/grey-headed-flying-fox/",
-    image: "assets/species-flying-fox.svg",
+    image: "illustration:flying-fox",
   },
   {
     id: "water-dragon",
@@ -48,7 +48,7 @@ export const species = [
     behaviour: "Basking on rocks and swimming",
     fact: "Water dragons can swim and dive to escape danger.",
     source: "https://australian.museum/learn/animals/reptiles/water-dragon/",
-    image: "assets/species-water-dragon.svg",
+    image: "illustration:water-dragon",
   },
   {
     id: "magpie",
@@ -59,7 +59,7 @@ export const species = [
     behaviour: "Foraging on the ground and singing",
     fact: "Australian magpies forage for insects and other small animals.",
     source: "https://australian.museum/learn/animals/birds/australian-magpie/",
-    image: "assets/species-magpie.svg",
+    image: "illustration:magpie",
   },
   {
     id: "kangaroo",
@@ -71,7 +71,7 @@ export const species = [
     fact: "Eastern grey kangaroos eat grasses.",
     source:
       "https://australian.museum/learn/animals/mammals/eastern-grey-kangaroo/",
-    image: "assets/species-kangaroo.svg",
+    image: "illustration:kangaroo",
   },
   {
     id: "blue-tongue",
@@ -83,7 +83,7 @@ export const species = [
     fact: "Blue-tongued lizards eat a mixture of plant and animal food.",
     source:
       "https://australian.museum/learn/animals/reptiles/blue-tongue-lizard/",
-    image: "assets/species-blue-tongue.svg",
+    image: "illustration:blue-tongue",
   },
 ].map((s) => ({
   ...s,
@@ -95,6 +95,7 @@ export const species = [
 export const opportunity = {
   id: "habitat-demo",
   title: "Help improve local wildlife habitat",
+  image: "illustration:planting",
   status: "sample",
   organiser: "Example community organisation",
   organiserVerified: false,
@@ -214,7 +215,14 @@ export const sampleStories = species.map((s, i) => ({
   contentType: "neighbour-observation",
   species: s.id,
   publicArea: areas[i],
-  approximateTime: ["During the evening","Around dusk","During the day","During the day","Late afternoon","During the day"][i],
+  approximateTime: [
+    "During the evening",
+    "Around dusk",
+    "During the day",
+    "During the day",
+    "Late afternoon",
+    "During the day",
+  ][i],
   behaviour: s.behaviour,
   storyText: [
     "A neighbour noticed a possible brushtail possum resting in trees near the general park area during the evening.",
@@ -237,18 +245,101 @@ export const historicOpportunity = {
   status: "completed",
   registrationOpen: false,
 };
-export const sampleOutcome = {
-  id: "outcome-demo",
-  opportunityId: "habitat-completed-demo",
-  title: "Caring for shared green spaces",
-  publicArea: areas[0],
+export const sampleOpportunities = [
+  opportunity,
+  {
+    ...opportunity,
+    id: "pond-care-demo",
+    title: "Care for the park pond",
+    publicArea: "Community park pond",
+    description:
+      "Collect litter with organiser guidance and learn about pond-edge habitat.",
+    image: "illustration:pond",
+    tasks: ["Litter collection", "Seated preparation", "General assistance"],
+  },
+  {
+    ...opportunity,
+    id: "garden-care-demo",
+    title: "Help native shelter grow",
+    publicArea: "Community garden boundary",
+    description:
+      "Prepare and plant locally appropriate shrubs with the organiser.",
+    image: "illustration:garden",
+    tasks: ["Planting", "Watering", "Seated preparation"],
+  },
+  {
+    ...opportunity,
+    id: "reserve-care-demo",
+    title: "A cleaner reserve entrance",
+    publicArea: "Local reserve entrance",
+    description: "Join a supervised clean-up on paths and managed park areas.",
+    image: "illustration:cleanup",
+    tasks: ["Litter collection", "General assistance", "Seated preparation"],
+  },
+];
+export const sampleOutcomes = [
+  {
+    id: "update-route-demo",
+    opportunityId: "habitat-demo",
+    title: "Creating a safer wildlife route",
+    publicArea: "Local park edge",
+    activity: "Native planting and litter removal",
+    actionsCompleted:
+      "Volunteers planted native shrubs and removed rubbish from the habitat area.",
+    whyItMatters:
+      "Connected vegetation can provide shelter and safer movement paths for urban wildlife.",
+    communityMessage:
+      "Thank you to the residents who helped care for our shared environment.",
+    approvedImage: "illustration:planting",
+  },
+  {
+    id: "update-pond-demo",
+    opportunityId: "pond-care-demo",
+    title: "Caring for the park pond",
+    publicArea: "Community park pond",
+    activity: "Litter collection and habitat-care session",
+    actionsCompleted:
+      "Volunteers removed litter from the pond surroundings and learned how rubbish can affect birds, frogs and water dragons.",
+    whyItMatters:
+      "Cleaner pond edges can reduce hazards for animals using the water and surrounding vegetation.",
+    communityMessage:
+      "Small local actions can create a safer shared space for people and wildlife.",
+    approvedImage: "illustration:pond",
+  },
+  {
+    id: "update-shelter-demo",
+    opportunityId: "garden-care-demo",
+    title: "Restoring native shelter",
+    publicArea: "Community garden boundary",
+    activity: "Planting locally appropriate shrubs",
+    actionsCompleted:
+      "Volunteers added native vegetation under the guidance of the activity organiser.",
+    whyItMatters:
+      "Shrubs may provide shelter and contribute to connected urban habitat.",
+    communityMessage: "Thank you for helping improve neighbourhood habitat.",
+    approvedImage: "illustration:garden",
+  },
+  {
+    id: "update-reserve-demo",
+    opportunityId: "reserve-care-demo",
+    title: "A cleaner reserve entrance",
+    publicArea: "Local reserve entrance",
+    activity: "Supervised park clean-up",
+    actionsCompleted:
+      "Volunteers collected litter from paths and vegetation without entering sensitive habitat areas.",
+    whyItMatters:
+      "Removing rubbish can reduce entanglement and ingestion risks for wildlife.",
+    communityMessage:
+      "The activity combined practical care with learning about local animals.",
+    approvedImage: "illustration:cleanup",
+  },
+].map((o) => ({
+  ...o,
   completedAt: "2026-01-01",
-  actionsCompleted:
-    "Sample: residents planted native shrubs and removed litter.",
-  communityMessage:
-    "Demonstration outcome only. No measured habitat impact or animal use is claimed.",
-  approvedImage: null,
+  demonstrationDate: "Demonstration date · To be confirmed",
   noWildlifeHandling: true,
   published: true,
   sample: true,
-};
+}));
+// Retained export for consumers of the earlier demonstration model.
+export const sampleOutcome = sampleOutcomes[0];

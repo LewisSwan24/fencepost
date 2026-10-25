@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wildlife Neighbours</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="assets/placeholder.svg" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html"
+        >Wildlife<br /><strong>Neighbours<span> ●</span></strong></a
+      ><span class="header-note">Small encounters. Shared places.</span
+      ><span class="prototype">Community display · Prototype</span>
+    </header>
+    <main aria-label="Wildlife Neighbours">
+      <p>Loading…</p>
+      <noscript
+        >Enable JavaScript to browse the interactive prototype.</noscript
+      >
+    </main>
+    <div class="kiosk-dock">
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <a href="index.html">Home story</a><a href="help.html">Is it hurt?</a
+        ><a href="animals.html">Meet the animal</a
+        ><a href="community.html">Read, share or volunteer</a>
+      </nav>
+      <div class="control-guide" aria-label="Physical controls">
+        <button data-control="back">◀ Back</button
+        ><button data-control="choose">● Choose</button
+        ><button data-control="next">▶ Next</button
+        ><span
+          >Back: previous option · Choose: select · Next: next option · Turn
+          knob: volume</span
+        ><span id="selected-option" role="status" aria-live="polite"></span
+        ><span id="volume-state" role="status" aria-live="polite"></span>
+      </div>
+      <footer>Observe safely. Never approach, feed or handle wildlife.</footer>
+    </div>
+    <script src="vendor/qrcode.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

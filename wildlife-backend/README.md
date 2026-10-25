@@ -30,7 +30,7 @@ With both Supabase URL and public **legacy anon JWT** key configured, **connecte
 Use a new development Supabase project, separate from existing storyboard data. The original Fencepost Python/Turso schema and generated files are untouched. Supabase is an additive, isolated moderation backend, not a migration or replacement for Turso. This separation avoids exposing permissioned legacy entries through anonymous public reading.
 
 1. Apply `supabase/001_schema.sql` in the Supabase SQL editor. It creates the new tables, RLS policies, RPCs and two Storage buckets. This is an initial migration, not a repeatable reset; do not run it against an unrelated existing schema.
-2. Load the fictional seeds from `supabase/002_seed.sql`. Regenerate them with `node scripts/seed.mjs > /tmp/wn-seed.sql`. Seeds are idempotent by deterministic IDs. They contain no real event or rescue address.
+2. For an existing project, first apply `supabase/003_exhibition_updates.sql` to add the new outcome fields without deleting data. Load the fictional seeds from `supabase/002_seed.sql`. Regenerate them with `node scripts/seed.mjs > /tmp/wn-seed.sql`. Seeds are idempotent by deterministic IDs. They contain no real event or rescue address.
 3. In Supabase Authentication, create/invite the moderator account. Anonymous browsing/submission do not need an Auth user. Add the account's UUID to `public.moderators` from the SQL editor:
 
    ```sql
@@ -51,7 +51,7 @@ Default Supabase rate limits alone are not a complete anti-spam system. Before a
 
 | Public display | Purpose |
 | --- | --- |
-| `index.html` | Four zones, rotating approved stories, previous/next, pause and optional narration |
+| `index.html` | Four zones, rotating approved stories, previous/next, full-story reading and optional narration |
 | `help.html` | Five situations, source-linked guidance and verified-contact configuration |
 | `animals.html` | Six species |
 | `species.html?animal=brushtail` | One species, source and optional responsible-response activity |
@@ -64,19 +64,17 @@ No account gate is shown on the public park experience. Text-only posting and No
 
 Discussion is only on the mobile approved-story detail, and every comment is pending until moderator approval. Reports and removal requests remain in the moderator view. No model-generated advice, permanent cameras, live animal tracking, public identities, exact location maps, popularity rankings or automatic posting is added.
 
-## Physical controls
+## Physical controls and reading
 
-All display features use three controls, configured only in `shared/config.js`:
+The current contract is Back = ArrowLeft (previous option, with wrap), Choose = Enter (activate) and Next = ArrowRight (next option, with wrap). Directional buttons do not leave the page or change the carousel directly. Each secondary display page has a selectable Return to previous screen and Return to home near the beginning of the focus order. The persistent reminder and selected-item label accompany the visible outline/shadow. There are no additional required navigation keys.
 
-- Back: Escape; closes a source handoff/detail or returns to the parent page. At home it stays home.
-- Choose: Enter; activates the highlighted choice.
-- Next: ArrowRight; cycles all available choices, including story navigation and activity answers.
+The rotary knob controls only volume. Default mode is OS volume; optional software mode receives `wn-knob` events configured in `shared/config.js` and remembers session volume. It is never used for navigation.
 
-Permanent on-screen Back/Choose/Next buttons mirror the hardware. The selected option has a border, shadow and “▶ Selected” marker, not colour alone. External sources and mobile handoffs open a scannable source panel on the kiosk, so the three-button user can return without controlling another browser tab.
+Stories rotate only after 45 seconds of inactivity. Interaction resets the timer; reduced-motion disables automatic rotation; audio/source panels suspend it. There is no rotation pause/resume button. Full-story reading never auto-rotates or returns home while the view is visible. Other secondary screens return home after two minutes of inactivity and stop audio while keeping volume.
 
-The default volume knob is system volume. The browser cannot reliably observe OS volume changes; use the OS indicator. Software mode is optional: set `volume.mode` to `software`, customise the configured volume keys, or emit `new CustomEvent('wn-knob', {detail:{delta:1}})` for clockwise and `delta:-1` for anticlockwise. This signal changes volume only and shows an accessible temporary indicator; it is not a fourth required navigation key. Session volume persists over idle/home navigation. Software narration restarts at the new volume because Web Speech cannot reliably change an in-progress utterance's volume. Actual iPad/USB hardware and speakers still need testing.
+The new `activity.html`, `story.html`, `updates.html` and `update.html` routes provide quizzes/keyboard-accessible habitat play, uninterrupted story reading, and the four sample Community Updates. Mobile equivalents are `#activity/SPECIES`, `#updates` and `#update/ID`.
 
-After two minutes without input, stop audio, close overlays, return home/reset the story and focus the first option; keep volume. Reduced-motion users start with story rotation paused.
+See [REVISION.md](REVISION.md) for the full current interaction contract and [IMAGE-ATTRIBUTIONS.md](IMAGE-ATTRIBUTIONS.md) for the original locally hosted imagery. Physical cardboard/iPad/USB testing is still required.
 
 ## Deployment and synchronisation
 
@@ -103,3 +101,5 @@ Review and commit the copied `web/public/wildlife/` files on Fencepost's separat
 - Fencepost: `TZ=Australia/Brisbane npm test` in `web/`. Its existing date tests assume Brisbane calendar boundaries. `npm run build` validates all old and new Next routes.
 
 See [TESTING.md](TESTING.md) for actual results and remaining manual checks. No live publishing, deployment, official-source verification or fresh-task restoration is claimed.
+
+The revised eight data tests and `tests/browser_revision.py` cover the new controls, activities, catalogue migration and community hierarchy. See REVISION.md for the ten requested screenshots and current acceptance evidence.

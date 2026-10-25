@@ -1,3 +1,4 @@
+@import url("./experience.css");
 .mobile-body {
   background: #193c31;
 }
@@ -257,4 +258,280 @@
     max-width: 100%;
     white-space: normal;
   }
+}
+/* Purpose-led mobile hierarchy: a single feature, then guidance, stories and action. */
+.fencepost-app {
+  max-width: 1080px;
+  font-size: 17px;
+}
+.mobile-header {
+  padding: 26px 32px;
+  border-bottom: 1px solid #ced4c6;
+}
+.mobile-header .brand {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  text-decoration: none;
+}
+.mobile-header .brand span {
+  color: #944124;
+}
+.mobile-header > span {
+  font-size: 12px;
+  color: #526458;
+}
+.mobile-main {
+  max-width: 100%;
+  padding: 32px;
+}
+.mobile-nav {
+  justify-content: center;
+  gap: 26px;
+  padding: 10px 16px;
+}
+.mobile-nav a {
+  font-size: 15px;
+  padding: 8px 14px;
+  border-radius: 7px;
+  text-decoration: none;
+}
+.mobile-nav a[aria-current="page"] {
+  background: #f5f1e7;
+  color: #193c31;
+}
+.phone-intro {
+  max-width: 720px;
+  padding: 10px 0 32px;
+}
+.fencepost-app .phone-intro h1 {
+  font-size: clamp(36px, 5vw, 54px);
+  line-height: 1.08;
+  margin-bottom: 20px;
+  max-width: 680px;
+}
+.phone-intro > p:not(.eyebrow) {
+  font-size: 18px;
+  color: #526458;
+  line-height: 1.65;
+  max-width: 620px;
+}
+.fencepost-app .secondary-button {
+  background: transparent;
+  color: #193c31;
+  text-decoration: none;
+}
+.fencepost-app .link-button {
+  background: #193c31;
+  color: white;
+  text-decoration: none;
+}
+.featured-story {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 0;
+}
+.featured-story > img,
+.featured-story > .illustrated {
+  height: 100%;
+  min-height: 380px;
+  max-height: none;
+}
+.featured-story img {
+  object-fit: cover;
+}
+.featured-story .card-body {
+  padding: 28px;
+  align-self: center;
+}
+.fencepost-app .featured-story h2 {
+  font-size: 34px;
+  line-height: 1.1;
+}
+.fencepost-app .status-label {
+  font-size: 10px;
+  margin-bottom: 14px;
+}
+.fencepost-app .review-label {
+  font-size: 12px;
+}
+.fencepost-app .card-meta {
+  font-size: 13px;
+}
+.guidance-card {
+  margin: 36px 0;
+  padding: 28px;
+  border: 1px solid #a6b7a5;
+  border-radius: 16px;
+  background: #e3e9da;
+}
+.guidance-card h2 {
+  margin: 0 0 14px;
+}
+.guidance-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 20px 0;
+}
+.guidance-shortcuts a {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: #fffcf5;
+  border: 1px solid #a6b7a5;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.feed-section {
+  margin: 44px 0;
+}
+.fencepost-app .section-heading h2 {
+  margin: 0;
+}
+.story-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.story-grid .mobile-card {
+  margin: 0;
+}
+.story-grid h3 {
+  font-size: 25px;
+  line-height: 1.15;
+  margin: 0 0 14px;
+}
+.story-grid .mobile-card > img,
+.story-grid .mobile-card > .illustrated {
+  height: 220px;
+}
+.fencepost-app .mobile-card > .illustrated {
+  width: 100%;
+}
+.community-preview {
+  border-top: 1px solid #ced4c6;
+  padding-top: 34px;
+}
+.community-preview > p:not(.eyebrow) {
+  max-width: 640px;
+}
+.fencepost-app .opportunity-grid,
+.fencepost-app .update-grid {
+  margin: 26px 0;
+}
+.fencepost-app .return-link {
+  margin-bottom: 24px;
+  text-decoration: none;
+}
+.fencepost-app .activity-links a {
+  color: #193c31;
+}
+.fencepost-app .mini-game button[aria-pressed="true"] {
+  background: #e3e9da;
+  color: #193c31;
+}
+.fencepost-app .game-items button {
+  display: block;
+  margin: 0;
+}
+.fencepost-app .illustrated figcaption {
+  font-size: 10px;
+  max-width: calc(100% - 16px);
+}
+.fencepost-app .drop-zone {
+  display: block;
+  margin: 0;
+}
+.fencepost-app .mini-game button {
+  min-height: 48px;
+}
+.fencepost-app .mini-game {
+  padding: 24px;
+}
+.fencepost-app .sample-note {
+  font-size: 15px;
+}
+.fencepost-app .opportunity-card h3,
+.fencepost-app .update-card h3 {
+  margin-top: 0;
+}
+.fencepost-app .opportunity-card .small,
+.fencepost-app .update-card .small {
+  margin-top: 12px;
+}
+@media (max-width: 650px) {
+  .mobile-main {
+    padding: 24px 20px;
+  }
+  .mobile-header {
+    padding: 22px 20px;
+  }
+  .mobile-nav {
+    gap: 3px;
+    justify-content: space-between;
+    padding: 8px;
+  }
+  .mobile-nav a {
+    padding: 8px;
+    font-size: 13px;
+  }
+  .featured-story {
+    grid-template-columns: 1fr;
+  }
+  .featured-story > img,
+  .featured-story > .illustrated {
+    min-height: 0;
+    height: 270px;
+  }
+  .featured-story .card-body {
+    padding: 24px;
+  }
+  .fencepost-app .featured-story h2 {
+    font-size: 30px;
+  }
+  .fencepost-app .phone-intro h1 {
+    font-size: 38px;
+  }
+  .phone-intro {
+    padding-bottom: 26px;
+  }
+  .phone-intro > p:not(.eyebrow) {
+    font-size: 16px;
+  }
+  .story-grid {
+    grid-template-columns: 1fr;
+  }
+  .guidance-card {
+    padding: 24px;
+  }
+  .guidance-shortcuts {
+    grid-template-columns: 1fr 1fr;
+  }
+  .fencepost-app .mini-game {
+    padding: 18px;
+  }
+  .fencepost-app .mini-game .game-items {
+    grid-template-columns: 1fr;
+  }
+  .fencepost-app .mini-game .drop-zones {
+    grid-template-columns: 1fr;
+  }
+  .section-heading > span {
+    display: none;
+  }
+}
+.fencepost-app .registration-image {
+  height: 220px;
+  border-radius: 14px;
+  margin-bottom: 24px;
+}
+.fencepost-app .update-card .small {
+  line-height: 1.6;
+}
+.fencepost-app .opportunity-card .card-meta {
+  line-height: 1.6;
 }

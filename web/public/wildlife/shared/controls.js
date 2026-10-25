@@ -4,7 +4,7 @@ export function initControls() {
     [
       ...(document.querySelector("dialog[open]") || document).querySelectorAll(
         document.querySelector("dialog[open]")
-          ? "button"
+          ? "button,a"
           : "main a,main button,main summary,.bottom-nav a",
       ),
     ].filter(
@@ -14,7 +14,11 @@ export function initControls() {
         !e.closest("details:not([open]) *:not(summary)"),
     );
   let selected = null;
-  function focus(el) {
+  document.addEventListener("focusin", (e) => {
+    if (e.target !== selected && selectable().includes(e.target))
+      focus(e.target);
+  });
+  function focus(el, scroll = true) {
     document.querySelectorAll(".macro-focus").forEach((x) => {
       x.classList.remove("macro-focus");
       x.removeAttribute("data-selected");
@@ -23,8 +27,15 @@ export function initControls() {
     if (el) {
       el.classList.add("macro-focus");
       el.setAttribute("data-selected", "Selected");
+      const status = document.querySelector("#selected-option");
+      if (status)
+        status.textContent =
+          "▶ Selected: " +
+          (el.getAttribute("aria-label") || el.textContent)
+            .replace(/\s+/g, " ")
+            .trim();
       el.focus({ preventScroll: true });
-      el.scrollIntoView({ block: "nearest" });
+      if (scroll) el.scrollIntoView({ block: "center" });
     }
   }
   function refresh() {
@@ -36,23 +47,8 @@ export function initControls() {
     focus(items[(items.indexOf(selected) + 1) % items.length]);
   }
   function back() {
-    window.speechSynthesis?.cancel();
-    const dialog = document.querySelector("dialog[open]");
-    if (dialog) {
-      dialog.close();
-      dialog.remove();
-      refresh();
-      return;
-    }
-    const detail = document.querySelector("details[open]");
-    if (detail) {
-      detail.open = false;
-      focus(detail.querySelector("summary"));
-      return;
-    }
-    const name = location.pathname.split("/").pop();
-    if (name === "species.html") location.href = "animals.html";
-    else if (name !== "index.html" && name !== "") location.href = "index.html";
+    const items = selectable();
+    focus(items[(items.indexOf(selected) - 1 + items.length) % items.length]);
   }
   function choose() {
     refresh();
@@ -72,22 +68,11 @@ export function initControls() {
     if (action) {
       e.preventDefault();
       actions[action]();
-    } else if (
-      config.volume.mode === "software" &&
-      [config.volume.increase, config.volume.decrease].includes(e.key)
-    ) {
-      e.preventDefault();
-      setVolume(
-        volume +
-          (e.key === config.volume.increase
-            ? config.volume.step
-            : -config.volume.step),
-      );
     }
   });
   document.addEventListener("pointerdown", (e) => {
     if (selectable().includes(e.target.closest("a,button,summary")))
-      focus(e.target.closest("a,button,summary"));
+      focus(e.target.closest("a,button,summary"), false);
   });
   let volume = Number(sessionStorage.getItem("wn-volume") ?? 0.7);
   function setVolume(v) {
@@ -102,7 +87,7 @@ export function initControls() {
       status.timer = setTimeout(() => (status.textContent = ""), 2500);
     }
   }
-  window.addEventListener("wn-knob", (e) => {
+  window.addEventListener(config.volume.eventName || "wn-knob", (e) => {
     if (config.volume.mode === "software" && Number.isFinite(e.detail?.delta))
       setVolume(volume + e.detail.delta * config.volume.step);
   });
@@ -110,6 +95,10 @@ export function initControls() {
   function resetIdle() {
     clearTimeout(idle);
     idle = setTimeout(() => {
+      if (document.querySelector(".full-story") && !document.hidden) {
+        resetIdle();
+        return;
+      }
       window.speechSynthesis?.cancel();
       document.querySelectorAll("dialog[open]").forEach((d) => {
         d.close();

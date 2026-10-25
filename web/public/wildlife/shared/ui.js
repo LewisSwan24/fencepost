@@ -21,15 +21,53 @@ export const opts = (items, current) =>
     .join("");
 export const button = (text, action, extra = "") =>
   `<button type="button" data-action="${action}" ${extra}>${text}</button>`;
-export const image = (path, alt, cls = "") =>
-  `<img class="${cls}" src="${esc(path?.startsWith("assets/") ? asset(path) : path || asset("assets/placeholder.svg"))}" alt="${esc(alt)}" loading="lazy">`;
+export const artwork = {
+  brushtail: 0,
+  "flying-fox": 1,
+  "water-dragon": 2,
+  magpie: 3,
+  kangaroo: 4,
+  "blue-tongue": 5,
+  planting: 6,
+  cleanup: 7,
+  park: 8,
+  volunteers: 9,
+  pond: 10,
+  garden: 11,
+};
+export const image = (path, alt, cls = "") => {
+  const legacy = /^assets\/species-(.+)\.svg$/.exec(path || "");
+  if (legacy) path = "illustration:" + legacy[1];
+  if (path?.startsWith("illustration:")) {
+    const key = path.split(":")[1],
+      cell = artwork[key] ?? artwork.park,
+      col = cell % 4,
+      row = Math.floor(cell / 4);
+    return `<figure class="illustrated ${esc(cls)}"><svg class="art" viewBox="${col * 362} ${row * 362} 362 362" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(alt)} — original illustrative artwork"><title>${esc(alt)} — original illustrative artwork</title><image href="${asset("assets/neighbours-illustrations.webp")}" width="1448" height="1086" /></svg><figcaption>Original illustration · prototype content</figcaption></figure>`;
+  }
+  return `<img class="${esc(cls)}" src="${esc(path?.startsWith("assets/") ? asset(path) : path || asset("assets/neutral-fallback.svg"))}" alt="${esc(alt)}" loading="lazy">`;
+};
 export function setupImages(root = document) {
   root.querySelectorAll("img").forEach((img) =>
     img.addEventListener(
       "error",
       () => {
-        img.src = asset("assets/placeholder.svg");
-        img.alt = "Wildlife photograph unavailable — read the description";
+        img.src = asset("assets/neutral-fallback.svg");
+        img.alt =
+          "Illustration of a neighbourhood park; original image unavailable";
+      },
+      { once: true },
+    ),
+  );
+  root.querySelectorAll("svg.art image").forEach((img) =>
+    img.addEventListener(
+      "error",
+      () => {
+        const svg = img.closest("svg");
+        svg.setAttribute("viewBox", "0 0 1200 800");
+        img.setAttribute("href", asset("assets/neutral-fallback.svg"));
+        img.setAttribute("width", "1200");
+        img.setAttribute("height", "800");
       },
       { once: true },
     ),

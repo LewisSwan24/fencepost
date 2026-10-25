@@ -22,4 +22,8 @@ Stories → detail → moderated discussion; Learn → species → activity; Sha
 
 ## Limits
 
-Hosted Supabase Auth/Storage and multi-device operation are unverified until configured. Registrations intentionally stay in localStorage even in connected mode and are never sent to a real organiser. Contacts and reference facts require official editorial verification; unverified contacts are suppressed. Five species have labelled placeholders pending licensed images. No permanent cameras, instant public posting, unmoderated comments or model-generated wildlife advice are introduced. Source and privacy review remain human responsibilities.
+Hosted Supabase Auth/Storage and multi-device operation are unverified until configured. Registrations intentionally stay in localStorage even in connected mode and are never sent to a real organiser. Contacts and reference facts require official editorial verification; unverified contacts are suppressed. Original locally hosted illustrations cover six species and community care, with source/terms records and explicit prototype labels. No permanent cameras, instant public posting, unmoderated comments or model-generated wildlife advice are introduced. Source and privacy review remain human responsibilities.
+
+## Latest interaction and visual revision
+
+The public park home now introduces its purpose, one featured story, practical guidance, recent observations, optional activities and Community Updates. Four sample activities retain the complete prototype registration flow; four explicitly fictional updates link to their related activities. Species have mixed mini-quizzes and a keyboard-accessible habitat game. The display uses Back/Choose/Next for previous-option/activate/next-option, with selectable Return links. Apply the additive 003_exhibition_updates.sql migration for existing backends, then the updated seed file. See the canonical display branch REVISION.md and its ten screenshots for acceptance evidence.
