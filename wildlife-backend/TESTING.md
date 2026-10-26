@@ -3,7 +3,7 @@
 ## Executed
 
 - Static build validation: passed.
-- Sixteen Node data/security-behaviour tests: passed.
+- Twenty-one Node data/security/quiz tests: passed.
 - Fencepost existing frontend suite: 527 passed, zero failed, with `TZ=Australia/Brisbane`. The same suite without the expected timezone exposed an existing calendar-boundary expectation; no unrelated date implementation was changed.
 - Fencepost production build: passed after bundling the same Figtree/Caprasimo font families locally.
 - Chromium: text-only Not sure observation → preview → pending hidden publicly → moderator checks/approval → public story visible; no private rescue location in feed.
@@ -36,10 +36,14 @@ The committed browser tests require Python Playwright and `/usr/bin/chromium`. S
 
 ## Revised acceptance evidence
 
-`browser_revision.py` exercises Back/Next wrap, Choose/Return, idle-only rotation, reduced-motion, uninterrupted full-story reading, all quiz types, keyboard habitat item placement/repositioning, pointer drag, four sample updates, mobile hierarchy and additional-activity registration at iPad/mobile dimensions. The additive SQL upgrade preserves the four existing private sample observations and adds four detailed sample updates. Actual cardboard hardware is not available in the cloud and remains a manual check.
+`browser_revision.py` exercises Back/Next wrap, Choose/Return, idle-only rotation, reduced-motion, uninterrupted full-story reading, multiple-choice answer/feedback/retry, four sample updates, mobile hierarchy and additional-activity registration at iPad/mobile dimensions. The additive SQL upgrade preserves the four existing private sample observations and adds four detailed sample updates. Actual cardboard hardware is not available in the cloud and remains a manual check.
 
-The Fencepost frontend suite (524 existing tests plus three writer-adapter tests) were rerun after this revision and passed. Native pointer dragging also passed at 1280×720, 1024×768 and 1440×1080 using a drag gesture started before scrolling to the target. The final screenshots are indexed in docs/screenshots/README.md.
+The Fencepost frontend suite (524 existing tests plus three writer-adapter tests) were rerun after this revision and passed. The later multiple-choice correction removes all pointer dragging; its full evidence is in QUIZ-IMPLEMENTATION.md. The final screenshots are indexed in docs/screenshots/README.md.
 
 ## Account/comment/writing verification
 
 The account and direct-comment correction passes 16 Node tests and the 527-test Fencepost suite. Browser journeys cover guest browsing, both demo accounts, quick-fill without automatic login, wrong passwords, refresh/logout, role-protected routes, owner-only views, immediate comments, own edits/deletions, report-without-hiding, moderator removal/restoration, post approval, reset, and mobile layout. Writing tests exercise comparison, editable output, explicit application, undo, cancellation, identifying-input preflight and service failure with successful manual submission. `tests/direct-comments-security.sql` passed against PostgreSQL auth/storage shims: guests cannot comment, residents cannot edit another author or read private rescue fields, comments are immediately visible, reports do not hide them, and moderator remove/restore actions are audited. Hosted model-provider and Supabase-service connectivity still require configuration.
+
+## Multiple-choice correction
+
+All six animals now have three sourced questions and three choices each. The 21-test Node suite, static validation and dedicated `browser_quiz.py` journeys pass. Existing public/story/registration regressions pass. See QUIZ-IMPLEMENTATION.md for the feature-only change, image origins, source links and remaining installation checks.

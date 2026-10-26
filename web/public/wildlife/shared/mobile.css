@@ -1,3 +1,4 @@
+@import url("./quiz.css");
 @import url("./experience.css");
 .mobile-body {
   background: #193c31;
@@ -427,30 +428,9 @@
   margin-bottom: 24px;
   text-decoration: none;
 }
-.fencepost-app .activity-links a {
-  color: #193c31;
-}
-.fencepost-app .mini-game button[aria-pressed="true"] {
-  background: #e3e9da;
-  color: #193c31;
-}
-.fencepost-app .game-items button {
-  display: block;
-  margin: 0;
-}
 .fencepost-app .illustrated figcaption {
   font-size: 10px;
   max-width: calc(100% - 16px);
-}
-.fencepost-app .drop-zone {
-  display: block;
-  margin: 0;
-}
-.fencepost-app .mini-game button {
-  min-height: 48px;
-}
-.fencepost-app .mini-game {
-  padding: 24px;
 }
 .fencepost-app .sample-note {
   font-size: 15px;
@@ -510,15 +490,6 @@
   }
   .guidance-shortcuts {
     grid-template-columns: 1fr 1fr;
-  }
-  .fencepost-app .mini-game {
-    padding: 18px;
-  }
-  .fencepost-app .mini-game .game-items {
-    grid-template-columns: 1fr;
-  }
-  .fencepost-app .mini-game .drop-zones {
-    grid-template-columns: 1fr;
   }
   .section-heading > span {
     display: none;

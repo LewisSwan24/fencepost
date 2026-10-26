@@ -252,7 +252,7 @@ export async function mount(
         html = `<a class="return-link" href="#learn">← Return to previous screen</a><h1>${esc(s.name)}</h1>${image(s.image, s.name, "detail-image")}<p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="notice"><strong>Safe Response</strong><br>${esc(s.advice)}</p><h2>Wildlife fact · source linked</h2><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p><a class="link-button" href="#activity/${s.id}">Start a mini quiz together →</a>`;
       } else if (section === "activity") {
         const s = species.find((x) => x.id === param) || species[0];
-        html = `<a class="return-link" href="#species/${s.id}">← Return to previous screen</a><h1>${esc(s.name)}</h1><div id="activity-root"></div>`;
+        html = '<h1 class="quiz-page-heading">Meet the Animal quiz</h1><div id="activity-root"></div>';
       } else if (section === "share") {
         html = `<h1>Share an observation</h1><p>Text is enough. A photograph and nickname are optional. No account needed.</p><p class="notice">Observe from a safe distance. Do not approach, follow, feed or disturb wildlife to create a post. If driving, submit only after parking safely.</p><p>Is the animal injured or trapped? <a href="#rescue">Animal Needs Help →</a></p>${submissionForm(false)}`;
       } else if (section === "rescue") {
@@ -354,6 +354,7 @@ export async function mount(
         const s = species.find((x) => x.id === param) || species[0];
         activityCleanup = mountActivity($("#activity-root"), s.id, {
           animalUrl: "#species/" + s.id,
+          animalsUrl: "#learn",
         });
       }
       if (section === "help" && param) {

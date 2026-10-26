@@ -1,3 +1,4 @@
+@import url("shared/quiz.css");
 @import url("shared/experience.css");
 :root {
   --paper: #f5f1e7;
@@ -881,13 +882,10 @@ main {
 .story-position {
   margin-bottom: 12px;
 }
-.activity-links a {
-  font-size: 16px;
-}
 .return-options {
   scroll-margin-top: 16px;
 }
-/* Stable focus geometry supports pointer dragging as well as the three keys. */
+/* Stable focus geometry supports pointer and three-key selection. */
 .macro-focus::after {
   content: none !important;
 }
@@ -907,7 +905,6 @@ html {
   scroll-padding-top: 20px;
   scroll-padding-bottom: 220px;
 }
-.mini-game button,
 .return-options a,
 .story-controls button,
 .story-controls a {

@@ -1,7 +1,12 @@
 import { config } from "./config.js";
 export function initControls() {
-  const selectable = () =>
-    [
+  const selectable = () => {
+    const quiz = document.querySelector("[data-quiz-controls]");
+    if (quiz)
+      return [...quiz.querySelectorAll("[data-quiz-option]")].filter(
+        (e) => !e.disabled && e.getClientRects().length,
+      );
+    return [
       ...(document.querySelector("dialog[open]") || document).querySelectorAll(
         document.querySelector("dialog[open]")
           ? "button,a"
@@ -13,6 +18,7 @@ export function initControls() {
         e.getClientRects().length &&
         !e.closest("details:not([open]) *:not(summary)"),
     );
+  };
   let selected = null;
   document.addEventListener("focusin", (e) => {
     if (e.target !== selected && selectable().includes(e.target))
@@ -66,6 +72,12 @@ export function initControls() {
       (k) => config.keys[k] === e.key,
     );
     if (action) {
+      if (
+        document.querySelector("[data-quiz-controls]") &&
+        e.key === "Enter" &&
+        e.target.closest?.(".quiz-source a")
+      )
+        return;
       e.preventDefault();
       actions[action]();
     }
