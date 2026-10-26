@@ -30,7 +30,6 @@ VERSION = (ROOT / "prompts" / "VERSION").read_text(encoding="utf-8").strip()
 TOKEN = auth.issue("u1")
 OK_JSON = '{"verdict":"ok","codes":[],"note":""}'
 REJECT_JSON = '{"verdict":"reject","codes":["pii"],"note":"address named"}'
-FACT = '{"text":"Brushtails are nocturnal.","confidence":"established"}'
 
 
 class FakeClient:
@@ -258,7 +257,8 @@ class Provider(unittest.TestCase):
         o = self.build(MODEL_PROVIDER="openai", OPENAI_API_KEY="sk-o")
         self.assertEqual("none", d.effort["screener"])
         self.assertEqual("medium", o.effort["screener"])
-        self.assertEqual(("medium", "low"), (o.effort["neighbour"], o.effort["writer"]))
+        self.assertEqual("medium", o.effort["neighbour"])
+        self.assertEqual({"neighbour", "screener"}, set(o.effort))
 
     def test_the_effort_sent_is_the_rows(self):
         o = self.build(MODEL_PROVIDER="openai", OPENAI_API_KEY="sk-o")
@@ -382,7 +382,7 @@ class ModelInputBounds(unittest.TestCase):
     """Nothing unbounded reaches the model.
 
     Every field the Screener sees was already capped through _plain_text. The three role
-    endpoints were not: a question, a Writer draft and a Screener submission each went
+    endpoints were not: a question, a Screener submission each went
     upstream at whatever length arrived, and so did the image beside them. Under
     FENCEPOST_OPEN_SIGNUP anybody can swap a handle for a token, so there was no qualifier
     left on "uncapped free text into a paid endpoint".
@@ -431,13 +431,6 @@ class ModelInputBounds(unittest.TestCase):
         self.assertEqual(400, status)
         self.assertEqual([], client.calls)
 
-    def test_an_over_long_draft_never_reaches_the_writer(self):
-        client = FakeClient("should not be used")
-        status, _ = handle({"role": "writer", "species_selected": "brushtail",
-                            "story_draft": "x" * (app.STORY_LIMIT + 1)}, TOKEN,
-                           deps_for(client))
-        self.assertEqual(400, status)
-        self.assertEqual([], client.calls)
 
     def test_a_control_character_smuggled_into_a_question_is_refused(self):
         """Newlines and tabs are ordinary in a question; the rest are not."""
@@ -572,37 +565,6 @@ class LanguageFloor(unittest.TestCase):
         self.assertFalse(roles.looks_non_english("Kia ora"))
 
 
-class Writer(unittest.TestCase):
-    def write(self, *replies, draft="saw a possum at the fence"):
-        deps = deps_for(FakeClient(*replies))
-        return handle({"role": "writer", "species_selected": "brushtail", "story_draft": draft}, TOKEN, deps)
-
-    def test_invented_numbers_drop_the_tidied_story(self):
-        _, payload = self.write('{"fun_facts":[' + FACT + '],"tidied_story":"Saw two possums.","question":null}')
-        self.assertIsNone(payload["tidied_story"])
-        self.assertEqual(1, len(payload["fun_facts"]))
-        self.assertFalse(payload["skipped"])
-
-    def test_overlong_tidied_story_is_dropped(self):
-        long_story = "I saw a possum sitting on the fence and it stared at me for ages"
-        _, payload = self.write('{"fun_facts":[],"tidied_story":"' + long_story + '","question":null}',
-                                draft="saw a possum")
-        self.assertIsNone(payload["tidied_story"])
-
-    def test_faithful_tidy_survives(self):
-        _, payload = self.write('{"fun_facts":[],"tidied_story":"Saw a possum at the fence.","question":null}')
-        self.assertEqual("Saw a possum at the fence.", payload["tidied_story"])
-
-    def test_wrong_shape_retries_then_skips(self):
-        _, payload = self.write('{"fun_facts":[]}', "still not right")
-        self.assertTrue(payload["skipped"])
-        self.assertEqual([], payload["fun_facts"])
-
-    def test_retry_then_valid(self):
-        good = '{"fun_facts":[' + FACT + '],"tidied_story":null,"question":"What was it doing?"}'
-        _, payload = self.write("{oops", good)
-        self.assertFalse(payload["skipped"])
-        self.assertEqual("What was it doing?", payload["question"])
 
 
 class Limits(unittest.TestCase):
@@ -737,10 +699,8 @@ class PrefixStability(unittest.TestCase):
 
 class Versioning(unittest.TestCase):
     def test_every_role_returns_the_prompt_version(self):
-        writer_json = '{"fun_facts":[],"tidied_story":null,"question":"What was it doing?"}'
         cases = [
             (chat(), FakeClient("hi")),
-            ({"role": "writer", "story_draft": "saw a possum"}, FakeClient(writer_json)),
             (screen(), FakeClient(OK_JSON)),
         ]
         for body, client in cases:
@@ -769,7 +729,7 @@ class Streaming(unittest.TestCase):
         self.assertEqual([], deps.history.recent("u1", "s1"))
 
     def test_streaming_is_only_for_neighbour(self):
-        for role in ("writer", "screener"):
+        for role in ("screener",):
             with self.subTest(role=role):
                 status, _ = handle_stream({"role": role}, TOKEN, deps_for(FakeClient("x")))
                 self.assertEqual(400, status)
@@ -816,15 +776,6 @@ class ModelCeiling(unittest.TestCase):
         self.assertEqual([], inner.calls, "the ceiling let a call through")
         self.assertIn("model ceiling reached (0 per 86400s)", log.getvalue())
 
-    def test_the_writer_skips(self):
-        inner, client = self.spent()
-        with contextlib.redirect_stderr(io.StringIO()):
-            status, payload = handle({"role": "writer", "species_selected": "brushtail",
-                                      "story_draft": "saw a possum at the fence"},
-                                     TOKEN, deps_for(client))
-        self.assertEqual(200, status)
-        self.assertTrue(payload["skipped"])
-        self.assertEqual([], inner.calls)
 
     def test_the_neighbour_answers_upstream_unavailable(self):
         inner, client = self.spent("hello")

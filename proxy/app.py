@@ -1,5 +1,5 @@
 """One endpoint, dispatched by role. Four hard rules close here:
-rate limiting, fail-open, Writer validation, and never leaking an error outward.
+rate limiting, fail-open, permission checks, and never leaking an error outward.
 """
 
 import base64
@@ -15,10 +15,8 @@ from .model import UpstreamError, redact
 from .ports import (CEILINGS, MemoryContext, MemoryHistory, MemoryRateLimiter,
                     MemoryScreeningLog, PermissionDenied, RateLimited)
 
-# Which ceiling each role counts against. operations.md §3 lists chat, vision and
-# submission and says nothing about the Writer, so it is folded into chat for now; the
-# doc needs a line added (see the stage 3 report).
-SCOPE = {"neighbour": "chat", "writer": "chat", "screener": "submission"}
+# Shared endpoint roles retained for legacy chat, identification and screening.
+SCOPE = {"neighbour": "chat", "screener": "submission"}
 
 FIELDS = {"fun_fact", "story", "forum_post", "storyboard_title", "closed_note"}
 # What a request from outside may screen. The other subject kinds are real rows that belong
@@ -146,8 +144,8 @@ FORUM_PAGE = 30
 # What may be handed to the model, in characters.
 #
 # Everything the Screener sees was already bounded — fun_fact, story, titles and the closing
-# note all go through _plain_text. The three role endpoints were not: a question to the
-# assistant, a story draft for the Writer and a submission to the Screener each reached the
+# note all go through _plain_text. The role endpoints were not: a question to the
+# assistant and a submission to the Screener each reached the
 # model at whatever length arrived, and so did the image beside them. Under
 # FENCEPOST_OPEN_SIGNUP anybody can swap a handle for a token, so "uncapped free text into a
 # paid endpoint" is a sentence with no qualifier left on it.
@@ -304,8 +302,8 @@ def _plain_text(value, limit: int, multiline: bool = False):
     three reach the Screener as well since #36, and it still runs first, because a length
     check that costs nothing should not wait on a model call that does.
 
-    For **the text going to the model** — a question to the assistant, a draft for the
-    Writer, a submission to the Screener — it is the door. Those three arrived uncapped,
+    For **the text going to the model** — a question to the assistant or
+    a submission to the Screener — it is the door. Those requests arrived uncapped,
     which under FENCEPOST_OPEN_SIGNUP means anybody holding a token could point unbounded
     free text at a paid endpoint. Screening happens after; a length check does not need a
     model and should not wait for one.
@@ -383,8 +381,6 @@ def handle(body: dict, token: str, deps: Deps):
     try:
         if role == "neighbour":
             return _neighbour(body, user_id, deps)
-        if role == "writer":
-            return _writer(body, deps)
         return _screener(body, user_id, deps)
     except PermissionDenied:
         return 403, _error("no_access")
@@ -419,21 +415,6 @@ def _neighbour(body: dict, user_id: str, deps: Deps):
                         prompt_version=result["prompt_version"],
                         model=getattr(deps.client, "chat_model", None))
     return 200, {"role": "neighbour", "reply": result["reply"], "prompt_version": result["prompt_version"]}
-
-
-def _writer(body: dict, deps: Deps):
-    draft, draft_ok = _plain_text(body.get("story_draft", ""), STORY_LIMIT, multiline=True)
-    if not draft_ok:
-        return 400, _error("bad_request")
-    result = roles.writer(deps.client, body.get("species_selected", "unknown"), draft or "")
-    return 200, {
-        "role": "writer",
-        "fun_facts": result["fun_facts"],
-        "tidied_story": result["tidied_story"],
-        "question": result["question"],
-        "skipped": result["skipped"],
-        "prompt_version": result["prompt_version"],
-    }
 
 
 def _screener(body: dict, user_id: str, deps: Deps):

@@ -13,7 +13,6 @@ export const accountObservations = [
     injuryConcern: false,
     status: "pending",
     mediaUrl: null,
-    aiAssisted: false,
     sample: true,
     submittedAt: "2026-01-01T10:00:00Z",
   },
@@ -30,7 +29,6 @@ export const accountObservations = [
     injuryConcern: false,
     status: "approved",
     mediaUrl: null,
-    aiAssisted: false,
     sample: true,
     submittedAt: "2026-01-01T09:00:00Z",
   },
@@ -112,15 +110,4 @@ export const accountRegistration = {
   status: "active",
   reference: "WN-DEMO-TAYLOR1",
   createdAt: "2026-01-01T10:00:00Z",
-};
-export const accountDraft = {
-  original: "saw a possible possum resting quietly in the park",
-  description: "Saw a possible possum resting quietly in the park.",
-  possibleSpecies: "not-sure",
-  approximateTime: "During the evening",
-  publicArea: "General park area",
-  behaviour: "Resting quietly",
-  aiAssisted: true,
-  status: "draft",
-  sample: true,
 };

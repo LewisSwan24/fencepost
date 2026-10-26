@@ -20,11 +20,6 @@ import {
 } from "./ui.js";
 import { demoAccounts, demoAccountNotice } from "./demo-accounts.js";
 import { checkComment, reportReasons } from "./comment-safety.js";
-import {
-  demoWritingHelp,
-  validateWritingInput,
-  validatedSuggestion,
-} from "./writing.js";
 import { mountActivity } from "./activities.js";
 import { opportunityCard, outcomeCard, outcomeDetail } from "./presentation.js";
 const CHECK_LABELS = {
@@ -34,16 +29,7 @@ const CHECK_LABELS = {
   location: "Exact location removed from public wording",
   welfare: "Animal welfare risk checked",
 };
-export async function mount(
-  root,
-  { writingHelp = demoWritingHelp, writingMode = "prewritten-demo" } = {},
-) {
-  let writerController,
-    writerOriginal = null,
-    writerVariant = 0,
-    writerGeneration = 0,
-    aiApplied = false,
-    requestOriginal = "";
+export async function mount(root) {
   let replyTo = null,
     editingComment = null,
     reportingComment = null,
@@ -102,9 +88,8 @@ export async function mount(
       observations = await api.myObservations();
     if (section === "my-observations")
       return `<h1>My observations</h1><p>Your own public wording and status only. Private rescue details and moderator notes are not shown.</p>${observations.map((o) => `<article class="notice"><span class="status-label">${{ pending: "Awaiting review", approved: "Approved", rejected: "Rejected", urgent: "Urgent", clarification: "Clarification requested", removed: "Removed" }[o.status] || esc(o.status)}</span><h2>Possible ${esc(name(o.possibleSpecies))}</h2><p>${esc(o.description)}</p><p>${esc(o.publicArea)} · ${esc(o.approximateTime)}</p></article>`).join("") || "<p>You have not submitted any observations yet.</p>"}<a class="link-button" href="#share">Share an observation</a>`;
-    const saved = await api.savedStories(),
-      writingDraft = api.writingDraft();
-    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a href="#my-observations">My observations (${observations.length}) →</a><a href="#registrations">My prototype volunteer registrations →</a><a href="#share">Share an observation →</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${writingDraft ? `<section class="notice"><p class="status-label">AI-assisted draft · Not submitted</p><h2>A writing draft to continue</h2><p>${esc(writingDraft.description)}</p>${button("Continue draft", "continue-draft")}</section>` : ""}${button("Logout", "logout")}`;
+    const saved = await api.savedStories();
+    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a href="#my-observations">My observations (${observations.length}) →</a><a href="#registrations">My prototype volunteer registrations →</a><a href="#share">Share an observation →</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${button("Logout", "logout")}`;
   }
   function discussionHtml(storyId, comments) {
     const user = api.account();
@@ -130,12 +115,8 @@ export async function mount(
       .join("")}</div></section>`;
   }
   function clearEditor() {
-    writerController?.abort();
-    writerGeneration++;
     draft = {};
     queueData = null;
-    writerOriginal = null;
-    aiApplied = false;
     editRegistration = null;
     replyTo = null;
     editingComment = null;
@@ -145,57 +126,9 @@ export async function mount(
     photo = null;
     photoBlob = null;
   }
-  const writingNotice =
-    "AI can help organise your writing, but it may make mistakes. Check the wording before submitting.";
-  function writingPanel() {
-    const input = $("#observation-form [name=description]");
-    if (!api.account()) {
-      go("login/share");
-      return;
-    }
-    const original = input.value;
-    validateWritingInput(original);
-    requestOriginal = original;
-    if (writerOriginal === null) writerOriginal = original;
-    $("#writing-panel").innerHTML =
-      `<section class="writing-helper" aria-labelledby="writing-title"><h2 id="writing-title">Ask AI for writing help</h2><p>${writingNotice}</p><p class="status-label">${writingMode === "prewritten-demo" ? "Local prewritten demonstration — no live AI request" : writingMode === "legacy-fixture" ? "Existing Fencepost fixture writer — local demonstration" : "Existing Fencepost writing service"}</p><label>Original text<textarea id="writer-original" readonly>${esc(original)}</textarea></label><p class="small">Only this description is used. Uploaded media and private rescue fields are never sent. Do not include exact locations or personal information.</p><label class="tick"><input id="writer-consent" type="checkbox">I agree to request optional writing help with this description only.</label>${button("Prepare writing suggestion", "request-writing")}${button("Cancel", "cancel-writing")}<div id="writer-result" role="status"></div></section>`;
-    $("#writing-title").setAttribute("tabindex", "-1");
-    $("#writing-title").focus();
-  }
-  async function requestWriting() {
-    if (!$("#writer-consent")?.checked) {
-      $("#writer-result").textContent =
-        "Confirm that you want writing help for this description only.";
-      return;
-    }
-    validateWritingInput(requestOriginal);
-    writerController?.abort();
-    writerController = new AbortController();
-    const generation = ++writerGeneration;
-    $("#writer-result").innerHTML =
-      '<p role="status">Preparing a writing suggestion…</p>';
-    try {
-      const raw = await writingHelp({
-        text: requestOriginal,
-        variant: writerVariant++,
-        signal: writerController.signal,
-      });
-      if (generation !== writerGeneration || !$("#writer-result")) return;
-      const result = validatedSuggestion(raw, requestOriginal);
-      $("#writer-result").innerHTML =
-        `<p>Review this suggestion before adding it to your post.</p><label>Suggested version — editable<textarea id="writer-suggestion" maxlength="600">${esc(result.suggestion)}</textarea></label>${result.question ? `<p class="small">${esc(result.question)}</p>` : ""}<p class="small">Possible animal — not confirmed. This wording is not verified wildlife information.</p><label class="tick"><input id="writer-confirm" type="checkbox">I checked the final wording and want to use it as my draft.</label>${button("Use suggestion", "use-writing")}${button("Edit suggestion", "edit-writing")}${button("Try another suggestion", "request-writing")}${button("Keep original", "keep-original")}`;
-    } catch (err) {
-      if (generation !== writerGeneration || writerController.signal.aborted)
-        return;
-      $("#writer-result").innerHTML =
-        '<p role="alert">Writing help is unavailable right now. You can continue editing and submit your own description.</p>';
-    }
-  }
   async function render() {
     activityCleanup?.();
     activityCleanup = null;
-    writerController?.abort();
-    writerGeneration++;
     const current = ++version;
     const requested = hash(),
       sectionRequested = requested.split("/")[0],
@@ -252,7 +185,8 @@ export async function mount(
         html = `<a class="return-link" href="#learn">← Return to previous screen</a><h1>${esc(s.name)}</h1>${image(s.image, s.name, "detail-image")}<p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="notice"><strong>Safe Response</strong><br>${esc(s.advice)}</p><h2>Wildlife fact · source linked</h2><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p><a class="link-button" href="#activity/${s.id}">Start a mini quiz together →</a>`;
       } else if (section === "activity") {
         const s = species.find((x) => x.id === param) || species[0];
-        html = '<h1 class="quiz-page-heading">Meet the Animal quiz</h1><div id="activity-root"></div>';
+        html =
+          '<h1 class="quiz-page-heading">Meet the Animal quiz</h1><div id="activity-root"></div>';
       } else if (section === "share") {
         html = `<h1>Share an observation</h1><p>Text is enough. A photograph and nickname are optional. No account needed.</p><p class="notice">Observe from a safe distance. Do not approach, follow, feed or disturb wildlife to create a post. If driving, submit only after parking safely.</p><p>Is the animal injured or trapped? <a href="#rescue">Animal Needs Help →</a></p>${submissionForm(false)}`;
       } else if (section === "rescue") {
@@ -373,7 +307,7 @@ export async function mount(
   }
   function submissionForm(rescue) {
     const d = draft;
-    return `<form id="observation-form" data-rescue="${rescue}">${field("Nickname (optional)", "nickname", "text", d.nickname, 'maxlength="60"')}${select("Possible animal", "possibleSpecies", [...species, { id: "not-sure", name: "Not sure" }], d.possibleSpecies)}${select("Approximate time", "approximateTime", times, d.approximateTime)}${select("General area (no exact address)", "publicArea", areas, d.publicArea)}${field("Observed behaviour", "behaviour", "text", d.behaviour, 'required maxlength="160"')}${text("Short description", "description", d.description)}${api.account() ? button("Ask AI for writing help", "writing-help") + button("Undo AI suggestion / restore original", "undo-writing", writerOriginal === null ? "hidden" : "") : '<p class="small"><a href="#login">Sign in for optional AI writing help</a>. You can still submit your own text as a guest.</p>'}<div id="writing-panel"></div>${!rescue ? '<label class="tick"><input name="injuryRoute" type="checkbox">Animal may be injured or trapped — switch to private help route</label>' : ""}${rescue ? `${field("Exact location (optional, private)", "privateRescueLocation", "text", d.privateRescueLocation, 'maxlength="500"')}${field("Animal condition", "condition", "text", d.condition, 'required maxlength="300"')}${select("Is it moving?", "moving", ["Not sure", "Yes", "No"], d.moving)}<label class="tick"><input name="nearTraffic" type="checkbox" ${d.nearTraffic ? "checked" : ""}>Near traffic</label>` : ""}<label>Optional photograph or short video (max 5 MB)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"></label><p class="small">Do not upload children, faces, house numbers or number plates. A video is converted to one still image; the original is not stored. Metadata is stripped before storage.</p><div id="photo-preview">${photo ? image(photo, "Optional photograph preview") + button("Remove photograph", "remove-photo") : ""}</div>${tick("I observed safely and any photograph contains no identifying details or children.", "safeConsent")}<button>Preview submission</button></form>`;
+    return `<form id="observation-form" data-rescue="${rescue}">${field("Nickname (optional)", "nickname", "text", d.nickname, 'maxlength="60"')}${select("Possible animal", "possibleSpecies", [...species, { id: "not-sure", name: "Not sure" }], d.possibleSpecies)}${select("Approximate time", "approximateTime", times, d.approximateTime)}${select("General area (no exact address)", "publicArea", areas, d.publicArea)}${field("Observed behaviour", "behaviour", "text", d.behaviour, 'required maxlength="160"')}${text("Short description", "description", d.description)}${!rescue ? '<label class="tick"><input name="injuryRoute" type="checkbox">Animal may be injured or trapped — switch to private help route</label>' : ""}${rescue ? `${field("Exact location (optional, private)", "privateRescueLocation", "text", d.privateRescueLocation, 'maxlength="500"')}${field("Animal condition", "condition", "text", d.condition, 'required maxlength="300"')}${select("Is it moving?", "moving", ["Not sure", "Yes", "No"], d.moving)}<label class="tick"><input name="nearTraffic" type="checkbox" ${d.nearTraffic ? "checked" : ""}>Near traffic</label>` : ""}<label>Optional photograph or short video (max 5 MB)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"></label><p class="small">Do not upload children, faces, house numbers or number plates. A video is converted to one still image; the original is not stored. Metadata is stripped before storage.</p><div id="photo-preview">${photo ? image(photo, "Optional photograph preview") + button("Remove photograph", "remove-photo") : ""}</div>${tick("I observed safely and any photograph contains no identifying details or children.", "safeConsent")}<button>Preview submission</button></form>`;
   }
   async function helpHtml() {
     const contacts = [...config.contacts, ...(await api.sources())].filter(
@@ -840,55 +774,6 @@ export async function mount(
     if (!el || !root.contains(el)) return;
     const a = el.dataset.action;
     try {
-      if (a === "writing-help") writingPanel();
-      if (a === "request-writing") await requestWriting();
-      if (a === "cancel-writing" || a === "keep-original") {
-        writerController?.abort();
-        writerGeneration++;
-        if (a === "keep-original") {
-          $("#observation-form [name=description]").value = requestOriginal;
-          aiApplied = false;
-        }
-        $("#writing-panel").innerHTML = "";
-      }
-      if (a === "edit-writing") $("#writer-suggestion")?.focus();
-      if (a === "use-writing") {
-        if (!$("#writer-confirm")?.checked) {
-          feedback(
-            "Confirm the final wording before using the suggestion.",
-            true,
-          );
-          return;
-        }
-        const suggestion = $("#writer-suggestion").value;
-        validateWritingInput(suggestion);
-        if (suggestion.length > 600)
-          throw Error("Keep the draft under 600 characters.");
-        $("#observation-form [name=description]").value = suggestion;
-        draft.description = suggestion;
-        aiApplied = true;
-        const form = $("#observation-form");
-        api.saveWritingDraft({
-          original: writerOriginal,
-          description: suggestion,
-          possibleSpecies: form.possibleSpecies.value,
-          approximateTime: form.approximateTime.value,
-          publicArea: form.publicArea.value,
-          behaviour: form.behaviour.value,
-          aiAssisted: true,
-        });
-        $("[data-action=undo-writing]").hidden = false;
-        $("#writing-panel").innerHTML = "";
-        feedback(
-          "Suggestion added as a draft only. Review and submit separately.",
-        );
-      }
-      if (a === "undo-writing") {
-        $("#observation-form [name=description]").value = writerOriginal || "";
-        draft.description = writerOriginal || "";
-        aiApplied = false;
-        feedback("Your original description has been restored.");
-      }
       if (a === "reload") await render();
       if (a === "safe" || a === "unsafe")
         $("#learning-result").textContent =
@@ -920,10 +805,7 @@ export async function mount(
           lastReceipt = await api.submit({
             ...draft,
             mediaUrl,
-            aiAssisted: aiApplied,
           });
-          writerOriginal = null;
-          aiApplied = false;
           storeReceipt(lastReceipt);
           draft = {};
           photoBlob = null;
@@ -970,13 +852,6 @@ export async function mount(
       if (a === "save-story") {
         api.toggleSaved(el.dataset.id);
         feedback("Saved stories updated in My activity.");
-      }
-      if (a === "continue-draft") {
-        const saved = api.writingDraft();
-        draft = { ...saved };
-        writerOriginal = saved.original || saved.description;
-        aiApplied = !!saved.aiAssisted;
-        go("share");
       }
       if (a === "reply-comment") {
         replyTo = el.dataset.id;
@@ -1091,7 +966,6 @@ export async function mount(
     root.removeEventListener("click", action);
     window.removeEventListener("hashchange", onHash);
     window.removeEventListener("storage", onStorage);
-    writerController?.abort();
     if (photo) URL.revokeObjectURL(photo);
   };
 }

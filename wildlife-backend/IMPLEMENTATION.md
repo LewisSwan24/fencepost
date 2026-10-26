@@ -76,4 +76,4 @@ REVISION.md records the current contract: Back moves to the previous option, Ret
 
 ## Accounts and comment correction
 
-ACCOUNTS-AND-WRITING.md supersedes the earlier ordinary-comment approval description. The two hardcoded exhibition accounts provide safe metadata sessions, owner-filtered profiles and moderator-only tools. Comments now use visible/removed status, with own-author edits/deletions and separate report review; only observation posts await publication approval. Ask AI writing help reuses the main-branch writer service and comparison flow, returns wording only, and requires explicit application as a draft.
+ACCOUNTS-AND-COMMENTS.md supersedes the earlier ordinary-comment approval description. The two hardcoded exhibition accounts provide safe metadata sessions, owner-filtered profiles and moderator-only tools. Comments now use visible/removed status, with own-author edits/deletions and separate report review; only observation posts await publication approval.

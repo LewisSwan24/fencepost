@@ -1,4 +1,4 @@
-"""The three roles. Prompts always come from prompts/; the code keeps no second copy."""
+"""The neighbour and screener roles. Prompts always come from prompts/; the code keeps no second copy."""
 
 import json
 import re
@@ -8,21 +8,7 @@ from pathlib import Path
 from .model import UpstreamError
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
-WRITER_KEYS = {"fun_facts", "tidied_story", "question"}
-FACT_KEYS = {"text", "confidence"}
-CONFIDENCE = {"established", "unverified"}
 VERDICTS = {"ok", "review", "reject"}
-LENGTH_FACTOR = 1.6
-
-# The invented-number check from §3.4. Besides digits it catches English number words and
-# time words: since v0.9 the assistant writes only English, and made-up detail almost
-# always arrives as "two possums" or "last night".
-NUMBER_WORDS = {
-    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-    "eleven", "twelve", "dozen", "couple", "yesterday", "tonight", "midnight", "noon",
-}
-TOKEN = re.compile(r"[0-9]+(?:[.:,][0-9]+)*|[^\W\d_]+", re.UNICODE)
-CJK = re.compile(r"[\u3400-\u9fff]")
 FENCE = re.compile(r"^`{3}(?:json)?|`{3}$", re.MULTILINE)
 
 
@@ -173,59 +159,6 @@ def neighbour_stream(client, context: dict, history, message: str, image_b64=Non
     return Stream(version, client.stream("neighbour", system,
                                          _neighbour_user_content(message, image_b64),
                                          history=history))
-
-
-# ---------- Writer ----------
-
-def writer(client, species_selected: str, story_draft: str) -> dict:
-    system, version = load_prompt("writer")
-    prompt = _wrap({"species_selected": species_selected}, f"story_draft: {story_draft}")
-    for _ in range(2):                      # §3.4 item 5: retry a bad output once
-        try:
-            raw = client.call("writer", system, prompt)
-        except UpstreamError:
-            continue
-        checked = validate_writer(raw, story_draft)
-        if checked is not None:
-            return {**checked, "prompt_version": version}
-    # Silently skip when both attempts fail. The Writer is never a required step.
-    return {"fun_facts": [], "tidied_story": None, "question": None, "skipped": True,
-            "prompt_version": version}
-
-
-def validate_writer(raw: str, original: str):
-    """Validate against prompts.md §3.4. None means this output is unusable — retry."""
-    try:
-        data = json.loads(_strip_fences(raw))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, dict) or set(data) != WRITER_KEYS:
-        return None
-    facts = data["fun_facts"]
-    if not isinstance(facts, list):
-        return None
-    for fact in facts:
-        if not isinstance(fact, dict) or set(fact) != FACT_KEYS or fact["confidence"] not in CONFIDENCE:
-            return None
-    tidied = data["tidied_story"]
-    if isinstance(tidied, str) and not story_is_faithful(original, tidied):
-        tidied = None                       # drop the tidy-up, keep the fun_facts
-    return {"fun_facts": facts, "tidied_story": tidied, "question": data["question"], "skipped": False}
-
-
-def story_is_faithful(original: str, tidied: str) -> bool:
-    if _size(tidied) > _size(original) * LENGTH_FACTOR:
-        return False
-    return _figures(tidied) <= _figures(original)
-
-
-def _figures(text: str) -> set:
-    tokens = {t.lower() for t in TOKEN.findall(text)}
-    return {t for t in tokens if t[0].isdigit() or t in NUMBER_WORDS}
-
-
-def _size(text: str) -> int:
-    return len(TOKEN.findall(text)) + len(CJK.findall(text))
 
 
 # ---------- Screener ----------

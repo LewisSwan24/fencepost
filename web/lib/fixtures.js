@@ -60,57 +60,6 @@ export function suggestedSpecies(reply) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-// Writer. Candidates only, never filled in for the user. confidence is established or
-// unverified, nothing else.
-const FUN_FACTS = {
-  brushtail: [
-    {
-      text: "Brushtails are the possum most likely to end up in a Brisbane roof. They den in tree hollows when they can get one, and a roof cavity is the next best thing.",
-      confidence: "established",
-    },
-    {
-      text: "People often say the same brushtail comes back to a roof year after year, though that is more neighbourhood lore than anything settled.",
-      confidence: "unverified",
-    },
-  ],
-  ringtail: [
-    {
-      text: "Ringtails build nests called dreys and carry the material with their tail.",
-      confidence: "established",
-    },
-    {
-      text: "People often say they only eat leaves, though they take fruit and flowers too.",
-      confidence: "unverified",
-    },
-  ],
-  other: [],
-  unknown: [],
-};
-
-// The tidy-up touches only spacing, capitals and full stops, adding and removing no detail.
-// The real Writer does the same job with a model.
-function tidy(story) {
-  let t = String(story || "").trim().replace(/\s+/g, " ");
-  if (!t) return null;
-  t = t.replace(/\bi\b/g, "I").replace(/\s+([,.!?])/g, "$1");
-  t = t.charAt(0).toUpperCase() + t.slice(1);
-  if (!/[.!?]$/.test(t)) t += ".";
-  return t;
-}
-
-export function writer(species, story) {
-  const facts = FUN_FACTS[species] || [];
-  const tidied = tidy(story);
-  return {
-    role: "writer",
-    fun_facts: facts,
-    tidied_story: tidied,
-    question: tidied ? null : "What was it doing when you started filming?",
-    skipped: facts.length === 0,
-    prompt_version: PROMPT_VERSION,
-  };
-}
-
 // ── Assistant conversation ──────────────
 // Four demo scripts, implemented word for word from the fixed-response section of
 // docs/prompts.md: nothing rewritten, no sentence added.

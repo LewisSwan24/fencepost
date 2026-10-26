@@ -10,7 +10,6 @@ generated files. After changing the document, run:
 Outputs:
     prompts/shared.txt      SHARED RULES
     prompts/neighbour.txt   ROLE: NEIGHBOUR + CONTEXT BOUNDARY + VISION RULES
-    prompts/writer.txt      ROLE: WRITER
     prompts/screener.txt    ROLE: SCREENER + few-shot
     prompts/VERSION         the document version, recorded with every model call
 """
@@ -29,7 +28,6 @@ OUT = ROOT / "prompts"
 LAYOUT = {
     "shared": ["=== SHARED RULES ==="],
     "neighbour": ["=== ROLE: NEIGHBOUR ===", "=== CONTEXT BOUNDARY ===", "=== VISION RULES ==="],
-    "writer": ["=== ROLE: WRITER ==="],
     "screener": ["=== ROLE: SCREENER ==="],
 }
 

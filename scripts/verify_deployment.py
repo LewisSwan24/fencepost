@@ -9,7 +9,7 @@ the timeline, did the Screener really run, the dashboard, the review queue, the 
 chain (issue, a second person redeems, it appears on their dashboard at the level the
 code carried, turn it off, cannot redeem once off, turning off leaves existing access
 alone), the refusals (see below), the forum (start a thread, reply, a refused reply
-carrying a reason), the Neighbour non-streaming and streaming, the Writer, the submission
+carrying a reason), the Neighbour non-streaming and streaming, the submission
 rate limit, and last of all closing the storyboard and watching it move from active to
 past with its closing line. Seven real model calls (four Screener, three assistant);
 neither the refusals, nor the dashboard checks, nor the rate-limit loop makes any.
@@ -432,17 +432,6 @@ def main():
     spread = times[-1] - times[0] if len(times) > 1 else 0.0
     record("stream not buffered", spread >= 1.0,
            f"first {times[0]:.2f}s, last {times[-1]:.2f}s, spread {spread:.2f}s" if times else "no frames")
-
-    status, draft = client.send("/api/assistant", token=token, body={
-        "role": "writer", "species_selected": "ringtail",
-        "story_draft": "saw one on the fence last night it just sat there"})
-    facts = draft.get("fun_facts") or []
-    # skipped does not count as a pass. roles.writer returns skipped silently when both
-    # calls fail (§3.4 — the Writer is never a required step), the response is 200, and it
-    # looks like any other success. Treating that as a pass is covering for the upstream.
-    record("assistant (Writer)", status == 200 and not draft.get("skipped") and bool(facts),
-           f"{len(facts)} fun facts" +
-           (", skipped — neither attempt worked, most likely the upstream is down" if draft.get("skipped") else ""))
 
     # The rate limit spends the stranger's quota, not the owner's. The limiter is per user, so
     # the stranger meets the same limit. It used to be the owner's, which was fine until

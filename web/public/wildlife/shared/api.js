@@ -5,7 +5,6 @@ import {
   accountComments,
   accountReports,
   accountRegistration,
-  accountDraft,
   residentId,
 } from "./account-seeds.js";
 import { requireSafeComment, reportReasons } from "./comment-safety.js";
@@ -67,7 +66,6 @@ export function initialState() {
     registrations: [structuredClone(accountRegistration)],
     receipts: [],
     favorites: { [residentId]: ["story-brushtail"] },
-    drafts: { [residentId]: structuredClone(accountDraft) },
     commentHistory: [],
     accountVersion: 1,
     removals: [],
@@ -135,10 +133,23 @@ function state() {
         .readLocal(store.storageKeys.legacyReceipts, [])
         .map((r) => ({ ...r, ownerId: null }));
       saved.favorites ??= { [residentId]: ["story-brushtail"] };
-      saved.drafts ??= { [residentId]: structuredClone(accountDraft) };
       saved.commentHistory ??= [];
       saved.accountVersion = 1;
       changed = true;
+    }
+    // Discard retired writing-only drafts/metadata; preserve observations,
+    // registrations, comments, favourites and the separate account session.
+    if ("drafts" in saved) {
+      delete saved.drafts;
+      changed = true;
+    }
+    for (const observation of saved.observations || []) {
+      for (const key of ["aiAssisted", "ai_assisted"]) {
+        if (key in observation) {
+          delete observation[key];
+          changed = true;
+        }
+      }
     }
     return changed;
   });
@@ -626,7 +637,6 @@ export async function myObservations() {
           "description",
           "status",
           "submittedAt",
-          "aiAssisted",
         ].map((k) => [k, o[k] ?? null]),
       ),
     );
@@ -672,16 +682,6 @@ export function receipts() {
 export function keepReceipt(receipt) {
   const s = state();
   s.receipts.push({ ...receipt, ownerId: account()?.id || null });
-  save(s);
-}
-export function writingDraft() {
-  const user = requireAccount();
-  return state().drafts[user.id] || null;
-}
-export function saveWritingDraft(draft) {
-  const user = requireAccount(),
-    s = state();
-  s.drafts[user.id] = { ...draft, status: "draft" };
   save(s);
 }
 export async function saveOpportunity(o) {

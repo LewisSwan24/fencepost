@@ -655,34 +655,8 @@
   border-top: 1px solid #ced4c6;
   padding-top: 12px;
 }
-.writing-helper {
-  padding: 24px;
-  border: 2px solid #a6b7a5;
-  border-radius: 12px;
-  background: #e3e9da;
-  margin: 20px 0;
-}
-.writing-helper h2 {
-  margin-top: 0;
-}
-.writing-helper textarea {
-  background: #fffcf5;
-}
-.writing-helper textarea[readonly] {
-  color: #526458;
-}
-.fencepost-app .writing-helper label {
-  font-weight: 700;
-}
-.fencepost-app .writing-helper .tick {
-  font-weight: 400;
-}
 .fencepost-app button[hidden] {
   display: none !important;
-}
-.writing-helper .status-label {
-  background: #f1e7d3;
-  color: #664b22;
 }
 .admin-content blockquote {
   margin: 12px 0;
@@ -722,9 +696,6 @@
     padding: 10px 18px;
     font-size: 13px;
     gap: 10px;
-  }
-  .writing-helper {
-    padding: 18px;
   }
   .admin-summary {
     grid-template-columns: 1fr 1fr;
