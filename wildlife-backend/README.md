@@ -27,10 +27,10 @@ With both Supabase URL and public **legacy anon JWT** key configured, **connecte
 
 ## Shared Supabase setup
 
-Use a new development Supabase project, separate from existing storyboard data. The original Fencepost Python/Turso schema and generated files are untouched. Supabase is an additive, isolated moderation backend, not a migration or replacement for Turso. This separation avoids exposing permissioned legacy entries through anonymous public reading.
+Use a new development Supabase project, separate from existing storyboard data. The original Fencepost Python/Turso database schema and existing records are unchanged. Supabase is an additive, isolated moderation backend, not a migration or replacement for Turso. This separation avoids exposing permissioned legacy entries through anonymous public reading.
 
 1. Apply `supabase/001_schema.sql` in the Supabase SQL editor. It creates the new tables, RLS policies, RPCs and two Storage buckets. This is an initial migration, not a repeatable reset; do not run it against an unrelated existing schema.
-2. For an existing project, first apply `supabase/003_exhibition_updates.sql` and `supabase/004_accounts_direct_comments.sql` to add the new outcome fields without deleting data. Load the fictional seeds from `supabase/002_seed.sql`. Regenerate them with `node scripts/seed.mjs > /tmp/wn-seed.sql`. Seeds are idempotent by deterministic IDs. They contain no real event or rescue address.
+2. For an existing project, first apply `supabase/003_exhibition_updates.sql` `supabase/004_accounts_direct_comments.sql` and `supabase/005_manual_observations.sql` to add the new outcome fields without deleting data. Load the fictional seeds from `supabase/002_seed.sql`. Regenerate them with `node scripts/seed.mjs > /tmp/wn-seed.sql`. Seeds are idempotent by deterministic IDs. They contain no real event or rescue address.
 3. In Supabase Authentication, create/invite the moderator account. Anonymous browsing/submission do not need an Auth user. Add the account's UUID to `public.moderators` from the SQL editor:
 
    ```sql
@@ -62,7 +62,7 @@ Fencepost hash routes: `#stories`, `#story/ID`, `#learn`, `#species/ID`, `#share
 
 No account gate is shown on the public park experience. Text-only posting and Not sure identification are first-class options. A photo or MP4/WebM clip under 5 MB is optional; clips become a single still. All media is re-encoded as JPEG to remove metadata; originals are not retained. Pending media is private in connected mode. Human privacy checks are required before approval. Contributors receive a browser-held receipt that supports a removal request, not access to the private queue.
 
-Discussion is only on approved-story details. Signed-in residents and moderators publish comments immediately after validation, can reply and edit/delete their own comments, and can report others. Posts still require human approval. Reported comments are a separate moderator list with dismissal, reasoned removal and restoration. Optional Ask AI writing help reuses the existing writer service and never publishes or supplies verified wildlife advice.
+Discussion is only on approved-story details. Signed-in residents and moderators publish comments immediately after validation, can reply and edit/delete their own comments, and can report others. Posts still require human approval. Reported comments are a separate moderator list with dismissal, reasoned removal and restoration.
 
 ## Physical controls and reading
 
@@ -104,8 +104,8 @@ See [TESTING.md](TESTING.md) for actual results and remaining manual checks. No 
 
 The revised eight data tests and `tests/browser_revision.py` cover the new controls, activities, catalogue migration and community hierarchy. See REVISION.md for the ten requested screenshots and current acceptance evidence.
 
-## Current exhibition accounts and writing help
+## Current exhibition accounts and direct comments
 
 Open `#login`, select Use resident account or Use moderator account, then press Sign in. Quick-fill does not authenticate by itself. Taylor uses resident@fencepost.demo / resident123; Wildlife Moderator uses moderator@fencepost.demo / moderator123. These intentionally public credentials are configured in shared/demo-accounts.js; passwords are never stored in localStorage. Guest browsing and anonymous text-only observation submission remain available.
 
-[ACCOUNTS-AND-WRITING.md](ACCOUNTS-AND-WRITING.md) documents the source port from main, protected routes, immediate-comment model, reports, safe persistence, existing AI environment variables, 004 migration and test results. `tests/browser_accounts.py` and `tests/browser_writing_failure.py` exercise the new journeys. The default static/Next fixture modes require no model credentials.
+[ACCOUNTS-AND-COMMENTS.md](ACCOUNTS-AND-COMMENTS.md) documents protected routes, immediate comments, reports, safe persistence and manual submissions. Apply migration 005 after 004 on existing installations. `tests/browser_accounts.py` and `tests/browser_manual_observation.py` exercise the current journeys. Manual observations need no model credentials.

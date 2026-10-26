@@ -7,7 +7,7 @@
 // So every route gets a case.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assistantReply, assistantFrames, writer, suggestedSpecies, PROMPT_VERSION,
+import { assistantReply, assistantFrames, suggestedSpecies, PROMPT_VERSION,
          createThread, createPost, readThread, boardAccess, editEntry, deleteEntry,
          timeline, dashboard, closeStoryboard, reviewQueue, castVote, disposeEntry,
          createStoryboard, submitEntry,
@@ -58,19 +58,6 @@ test("the streaming frames are shaped like the real proxy", () => {
   assert.equal(frames[0].prompt_version, PROMPT_VERSION);
   assert.equal(frames.at(-1).done, true);
   assert.ok(frames.slice(1, -1).every((f) => typeof f.delta === "string"));
-});
-
-test("the Writer offers candidates only, one at each confidence", () => {
-  const out = writer("ringtail", "saw one on the fence");
-  assert.equal(out.fun_facts.length, 2);
-  assert.deepEqual(out.fun_facts.map((f) => f.confidence), ["established", "unverified"]);
-  assert.equal(out.skipped, false);
-  assert.ok(!("verdict" in out) && !("note" in out));
-});
-
-test("anything that is not a possum has no fun fact, and skipped is true", () => {
-  assert.equal(writer("other", "something in the tree").skipped, true);
-  assert.equal(writer("unknown", "not sure what it was").fun_facts.length, 0);
 });
 
 test("frame identification suggests a sentence, not a selection", () => {

@@ -223,11 +223,6 @@ export const COPY = {
   // For somebody without a pointer (#46): a mask placed in the middle, then moved by keys.
   maskAdd: "Add a mask",
   maskKeys: "Arrow keys move a mask. Shift and the arrow keys change its size. Delete removes it.",
-  helperDisclosure: "AI suggestions. Nothing goes into your post unless you put it there.",
-  helperEmpty: "No fun facts for this one. Possum Help only knows brushtail and ringtail possums.",
-  helperOpen: "Possum Help — writing suggestions",
-  addFact: "Add to fun fact",
-  useTidied: "Replace my story with the tidied one",
   post: "Post to storyboard",
   posted: "Added to the storyboard",
   blockedTitle: "Not posted",

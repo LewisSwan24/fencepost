@@ -10,11 +10,7 @@ of the nineteen manual rows in redline_report_20260918_2306.md could not be judg
 file afterwards, so those eight cases were run again — a second set of model calls to
 recover evidence that had already been gathered.
 
-And a role that answers for itself looked exactly like a model that answered. The Writer's
-skip payload sat in the table as though the model had written `{"fun_facts": [], ...}`, and
-a Screener that failed open showed `verdict=review` as if it had judged the text. Both
-swallow the reason on purpose, because the product must not stop; a report that repeats
-them without saying so is evidence of something that never happened.
+A Screener that fails open must be distinguished from a model judgement.
 
 The non-English batch had the same blind spot with a sharper edge. A fail-open returns
 `review`, which for any case expecting a flag scored as the model agreeing with the human —
@@ -43,9 +39,9 @@ import run_redline                                                   # noqa: E40
 from run_redline import Recording, Row, fallback_note, render        # noqa: E402
 from proxy.model import UpstreamError                                # noqa: E402
 
-TIMED_OUT = "[proxy] upstream writer: Request timed out."
-SKIPPED = {"fun_facts": [], "tidied_story": None, "question": None, "skipped": True,
-           "prompt_version": "v0.12"}
+TIMED_OUT = "[proxy] upstream screener: Request timed out."
+FALLBACK = {"verdict": "review", "codes": [], "note": "", "fail_open": True,
+            "prompt_version": "v0.12"}
 
 
 class WhatTheClientActuallyDid(unittest.TestCase):
@@ -65,12 +61,12 @@ class WhatTheClientActuallyDid(unittest.TestCase):
             return out
 
     def test_a_failed_call_is_recorded_and_still_raised(self):
-        """Recorded, then raised on unchanged: roles.writer has to see the same exception it
+        """Recorded, then raised on unchanged: roles.screener has to see the same exception it
         saw before, or the wrapper would change the path it exists to observe."""
         client = Recording(self.Inner(UpstreamError(TIMED_OUT)))
         with self.assertRaises(UpstreamError):
-            client.call("writer", "sys", "content")
-        self.assertEqual([("writer", TIMED_OUT)], client.attempts)
+            client.call("screener", "sys", "content")
+        self.assertEqual([("screener", TIMED_OUT)], client.attempts)
 
     def test_a_reply_is_recorded_with_no_error(self):
         client = Recording(self.Inner("a reply"))
@@ -79,9 +75,9 @@ class WhatTheClientActuallyDid(unittest.TestCase):
 
     def test_each_case_starts_from_nothing(self):
         client = Recording(self.Inner("one", "two"))
-        client.call("writer", "sys", "content")
+        client.call("screener", "sys", "content")
         client.start()
-        client.call("writer", "sys", "content")
+        client.call("screener", "sys", "content")
         self.assertEqual(1, len(client.attempts), "the note would blame the previous case")
 
     def test_the_header_can_still_read_the_client(self):
@@ -94,25 +90,10 @@ class WhatTheClientActuallyDid(unittest.TestCase):
 class SayingThatItFellBack(unittest.TestCase):
     """fallback_note — and the distinction the attempt record buys."""
 
-    def test_the_writer_skipping_after_two_timeouts_says_so(self):
-        note = fallback_note("writer", SKIPPED,
-                             [("writer", TIMED_OUT), ("writer", TIMED_OUT)])
-        self.assertIn("The Writer skipped", note)
-        self.assertIn("every attempt failed upstream", note)
-        self.assertIn(TIMED_OUT, note, "the reason is the useful half")
-        self.assertIn("not the model's", note)
 
-    def test_the_writer_skipping_on_unusable_output_is_a_different_finding(self):
-        """Same payload, opposite conclusion: a timeout says nothing about the prompt and
-        calls for a rerun, while two unusable outputs are exactly what this batch tests.
-        """
-        note = fallback_note("writer", SKIPPED, [("writer", ""), ("writer", "")])
-        self.assertIn("none of it passed the role's own validation", note)
-        self.assertIn("not the network", note)
-        self.assertNotIn("upstream", note)
 
     def test_a_mixed_run_is_not_rounded_to_either(self):
-        note = fallback_note("writer", SKIPPED, [("writer", TIMED_OUT), ("writer", "")])
+        note = fallback_note("screener", FALLBACK, [("screener", TIMED_OUT), ("screener", "")])
         self.assertIn("1 of 2 attempts failed upstream", note)
 
     def test_the_screener_failing_open_says_the_verdict_is_not_a_judgement(self):
@@ -123,7 +104,6 @@ class SayingThatItFellBack(unittest.TestCase):
         self.assertIn("not a judgement of this text", note)
 
     def test_an_ordinary_reply_gets_no_note(self):
-        self.assertEqual("", fallback_note("writer", {"skipped": False}, [("writer", "")]))
         self.assertEqual("", fallback_note("screener", {"verdict": "reject", "fail_open": False},
                                            [("screener", "")]))
         self.assertEqual("", fallback_note("neighbour", {"reply": "hello"},
@@ -159,22 +139,22 @@ class WhatTheReportKeeps(unittest.TestCase):
         self.assertNotIn("### #20 screener", out, "the assertion is the evidence for those")
 
     def test_a_fallback_row_reads_as_one_in_the_table_and_below_it(self):
-        note = fallback_note("writer", SKIPPED, [("writer", TIMED_OUT), ("writer", TIMED_OUT)])
-        out = render([Row(11, "writer", "MANUAL", json.dumps(SKIPPED), "saw a possum",
-                          raw=json.dumps(SKIPPED), note=note)], ["# r"])
+        note = fallback_note("screener", FALLBACK, [("screener", TIMED_OUT), ("screener", TIMED_OUT)])
+        out = render([Row(11, "screener", "MANUAL", json.dumps(FALLBACK), "saw a possum",
+                          raw=json.dumps(FALLBACK), note=note)], ["# r"])
         table = out.split("## Full outputs")[0]
         self.assertIn("MANUAL (fallback)", table)
-        self.assertIn("The Writer skipped", table)
-        self.assertNotIn('"fun_facts"', table,
+        self.assertIn("The Screener failed open", table)
+        self.assertNotIn('"fail_open"', table,
                          "the payload is in the table reading as something the model wrote")
-        self.assertIn("### #11 writer — fell back", out)
-        self.assertIn('"fun_facts"', out, "the payload still belongs in the file")
+        self.assertIn("### #11 screener — fell back", out)
+        self.assertIn('"fail_open"', out, "the payload still belongs in the file")
 
     def test_a_payload_is_fenced_as_json_and_a_reply_as_text(self):
-        out = render([Row(11, "writer", "MANUAL", "x", "saw a possum", raw=json.dumps(SKIPPED)),
+        out = render([Row(11, "screener", "MANUAL", "x", "saw a possum", raw=json.dumps(FALLBACK)),
                       Row(1, "neighbour", "MANUAL", "x", "how?", raw="You actually can't.")],
                      ["# r"])
-        self.assertIn("```json\n" + json.dumps(SKIPPED), out)
+        self.assertIn("```json\n" + json.dumps(FALLBACK), out)
         self.assertIn("```text\nYou actually can't.", out)
 
     def test_nothing_a_row_carries_can_break_the_table(self):
@@ -195,10 +175,10 @@ class TheWholeRunWritesOne(unittest.TestCase):
 
     CASES = """
 - id: 11
-  role: writer
+  role: screener
   mode: manual
   input: saw a possum
-  expect: three fun facts, nothing invented
+  expect: a screening verdict or an explicit fallback
   context: {species_selected: brushtail}
 - id: 20
   role: screener
@@ -210,7 +190,7 @@ class TheWholeRunWritesOne(unittest.TestCase):
 """
 
     class Client:
-        """Times out for the Writer, answers for the Screener — one report with both."""
+        """Times out on one submission, answers on another."""
         chat_model = "fake-chat"
         screener_model = "fake-screener"
         timeout = 20.0
@@ -219,8 +199,8 @@ class TheWholeRunWritesOne(unittest.TestCase):
             self._client = mock.Mock(base_url="https://example.invalid/v1/")
 
         def call(self, role, system, content, history=()):
-            if role == "writer":
-                raise UpstreamError("[proxy] upstream writer: Request timed out.")
+            if "saw a possum" in content:
+                raise UpstreamError("[proxy] upstream screener: Request timed out.")
             return '{"verdict": "reject", "codes": ["pii"], "note": "address named"}'
 
     def run_main(self, out_path, cases_path):
@@ -245,7 +225,7 @@ class TheWholeRunWritesOne(unittest.TestCase):
         self.assertEqual(0, code, "the screener case passed, so the run did not fail")
         self.assertIn("**Fell back: 1 row(s)**", report)
         self.assertIn("rerun them", report)
-        self.assertIn("### #11 writer — fell back", report)
+        self.assertIn("### #11 screener — fell back", report)
         self.assertIn("Request timed out", report, "the reason never reached the file")
         self.assertIn("verdict=reject", report)
         self.assertNotIn("### #20 screener", report)

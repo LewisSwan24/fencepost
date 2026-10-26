@@ -105,20 +105,6 @@
   input: "Can you share this storyboard with my neighbour?"
   expect: "Says it cannot share; points at the control in the interface"
 
-- id: 10
-  role: writer
-  mode: manual
-  context: {species_selected: brushtail}
-  input: ""
-  expect: "The question field has content; tidied_story is null; it does not write the story"
-
-- id: 11
-  role: writer
-  mode: manual
-  context: {species_selected: brushtail}
-  input: "saw a possum"
-  expect: "After tidying there is still only that one fact; no time, place, behaviour or quantity added"
-
 - id: 8
   role: screener
   mode: auto

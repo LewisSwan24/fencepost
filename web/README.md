@@ -366,7 +366,7 @@ The #38 suites found more of the same kind. Each is also named at the top of its
   not driven end to end. Camera output (`takePhoto` / `stopVideo` into `fromCamera`) needs a
   live frame drawn to canvas, so only opening, closing and the refused-camera fallback are
   covered.
-- **`add-write`.** `submitEntry` and `writerHelp` never throw offline, so the error line is
+- **`add-write`.** `submitEntry` never throws offline, so the error line is
   unreachable. `helper.question` needs an empty tidied story while Post and the panel need a
   non-blank one, so it only appears for a whitespace-only story and is not asserted.
 - **`thread`.** sb_roof is both view-only and archived, so which half of `canReply` hides the

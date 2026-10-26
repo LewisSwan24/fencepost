@@ -48,7 +48,7 @@ def effort_for(row: dict) -> dict:
 
 # Thinking levels from qwen-integration.md §1. "none" was confirmed a valid value by
 # measurement on 2026-09-12, see §5. Rows in PROVIDERS may override a role.
-EFFORT = {"neighbour": "medium", "writer": "low", "screener": "none"}
+EFFORT = {"neighbour": "medium", "screener": "none"}
 
 
 class UpstreamError(Exception):
@@ -166,10 +166,10 @@ class CappedClient:
 
     Open sign-up makes a fresh handle a fresh per-user quota, so those limits bound nothing
     about what the model costs in total. This counts every call before it goes out — each
-    retry by the Screener and the Writer too, because each one is billed.
+    retry by the Screener too, because each one is billed.
 
     Reaching the ceiling raises UpstreamError, deliberately indistinguishable from an outage:
-    the Screener fails open, the Writer skips, the Neighbour answers upstream_unavailable.
+    the Screener fails open, the Neighbour answers upstream_unavailable.
     Nobody asking did anything wrong, so nothing may tell them they did.
     """
 

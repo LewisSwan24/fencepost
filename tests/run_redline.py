@@ -11,7 +11,7 @@ Usage:
     python run_redline.py --out report.md    # choose the report path
 
 Screener cases assert verdict and codes automatically.
-Neighbour and writer cases cannot be judged automatically: the script prints the model
+Neighbour cases cannot be judged automatically: the script prints the model
 output and you tick them off one by one.
 The report is markdown, ready to archive as the evaluation evidence for the course.
 """
@@ -60,14 +60,8 @@ class Row:
 class Recording:
     """The client, plus a record of what each call to it actually did.
 
-    Both roles that can fall back swallow the reason on the way: roles.writer catches
-    UpstreamError and returns its skip payload, roles.screener does the same and returns
-    fail_open. That is right for the product — a broken model must not stop somebody
-    posting — and wrong for evidence, because from the outside the fallback looks exactly
-    like a model reply and the report printed it as one (#35).
-
-    Wrapping the client rather than changing the roles keeps the path under test the
-    deployed path, which is the whole point of the refactor this file already went through.
+    The Screener can fall back after an unusable response or upstream failure.
+    Record the actual attempts so reports distinguish these outcomes.
     """
 
     def __init__(self, inner):
@@ -100,9 +94,7 @@ def fallback_note(role: str, data: dict, attempts: list) -> str:
     not the same finding. The first says nothing about the prompt and calls for a rerun; the
     second is about the prompt and belongs in the evidence.
     """
-    if role == "writer" and data.get("skipped"):
-        what = "The Writer skipped, so the payload is proxy/roles.py's own, not the model's"
-    elif role == "screener" and data.get("fail_open"):
+    if role == "screener" and data.get("fail_open"):
         what = ("The Screener failed open, so `review` here is the fallback prompts.md §5 "
                 "requires, not a judgement of this text")
     else:
@@ -154,10 +146,6 @@ def run_case(client, role: str, case: dict):
         return result, json.dumps({k: v for k, v in result.items()
                                    if k in ("verdict", "codes", "fail_open",
                                             "downgraded_non_english")})
-    if role == "writer":
-        result = roles.writer(client, species, case.get("input", ""))
-        return result, json.dumps(result, ensure_ascii=False)
-
     # _context_block requires both of these and reads them with [], not .get() — so a
     # context missing either raises rather than quietly running on a default. The old
     # harness never met that requirement because it assembled the block itself, which is
@@ -247,7 +235,7 @@ def render(rows: list, header: list) -> str:
 
 
 def _fence(body: str) -> str:
-    """json for a payload, text for a reply. The screener and writer rows are JSON and read
+    """json for a payload, text for a reply. The screener rows are JSON and read
     as a wall without it; a neighbour reply is prose and highlighting it as anything is a lie
     about what it is."""
     try:
@@ -260,7 +248,7 @@ def _fence(body: str) -> str:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cases", default=str(HERE / "redline_cases.yaml"))
-    ap.add_argument("--role", help="one role only: neighbour / writer / screener")
+    ap.add_argument("--role", help="one role only: neighbour / screener")
     ap.add_argument("--id", nargs="*", type=int, help="run only these case numbers")
     ap.add_argument("--out", default=str(HERE / f"redline_report_{datetime.now():%Y%m%d_%H%M}.md"))
     args = ap.parse_args()
