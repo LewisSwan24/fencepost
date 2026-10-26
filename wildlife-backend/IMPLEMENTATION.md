@@ -27,7 +27,7 @@ Local demo mode cannot provide privacy/security between people using the same br
 
 ## Journeys and moderation
 
-Browse anonymously → story detail separates resident observation, source-linked reference, safe response and privacy notes → learn species and one short quiz or matching/habitat activity → help situations. No phone is necessary for display learning or guidance.
+Browse anonymously → story detail separates resident observation, source-linked reference, safe response and privacy notes → learn species and a three-question multiple-choice quiz → help situations. No phone is necessary for display learning or guidance.
 
 Share text or optional image/video still → preview and edit/cancel → Sent for review → moderator edits public wording/species/area, checks privacy and chooses approval, rejection, clarification, urgent or removal → public display updates (storage event locally; 30-second public-feed poll when connected). Clarification is recorded for demonstration, with no invented notification channel.
 
@@ -72,7 +72,7 @@ Statistics, exact pins, separate quiz/sounds/family/story pages, language switch
 
 ## Superseding interaction revision
 
-REVISION.md records the current contract: Back moves to the previous option, Return links are selectable, stories rotate only after idle and never during a full-story read, species have mixed mini-quizzes including keyboard pick/place habitat planning, and Fencepost has a clear featured-story/guidance/feed/community hierarchy. The ten new screenshots replace the earlier design captures.
+REVISION.md records the current contract: Back moves to the previous option, Return links are selectable, stories rotate only after idle and never during a full-story read, each species has three multiple-choice questions with feedback, retry and review, and Fencepost has a clear featured-story/guidance/feed/community hierarchy. The ten new screenshots replace the earlier design captures.
 
 ## Accounts and comment correction
 

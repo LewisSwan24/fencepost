@@ -147,15 +147,10 @@ async function load() {
     } else if (page === "activity.html") {
       const s = selectedSpecies();
       main.innerHTML =
-        returnLinks(`species.html?animal=${s.id}`) +
-        intro(
-          "03 / Meet the animal",
-          esc(s.name),
-          "Back and Next move between options. Choose selects an item or answer.",
-        ) +
-        '<div id="activity-root"></div>';
+        '<h1 class="quiz-page-heading">Meet the Animal quiz</h1><div id="activity-root"></div>';
       mountActivity(document.querySelector("#activity-root"), s.id, {
         animalUrl: `species.html?animal=${s.id}`,
+        animalsUrl: "animals.html",
       });
     } else if (page === "help.html") {
       const contacts = [...config.contacts, ...(await api.sources())].filter(
