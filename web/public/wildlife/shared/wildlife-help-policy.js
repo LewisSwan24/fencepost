@@ -1,5 +1,4 @@
-// Approved project safety copy: the model selects from these records, never
-// supplies medical prose, contacts, handling instructions or factual sources.
+// Predefined project guidance selected locally by recognised observation words.
 import { privacyIssues } from "./comment-safety.js";
 export const helpSource = {
   title: "Queensland Government — Care of sick, injured or orphaned wildlife",
@@ -20,11 +19,11 @@ export const starterPrompts = [
   "I cannot tell if it is hurt",
 ];
 export const helpTransparency =
-  "AI guidance is based only on your description. It may be incorrect and cannot examine or diagnose the animal.";
-export const offlineNotice =
-  "AI is currently unavailable. Safe offline guidance is being shown instead.";
+  "This general guidance cannot confirm whether an animal is injured. Contact a wildlife professional if you are concerned.";
+export const unknownExplanation =
+  "There is not enough information to assess the situation. Observe from a safe distance, keep people and pets away, and contact a recognised wildlife organisation if you remain concerned.";
 export const fallbackExplanation =
-  "The system could not assess this situation reliably. Keep your distance and contact a recognised wildlife organisation if you are concerned.";
+  "Guidance is temporarily unavailable. Keep your distance and contact a recognised wildlife organisation if you are concerned.";
 export const approvedReasons = {
   traffic: "Moving traffic creates immediate risk for people and wildlife.",
   breathing: "Difficulty breathing needs prompt professional assessment.",
@@ -48,7 +47,7 @@ const signs = [
   ["bleeding", /\b(?:bleed\w*|blood\w*|open wound\w*)\b/i],
   [
     "injury",
-    /\b(?:broken|fractur\w*|damaged|injured|droop\w*|dragging)\s+(?:\w+\s+){0,2}(?:limb|leg|wing)|\b(?:limb|leg|wing)\s+(?:\w+\s+){0,2}(?:broken|fractur\w*|injured)\b|\b(?:hurt|injured|injury|wound\w*|pain)\b/i,
+    /\b(?:broken|fractur\w*|damaged|injured|droop\w*|dragging)\s+(?:\w+\s+){0,2}(?:limb|leg|wing)|\b(?:limb|leg|wing)\s+(?:\w+\s+){0,2}(?:broken|fractur\w*|injured)\b|\b(?:looks hurt|appears injured|visibly injured|obvious injury|wound\w*|in pain)\b/i,
   ],
   ["trapped", /\b(?:trapp\w*|tangl\w*|entangl\w*|caught|stuck|snar\w*)\b/i],
   [
@@ -81,39 +80,28 @@ export function descriptionIssue(input) {
 export function safetySignals(description) {
   return signs.filter(([, re]) => re.test(description)).map(([key]) => key);
 }
-const highRisk = [
-  "traffic",
-  "breathing",
-  "bleeding",
-  "injury",
-  "trapped",
-  "still",
-];
-export function makeGuidance(description, selection, mode = "live") {
-  const detected = safetySignals(description),
-    risk = detected.find((key) => highRisk.includes(key));
-  let { category, reason } = selection;
-  // High-risk descriptions take precedence over every model-selected category.
-  if (risk) {
-    reason = risk;
-    category = ["traffic", "breathing", "bleeding", "injury"].includes(risk)
-      ? "Urgent assistance recommended"
-      : "Professional advice recommended";
-  }
-  if (category === "Observe safely" && detected.includes("unusual"))
-    category = "Professional advice recommended";
-  if (category === "Observe safely" && !detected.includes("moving"))
-    category = "Unable to determine";
+export function predefinedGuidance(description) {
+  const reason = safetySignals(description)[0] || "uncertain";
+  const category = ["traffic", "breathing", "bleeding", "injury"].includes(
+    reason,
+  )
+    ? "Urgent assistance recommended"
+    : ["trapped", "still", "unusual"].includes(reason)
+      ? "Professional advice recommended"
+      : reason === "moving"
+        ? "Observe safely"
+        : "Unable to determine";
+  return response(
+    category,
+    reason,
+    reason === "uncertain" ? unknownExplanation : approvedReasons[reason],
+  );
+}
+function response(category, reason, explanation) {
   return {
     category,
     reason,
-    mode,
-    explanation:
-      mode === "fallback"
-        ? fallbackExplanation
-        : mode === "offline"
-          ? `${approvedReasons[reason]} ${fallbackExplanation}`
-          : approvedReasons[reason],
+    explanation,
     now:
       reason === "traffic"
         ? "Keep clear of traffic. Seek recognised wildlife assistance."
@@ -130,73 +118,10 @@ export function makeGuidance(description, selection, mode = "live") {
     source: helpSource,
   };
 }
-export function offlineGuidance(description) {
-  const reason = safetySignals(description)[0] || "uncertain";
-  return makeGuidance(
-    description,
-    { category: "Professional advice recommended", reason },
-    "offline",
-  );
-}
-export function safeFallback(description) {
-  return makeGuidance(
-    description,
-    { category: "Professional advice recommended", reason: "uncertain" },
-    "fallback",
-  );
-}
-export function validateSelection(value, description) {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    Object.keys(value).sort().join(",") !== "category,reason" ||
-    !helpCategories.includes(value.category) ||
-    !Object.hasOwn(approvedReasons, value.reason)
-  )
-    return null;
-  const detected = safetySignals(description);
-  if (value.reason !== "uncertain" && !detected.includes(value.reason))
-    return null;
-  return value;
-}
-export function validateGuidance(value, description) {
-  if (!value || !["live", "offline", "fallback"].includes(value.mode))
-    return null;
-  const selection = validateSelection(
-    { category: value.category, reason: value.reason },
-    description,
-  );
-  if (!selection) return null;
-  const expected = makeGuidance(description, selection, value.mode);
-  return JSON.stringify(value) === JSON.stringify(expected) ? expected : null;
-}
-// The network boundary carries only these general sign codes, never free text,
-// species assertions, identity, an address, media or a precise location.
-const signDescriptions = {
-  traffic: "moving traffic",
-  breathing: "difficulty breathing",
-  bleeding: "bleeding",
-  injury: "injured",
-  trapped: "trapped",
-  still: "not moving",
-  unusual: "unusual movement",
-  moving: "moving normally",
-};
-export function validateSigns(value) {
-  return (
-    Array.isArray(value) &&
-    value.length <= 8 &&
-    new Set(value).size === value.length &&
-    value.every(
-      (code) =>
-        typeof code === "string" && Object.hasOwn(signDescriptions, code),
-    )
-  );
-}
-export function signsDescription(codes) {
-  return (
-    codes.map((code) => signDescriptions[code]).join(". ") ||
-    "Condition unclear"
+export function safeFallback() {
+  return response(
+    "Professional advice recommended",
+    "uncertain",
+    fallbackExplanation,
   );
 }

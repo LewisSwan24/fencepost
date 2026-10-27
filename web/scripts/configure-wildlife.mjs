@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 const target = new URL("../public/wildlife/shared/config.js", import.meta.url);
 const boundary = "\n// Deployment public configuration\n";
 let text = (await readFile(target, "utf8")).split(boundary)[0];
-const overrides = { wildlifeHelpEndpoint: "/api/wildlife-help" };
+const overrides = {};
 for (const [field, key] of Object.entries({
   supabaseUrl: "NEXT_PUBLIC_WN_SUPABASE_URL",
   supabaseAnonKey: "NEXT_PUBLIC_WN_SUPABASE_ANON_KEY",

@@ -103,13 +103,7 @@
   min-height: 44px;
   font-size: 15px;
 }
-.wildlife-offline {
-  padding: 14px;
-  background: var(--sage);
-  font-size: 16px;
-  line-height: 1.45;
-  border-radius: 8px;
-}
+
 .wildlife-help [data-help-option] {
   scroll-margin-block: 40px 230px;
 }
