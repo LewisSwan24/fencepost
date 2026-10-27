@@ -10,7 +10,7 @@ export function initControls() {
       ...(document.querySelector("dialog[open]") || document).querySelectorAll(
         document.querySelector("dialog[open]")
           ? "button,a"
-          : "main a,main button,main summary,.bottom-nav a",
+          : "main a,main button,main summary,main [data-help-option],.bottom-nav a",
       ),
     ].filter(
       (e) =>
@@ -59,6 +59,7 @@ export function initControls() {
   function choose() {
     refresh();
     selected?.click();
+    if (selected?.matches("textarea[data-help-option]")) selected.focus();
   }
   const actions = { back, choose, next };
   document
@@ -83,8 +84,12 @@ export function initControls() {
     }
   });
   document.addEventListener("pointerdown", (e) => {
-    if (selectable().includes(e.target.closest("a,button,summary")))
-      focus(e.target.closest("a,button,summary"), false);
+    if (
+      selectable().includes(
+        e.target.closest("a,button,summary,[data-help-option]"),
+      )
+    )
+      focus(e.target.closest("a,button,summary,[data-help-option]"), false);
   });
   let volume = Number(sessionStorage.getItem("wn-volume") ?? 0.7);
   function setVolume(v) {
@@ -111,6 +116,7 @@ export function initControls() {
         resetIdle();
         return;
       }
+      window.dispatchEvent(new Event("wn-idle"));
       window.speechSynthesis?.cancel();
       document.querySelectorAll("dialog[open]").forEach((d) => {
         d.close();

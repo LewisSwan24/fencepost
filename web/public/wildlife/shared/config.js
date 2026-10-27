@@ -4,6 +4,7 @@ export const config = {
   supabaseAnonKey: "",
   fencepostBaseUrl: "", // Empty uses this deployment's /fencepost/ companion.
   park: "local-park",
+  wildlifeHelpEndpoint: "", // Empty: explicit offline guidance. Next binds its server route.
   idleMs: 120000,
   rotateMs: 45000,
   keys: { back: "ArrowLeft", choose: "Enter", next: "ArrowRight" },
@@ -16,3 +17,6 @@ export const config = {
   contacts: [],
   reviewerOrganisation: "Prototype demonstration moderator",
 };
+
+// Deployment public configuration
+Object.assign(config, {"wildlifeHelpEndpoint":"/api/wildlife-help"});

@@ -12,11 +12,13 @@ import {
   modeNote,
 } from "./shared/ui.js";
 import { initControls } from "./shared/controls.js";
+import { mountWildlifeHelp } from "./shared/wildlife-help.js";
 import { mountActivity } from "./shared/activities.js";
 import { outcomeCard, outcomeDetail } from "./shared/presentation.js";
 const main = document.querySelector("main");
 const page = location.pathname.split("/").pop() || "index.html";
 const query = new URLSearchParams(location.search);
+let helpCleanup;
 let list = [],
   index = 0,
   timer,
@@ -163,7 +165,9 @@ async function load() {
           "Stay safe. Ask a wildlife rescuer.",
           "Keep children and pets away. Do not touch, feed or chase wildlife.",
         ) +
-        `<section class="help-grid"><article class="action-card"><h2>Choose a situation</h2><div class="help-options">${["Animal appears healthy", "Animal may be injured", "Animal may be trapped", "Animal is on or near a road", "I am not sure"].map((text, i) => `<button data-action="guidance" data-index="${i}">${text}</button>`).join("")}</div></article><article><div id="guidance" role="status"><p>Choose a situation for short guidance.</p></div><h2>Professional contacts</h2>${contacts.length ? contacts.map((c) => `<p><strong>${esc(c.name)}</strong> · ${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p>`).join("") : "<p>Verified contact information is temporarily unavailable.</p>"}${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Official reference review pending. This prototype cannot dispatch rescue help.</p></article></section>`;
+        `<section class="help-grid"><div id="wildlife-help-root"></div><article><h2>Professional contacts</h2>${contacts.length ? contacts.map((c) => `<p><strong>${esc(c.name)}</strong> · ${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p>`).join("") : "<p>Verified contact information is temporarily unavailable.</p>"}${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Official reference review pending. This prototype cannot dispatch rescue help.</p><div class="wildlife-private"><h3>Continue privately in Fencepost</h3>${qr(fencepostUrl("rescue"), "Scan to continue privately in Fencepost")}</div></article></section>`;
+      helpCleanup?.();
+      helpCleanup = mountWildlifeHelp(document.querySelector("#wildlife-help-root"));
     } else if (page === "community.html") {
       const o = (await api.opportunities()).find(
           (o) => o.status !== "completed",
@@ -251,17 +255,6 @@ main.addEventListener("click", (e) => {
     scheduleStory();
   }
   if (action === "retry") load();
-  if (action === "guidance") {
-    const messages = [
-      "If it is moving freely and shows no obvious distress, give it space and let it move on. If unsure, seek professional advice.",
-      "Keep your distance. Contact an appropriate wildlife organisation directly. Do not handle the animal.",
-      "Do not try to free or handle wildlife. Stay back and seek professional advice.",
-      "If driving, stop only when safe. Do not photograph or complete forms while driving. Keep clear of traffic.",
-      "You do not need to decide alone. Stay back and ask an appropriate wildlife organisation for advice.",
-    ];
-    document.querySelector("#guidance").innerHTML =
-      `<p class="notice"><strong>Safe Response</strong><br>${messages[Number(el.dataset.index)]}</p>${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Official reference: Queensland Government")}<p class="small">Source review pending. No exact wildlife location is available publicly.</p>`;
-  }
   if (action === "narrate") {
     const status = document.querySelector("#audio-status");
     if (!("speechSynthesis" in window)) {

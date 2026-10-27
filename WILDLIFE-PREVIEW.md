@@ -38,3 +38,7 @@ Observation posts require review; ordinary signed-in comments publish immediatel
 The observation form uses manual text and optional media: preview, edit/cancel, then send for human review. Existing connected installations apply wildlife-backend/005_manual_observations.sql after migration 004.
 
 The remaining server model settings and OpenAI SDK are shared by the unrelated legacy storyboard chat, frame identification and screening paths. They are still required; the park observation form uses none of them. Image-generation credits describe the existing artwork’s provenance and are retained. QR/code generation and general data-writing utilities are unrelated to observation authoring.
+
+## Public display: Is It Hurt?
+
+Only `/wildlife/help.html` mounts the new observation-guidance box. `POST /api/wildlife-help` classifies general signs through a private server-side provider connection, validates output and enforces high-risk overrides. Without credentials it returns explicitly labelled offline guidance. The free text is never transmitted; only general sign codes cross the boundary. Optional server variables are WN_HELP_API_KEY, WN_HELP_MODEL and WN_HELP_BASE_URL; see wildlife-backend/DISPLAY-HELP.md. Build and dev scripts bind the same-origin endpoint. Fencepost’s own help page and manual contribution forms do not gain this feature.

@@ -1,0 +1,164 @@
+/* This panel belongs only to the public display's Is It Hurt? page. */
+.wildlife-help {
+  background: var(--white);
+  border-radius: 20px;
+  padding: clamp(22px, 3vw, 36px);
+}
+.wildlife-help h2 {
+  font-size: clamp(28px, 3vw, 39px);
+}
+.wildlife-help > p {
+  max-width: 60ch;
+}
+.wildlife-help label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.wildlife-help textarea {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  padding: 18px;
+  border: 2px solid var(--muted);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+.wildlife-prompts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 20px 0;
+}
+.wildlife-prompts button {
+  font-size: 17px;
+  line-height: 1.35;
+  text-align: left;
+  background: var(--paper);
+  border-color: var(--line);
+  min-height: 60px;
+}
+.wildlife-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+.wildlife-actions > * {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  font-size: 17px;
+  font-weight: 700;
+}
+.wildlife-actions [data-help-action="ask"] {
+  background: var(--ink);
+  color: white;
+}
+.wildlife-transparency {
+  border-left: 4px solid var(--accent);
+  padding: 12px 16px;
+  font-size: 16px;
+  line-height: 1.5;
+  background: var(--paper);
+}
+.wildlife-help-status:not(:empty) {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 20px 0;
+}
+.wildlife-response {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.wildlife-response h3 {
+  font-size: clamp(24px, 2.5vw, 32px);
+  line-height: 1.2;
+  margin: 0 0 16px;
+}
+.wildlife-response p,
+.wildlife-response dd {
+  font-size: 18px;
+  line-height: 1.45;
+}
+.wildlife-response dt {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 14px 0 4px;
+}
+.wildlife-response dd {
+  margin: 0;
+}
+.wildlife-response > a {
+  display: inline-block;
+  min-height: 44px;
+  font-size: 15px;
+}
+.wildlife-offline {
+  padding: 14px;
+  background: var(--sage);
+  font-size: 16px;
+  line-height: 1.45;
+  border-radius: 8px;
+}
+.wildlife-help [data-help-option] {
+  scroll-margin-block: 40px 230px;
+}
+.wildlife-private {
+  margin-top: 28px;
+}
+@media (max-width: 800px) {
+  .help-grid:has(.wildlife-help) {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+}
+@media (max-width: 500px) {
+  .wildlife-prompts {
+    grid-template-columns: 1fr;
+  }
+  .wildlife-actions > * {
+    flex: 1 1 42%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wildlife-help * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.wildlife-help-status[data-ready="true"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  padding: 0;
+  margin: 0;
+}
+.wildlife-help-result {
+  scroll-margin-top: 24px;
+}
+
+.wildlife-help [data-help-action="edit"] {
+  display: none;
+}
+.wildlife-help[data-result] .wildlife-input,
+.wildlife-help[data-result] [data-help-action="ask"] {
+  display: none;
+}
+.wildlife-help[data-result] [data-help-action="edit"] {
+  display: inline-flex;
+  background: var(--ink);
+  color: var(--white);
+}
