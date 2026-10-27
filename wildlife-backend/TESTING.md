@@ -56,6 +56,10 @@ The current static suite passes 21 tests and the Fencepost frontend suite passes
 
 PostgreSQL checks passed on an upgrade from migration 004 and on a fresh schema through migration 005. Authorship, private-location projection and direct-comment moderation tests pass. The obsolete metadata column is absent after migration 005; submitted text and other records are preserved. The retired backend role is rejected before a model call. The Next production build and static validation pass.
 
-## Public-display observation guidance
+## Public-display Wildlife Help
 
-The display suite now passes 26 tests; the Fencepost frontend suite passes 522, including seven tests for the new server route. Both builds pass. `browser_wildlife_help.py` covers prompts, typing, safety fallback, privacy, focus, editing/cancellation, idle clearing and Return. Production-built `/wildlife/help.html` was checked against its actual `/api/wildlife-help` route in honest offline mode; static and manual Fencepost journeys still pass. No real provider key is configured, so live-provider connectivity is not claimed. See DISPLAY-HELP.md for configuration, fixed sources and limitations.
+The current local guidance checks cover the six prompts and four categories, exact uncertain-response wording, high-risk priority, privacy protection, no remote requirements and no visible misleading assessment wording. `browser_wildlife_help.py` covers input, loading/cancellation, editing, three-button navigation, Return, idle/visibility clearing, zero API requests, mobile layout and no console errors. The retired feature route is absent from the built Next app. See DISPLAY-HELP.md for the predefined logic, source and limitations.
+
+## Wildlife and emergency contact confirmation
+
+The current suite passes 30 display tests and 515 Fencepost frontend tests; both builds pass. `browser_contacts.py` checks both views, distinct contact purposes, correct telephone links, confirmation before activation, safe initial focus, physical-key wrapping/Choose, touch Cancel, Escape, focus restoration and mobile overflow. The telephone handler is intercepted in tests; no real calls are made. Built-preview checks also pass the local Wildlife Help wording, the retired route returning 404 and contact confirmations, with no console errors. Manual observation journeys still pass. See CONTACTS.md for the source-check limitation and physical dialler check.

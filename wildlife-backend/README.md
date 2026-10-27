@@ -110,4 +110,6 @@ Open `#login`, select Use resident account or Use moderator account, then press 
 
 [ACCOUNTS-AND-COMMENTS.md](ACCOUNTS-AND-COMMENTS.md) documents protected routes, immediate comments, reports, safe persistence and manual submissions. Apply migration 005 after 004 on existing installations. `tests/browser_accounts.py` and `tests/browser_manual_observation.py` exercise the current journeys. Manual observations need no model credentials.
 
-The public display’s Is It Hurt? page has a description-based guidance box with explicit offline fallback. This is separate from Fencepost’s manual observation forms. See [DISPLAY-HELP.md](DISPLAY-HELP.md) for privacy, source records, server setup and testing.
+The public display’s Is It Hurt? page has a Wildlife Help box with local predefined responses. This is separate from Fencepost’s manual observation forms. See [DISPLAY-HELP.md](DISPLAY-HELP.md) for privacy, source records, server setup and testing.
+
+The help page and phone companion share separate RSPCA Queensland wildlife-assistance and Triple Zero human-emergency cards. Both require confirmation before activating a telephone link. See [CONTACTS.md](CONTACTS.md) for the central configuration, sources, review basis and tests.

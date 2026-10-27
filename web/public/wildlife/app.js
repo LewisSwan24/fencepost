@@ -12,13 +12,14 @@ import {
   modeNote,
 } from "./shared/ui.js";
 import { initControls } from "./shared/controls.js";
+import { contactOptions, mountContactDialogs, additionalReviewedContacts } from "./shared/contacts.js";
 import { mountWildlifeHelp } from "./shared/wildlife-help.js";
 import { mountActivity } from "./shared/activities.js";
 import { outcomeCard, outcomeDetail } from "./shared/presentation.js";
 const main = document.querySelector("main");
 const page = location.pathname.split("/").pop() || "index.html";
 const query = new URLSearchParams(location.search);
-let helpCleanup;
+let helpCleanup, contactCleanup;
 let list = [],
   index = 0,
   timer,
@@ -155,9 +156,7 @@ async function load() {
         animalsUrl: "animals.html",
       });
     } else if (page === "help.html") {
-      const contacts = [...config.contacts, ...(await api.sources())].filter(
-        (c) => c.verified && c.sourceUrl && c.reviewedAt,
-      );
+      const contacts = additionalReviewedContacts([...config.contacts, ...(await api.sources())]);
       main.innerHTML =
         returnLinks() +
         intro(
@@ -165,7 +164,9 @@ async function load() {
           "Stay safe. Ask a wildlife rescuer.",
           "Keep children and pets away. Do not touch, feed or chase wildlife.",
         ) +
-        `<section class="help-grid"><div id="wildlife-help-root"></div><article><h2>Professional contacts</h2>${contacts.length ? contacts.map((c) => `<p><strong>${esc(c.name)}</strong> · ${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p>`).join("") : "<p>Verified contact information is temporarily unavailable.</p>"}${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Official reference review pending. This prototype cannot dispatch rescue help.</p><div class="wildlife-private"><h3>Continue privately in Fencepost</h3>${qr(fencepostUrl("rescue"), "Scan to continue privately in Fencepost")}</div></article></section>`;
+        `<section class="help-grid"><div id="wildlife-help-root"></div><article><h2>Professional contacts</h2>${contactOptions()}${contacts.length ? contacts.map((c) => `<p><strong>${esc(c.name)}</strong> · ${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p>`).join("") : ""}${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Official reference review pending. This prototype cannot dispatch rescue help.</p><div class="wildlife-private"><h3>Continue privately in Fencepost</h3>${qr(fencepostUrl("rescue"), "Scan to continue privately in Fencepost")}</div></article></section>`;
+      contactCleanup?.();
+      contactCleanup = mountContactDialogs(main);
       helpCleanup?.();
       helpCleanup = mountWildlifeHelp(document.querySelector("#wildlife-help-root"));
     } else if (page === "community.html") {

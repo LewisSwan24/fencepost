@@ -7,8 +7,7 @@
     "start": "next start",
     "test": "node --import ./test/setup.mjs --test \"lib/*.test.mjs\" \"test/*.test.mjs\"",
     "test:screens": "node --import ./test/setup.mjs --test \"test/*.test.mjs\"",
-    "prebuild": "node scripts/configure-wildlife.mjs",
-    "predev": "node scripts/configure-wildlife.mjs"
+    "prebuild": "node scripts/configure-wildlife.mjs"
   },
   "overrides": {
     "postcss": "^8.5.28"

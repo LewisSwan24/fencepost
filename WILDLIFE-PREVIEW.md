@@ -41,4 +41,6 @@ The remaining server model settings and OpenAI SDK are shared by the unrelated l
 
 ## Public display: Is It Hurt?
 
-Only `/wildlife/help.html` mounts the new observation-guidance box. `POST /api/wildlife-help` classifies general signs through a private server-side provider connection, validates output and enforces high-risk overrides. Without credentials it returns explicitly labelled offline guidance. The free text is never transmitted; only general sign codes cross the boundary. Optional server variables are WN_HELP_API_KEY, WN_HELP_MODEL and WN_HELP_BASE_URL; see wildlife-backend/DISPLAY-HELP.md. Build and dev scripts bind the same-origin endpoint. Fencepost’s own help page and manual contribution forms do not gain this feature.
+Only `/wildlife/help.html` mounts Wildlife Help. It selects predefined prototype responses locally from common-situation prompts or recognised words. Nothing is transmitted or saved, and the feature needs no API, credentials or deployment binding. The four-category response table retains safety, privacy, contacts, sources, QR and three-button controls. Fencepost’s own help page and manual contribution forms remain unchanged. See wildlife-backend/DISPLAY-HELP.md.
+
+The public display and companion help page share two separately labelled RSPCA Queensland wildlife and Triple Zero human-emergency contacts. Every call action requires confirmation; numbers, sources and review metadata live in the canonical shared configuration. See wildlife-backend/CONTACTS.md.

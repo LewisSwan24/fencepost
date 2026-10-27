@@ -20,6 +20,7 @@ import {
 } from "./ui.js";
 import { demoAccounts, demoAccountNotice } from "./demo-accounts.js";
 import { checkComment, reportReasons } from "./comment-safety.js";
+import { contactOptions, mountContactDialogs, additionalReviewedContacts } from "./contacts.js";
 import { mountActivity } from "./activities.js";
 import { opportunityCard, outcomeCard, outcomeDetail } from "./presentation.js";
 const CHECK_LABELS = {
@@ -34,7 +35,7 @@ export async function mount(root) {
     editingComment = null,
     reportingComment = null,
     commentDraft = "";
-  let activityCleanup;
+  let activityCleanup, contactCleanup;
   let disposed = false,
     version = 0,
     draft = {},
@@ -127,6 +128,8 @@ export async function mount(root) {
     photoBlob = null;
   }
   async function render() {
+    contactCleanup?.();
+    contactCleanup = null;
     activityCleanup?.();
     activityCleanup = null;
     const current = ++version;
@@ -267,6 +270,7 @@ export async function mount(root) {
       $("#content").innerHTML = html;
       setupImages(root);
       bindForms();
+      if (section === "help") contactCleanup = mountContactDialogs(root);
       const primary = ["story", "stories"].includes(section)
         ? "stories"
         : ["learn", "species", "activity"].includes(section)
@@ -310,10 +314,8 @@ export async function mount(root) {
     return `<form id="observation-form" data-rescue="${rescue}">${field("Nickname (optional)", "nickname", "text", d.nickname, 'maxlength="60"')}${select("Possible animal", "possibleSpecies", [...species, { id: "not-sure", name: "Not sure" }], d.possibleSpecies)}${select("Approximate time", "approximateTime", times, d.approximateTime)}${select("General area (no exact address)", "publicArea", areas, d.publicArea)}${field("Observed behaviour", "behaviour", "text", d.behaviour, 'required maxlength="160"')}${text("Short description", "description", d.description)}${!rescue ? '<label class="tick"><input name="injuryRoute" type="checkbox">Animal may be injured or trapped — switch to private help route</label>' : ""}${rescue ? `${field("Exact location (optional, private)", "privateRescueLocation", "text", d.privateRescueLocation, 'maxlength="500"')}${field("Animal condition", "condition", "text", d.condition, 'required maxlength="300"')}${select("Is it moving?", "moving", ["Not sure", "Yes", "No"], d.moving)}<label class="tick"><input name="nearTraffic" type="checkbox" ${d.nearTraffic ? "checked" : ""}>Near traffic</label>` : ""}<label>Optional photograph or short video (max 5 MB)<input name="photo" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"></label><p class="small">Do not upload children, faces, house numbers or number plates. A video is converted to one still image; the original is not stored. Metadata is stripped before storage.</p><div id="photo-preview">${photo ? image(photo, "Optional photograph preview") + button("Remove photograph", "remove-photo") : ""}</div>${tick("I observed safely and any photograph contains no identifying details or children.", "safeConsent")}<button>Preview submission</button></form>`;
   }
   async function helpHtml() {
-    const contacts = [...config.contacts, ...(await api.sources())].filter(
-      (c) => c.verified === true && c.sourceUrl && c.reviewedAt,
-    );
-    return `<h1>Is it hurt? What should I do?</h1><p>Observe from a safe distance. Do not touch, feed or chase wildlife. Keep children and pets away.</p><div class="help-options">${["Animal appears healthy", "Animal may be injured", "Animal may be trapped", "Animal is on or near a road", "I am not sure"].map((x, i) => button(x, "guidance", `data-index="${i}"`)).join("")}</div><div id="guidance" role="status"></div><h2>Professional contacts</h2>${contacts.length ? contacts.map((c) => `<article class="notice"><strong>${esc(c.name)}</strong><p>${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p></article>`).join("") : "<p>Verified contact information is temporarily unavailable.</p>"}<p>Check your state wildlife service’s official website. This prototype cannot dispatch assistance.</p>${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Source review pending; no official contact numbers are invented.</p>`;
+    const contacts = additionalReviewedContacts([...config.contacts, ...(await api.sources())]);
+    return `<h1>Is it hurt? What should I do?</h1><p>Observe from a safe distance. Do not touch, feed or chase wildlife. Keep children and pets away.</p><div class="help-options">${["Animal appears healthy", "Animal may be injured", "Animal may be trapped", "Animal is on or near a road", "I am not sure"].map((x, i) => button(x, "guidance", `data-index="${i}"`)).join("")}</div><div id="guidance" role="status"></div><h2>Professional contacts</h2>${contactOptions()}${contacts.length ? contacts.map((c) => `<article class="notice"><strong>${esc(c.name)}</strong><p>${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p></article>`).join("") : ""}<p>Check your state wildlife service’s official website. This prototype cannot dispatch assistance.</p>${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Source review pending; no official contact numbers are invented.</p>`;
   }
   function opportunityHtml(o) {
     return `<a class="return-link" href="#community">← Return to previous screen</a>${image(o.image || "illustration:volunteers", o.title, "detail-image")}<h1>${esc(o.title)}</h1><p class="label">${isVerifiedOpportunity(o) ? "Verified opportunity" : "SAMPLE COMMUNITY ACTIVITY — PROTOTYPE ONLY"}</p><p>${esc(o.description)}</p><dl>${[
@@ -960,6 +962,7 @@ export async function mount(root) {
   window.addEventListener("hashchange", onHash);
   await render();
   return () => {
+    contactCleanup?.();
     activityCleanup?.();
     disposed = true;
     version++;
