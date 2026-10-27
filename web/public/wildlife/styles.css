@@ -913,3 +913,31 @@ html {
   scroll-margin-top: 60px;
   scroll-margin-bottom: 220px;
 }
+
+/* Fencepost booth storyboard (shared/booth.js). The still is the author's own masked frame,
+   so it is shown whole rather than cropped to fill. */
+.booth-story .hero-photo {
+  background: var(--ink);
+}
+.booth-story .hero-photo > img {
+  object-fit: contain;
+}
+.booth-no-photo {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--white);
+}
+.booth-panel {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 24px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 8px 24px;
+  background: var(--sage);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
