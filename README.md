@@ -1,15 +1,70 @@
 # Fencepost
 
-The server side of Fencepost: residents in Brisbane film a possum, write up what they saw, and
-build a shared storyboard that reaches other people through a permissioned QR code. This
-repository holds the proxy that talks to the model, the data layer behind it, and the tests. The
-interface lives elsewhere.
+Fencepost is our DECO7285 (2026) project for the theme Care. Residents in Brisbane film possums
+on their own phones and post what they saw, with a fun fact and what happened that night. The
+posts build up into a storyboard that several neighbours keep adding to. A storyboard is shared
+through a QR code that carries a permission level, never a public link, and each storyboard has
+its own discussion thread.
 
-The design documents — product flow, the prompt source, the data model, operations and UX copy —
-are deliberately **not** in this repository. Everything here runs and deploys without them. What
-you cannot do without them is regenerate `prompts/*.txt` and `schema.sql`.
+The app has a built-in assistant called Possum Help. It only knows about brushtail and ringtail
+possums, it only sees the content of the person asking, and it cannot write anything.
 
-## Requirements
+This repository holds three parts:
+
+| Folder | What it is |
+|---|---|
+| `api/`, `proxy/` | The Python API: sign-in tokens, rate limits, the three model roles, the database layer |
+| `web/` | The Next.js front end. It has its own README, [web/README.md](web/README.md) |
+| `hardware/share-tag/` | Firmware for the share tag, an M5StickS3 that shows a short share code |
+
+The design documents (product flow, prompt source, data model, operations, UX copy) are kept
+outside the repository. Everything here runs and deploys without them. The only thing you need
+them for is regenerating `prompts/*.txt` and `schema.sql`.
+
+## How the demo runs
+
+The front end has three modes, set with `NEXT_PUBLIC_FENCEPOST_MODE`:
+
+| Mode | Storyboards, posts, sharing | Possum Help |
+|---|---|---|
+| `hybrid` (default, and what is deployed) | real API | pre-written replies |
+| `fixtures` | pre-written data | pre-written replies |
+| `live` | real API | real model |
+
+We present in `hybrid`. Everything you create is real and goes through the API, but Possum
+Help answers from pre-written replies in `web/lib/fixtures.js`. A live model could say
+something that breaks one of our safety rules in front of the markers, and there is no second
+attempt. The server still screens posts with the model in this mode.
+
+`hybrid` needs `FENCEPOST_OPEN_SIGNUP` on the API, because that is how a browser gets a token.
+With it on, anyone can swap any handle for a token, so the deployed database only ever holds
+demo data. People can still only read storyboards they have been given access to.
+
+## Features worth knowing about
+
+Share codes. The Share screen makes a QR code with a permission level and an expiry of 1, 7,
+30 or 90 days (7 by default). The owner can also ask for a short code of three words, like
+`wattle-moon-gum`, that a neighbour can type in instead of scanning. The words come from a
+hand-picked list of just over a thousand in `proxy/words.py`. A short code is easier to guess
+than a token, so it lasts one day by default and a week at most. Only hashes of codes are
+stored.
+
+The share tag. `hardware/share-tag/` is firmware for an M5StickS3 (it also builds for an
+M5StickC PLUS). It holds one short code and shows it when someone presses the front button. It
+never connects to Fencepost or any network and has no sensors. We treat it as an exhibit for
+the tradeshow, not a tool: the point it makes is that a code only appears when a person is
+standing there and chooses to show it. Its README covers building and flashing.
+
+Study mode. During user testing, Possum Help runs from pre-written replies and normally keeps
+no record. Study mode, started from `/study` in the browser, keeps the questions that got the
+general fallback reply, word for word, so we can see what people actually asked. Questions that
+matched a reply are only counted. Everything stays on that device until the facilitator exports
+it from `/study`, and a participant can turn it off from the chat.
+
+Accounts. A visitor gets a guest handle per browser. They can also register a handle with a
+password, which gives them sign-out.
+
+## Setup
 
 Python 3.12 or newer.
 
@@ -17,111 +72,24 @@ Python 3.12 or newer.
 pip install -r requirements.txt
 ```
 
-## Environment
+Put a `.env` in the repository root (it is git-ignored):
 
-Create a `.env` in the repository root. It is git-ignored.
-
-| Variable | Required | What it does |
+| Variable | Needed | What it does |
 |---|---|---|
-| `DASHSCOPE_API_KEY` | with `MODEL_PROVIDER=dashscope` (the default) | Model access. **The key and `DASHSCOPE_BASE_URL` are a pair** — a key is valid against one gateway and refused by the others, so changing one without the other produces a 401 that reads like a bad key. The deployment currently uses a Token Plan key (`sk-sp-…`) against `token-plan.ap-southeast-1.maas.aliyuncs.com`; an ordinary international console key goes with `dashscope-intl.aliyuncs.com`. Mainland and international are not interchangeable in either direction — measured 2026-09-17: an international Token Plan key is refused by `cn-beijing` and by both `dashscope` hosts. |
-| `DASHSCOPE_BASE_URL` | with a Token Plan key | The OpenAI-compatible root. Defaults to `dashscope-intl.aliyuncs.com/compatible-mode/v1` (`proxy/model.py`), which is **not** where a Token Plan key works — that needs `https://token-plan.<region>.maas.aliyuncs.com/compatible-mode/v1`, with the region following the account rather than the Bailian docs' `cn-beijing` default. The `/compatible-mode/v1` suffix is required; the bare host answers 404. To find the right one without spending a call, POST to a candidate with no key at all: 401 means the path exists, 404 means it does not. |
-| `FENCEPOST_TOKEN_SECRET` | yes | Signs the request tokens. Any long random string; `python -c "import secrets; print(secrets.token_hex(32))"` will do. A token is `<user_id>.<issued_at>.<signature>` and lasts 30 days (`TOKEN_TTL_SECONDS`). Rotating this signs out **everybody** at once, which is the blunt instrument; `POST /api/sessions/revoke` is the per-person one. |
-| `FENCEPOST_OPEN_SIGNUP` | no | Opens `POST /api/session`. Leave it unset anywhere real: with it on, anyone holding a handle can impersonate its owner. **The course deployment sets it deliberately** — it is this prototype's entire login model, and the `hybrid` frontend cannot obtain a token without it, so removing it blanks the site. It widens who can *write*, not who can *read*: visibility still runs through `access_grants`. Reasoning in `web/README.md`. |
-| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | on Vercel | The hosted libSQL database. `vercel integration add turso` injects both. Required for any real deployment — see Deploying. |
-| `FENCEPOST_DB` | no | Database address, and it wins over `TURSO_DATABASE_URL`. A local SQLite path, or a `libsql://` URL to point a script at the hosted database. Defaults to `fencepost.db` in the repo, or `/tmp` on Vercel — and `/tmp` is a last resort, not a deployment. |
-| `FENCEPOST_ALLOWED_ORIGIN` | on Vercel | Origins allowed to call the API from a browser, comma-separated. Off Vercel it defaults to `*`. On Vercel an unset value fails closed: no origin is allowed, so the frontend loads blank, and `scripts/check_deploy.py` fails on it. List **every** alias the frontend answers on, because a missing one loads blank with nothing but a CORS error to go on. |
-| `MODEL_PROVIDER` | no | `dashscope` (default) or `openai`. Picks the key variable, endpoint and default model as one row (`PROVIDERS` in `proxy/model.py`); an unknown name is refused rather than defaulted. Switching changes the model the red lines were measured on, so re-run `tests/run_redline.py` and `tests/run_nonenglish.py` first (#50). |
-| `OPENAI_API_KEY` | with `MODEL_PROVIDER=openai` | Used only by the `openai` row; the DashScope key is never sent there, nor this one to DashScope. Default model `gpt-6-luna`, endpoint `https://api.openai.com/v1` (`OPENAI_BASE_URL` overrides). Set a monthly budget on the OpenAI project — open signup means anyone with the URL spends it. |
+| `MODEL_PROVIDER` | no | `dashscope` (default in code) or `openai`. It picks the key, endpoint, default model and Screener effort together, from `PROVIDERS` in `proxy/model.py`. An unknown name is refused. Production has run `openai` since 2026-10-04. |
+| `OPENAI_API_KEY` | with `openai` | Default model `gpt-6-luna`, endpoint `https://api.openai.com/v1` (`OPENAI_BASE_URL` overrides it). The Screener runs at `medium` effort on this provider. Set a monthly budget on the OpenAI project, because open sign-up means anyone with the URL can spend it. |
+| `DASHSCOPE_API_KEY` | with `dashscope` | The fallback provider. The key only works against the gateway it was issued for, so it has to be set together with `DASHSCOPE_BASE_URL`. A mismatched pair gives a 401 that looks like a bad key. |
+| `DASHSCOPE_BASE_URL` | with a Token Plan key | Defaults to `dashscope-intl.aliyuncs.com/compatible-mode/v1`. A Token Plan key needs `https://token-plan.<region>.maas.aliyuncs.com/compatible-mode/v1`, with the region of the account. Keep the `/compatible-mode/v1` suffix, the bare host returns 404. A request with no key returns 401 if the path exists and 404 if it does not, which is a free way to test a URL. |
+| `FENCEPOST_TOKEN_SECRET` | yes | Signs tokens. Any long random string, for example from `python -c "import secrets; print(secrets.token_hex(32))"`. Changing it signs everybody out. |
+| `FENCEPOST_OPEN_SIGNUP` | for `hybrid` | Opens `POST /api/session`. Leave it off anywhere with real users, since anyone holding a handle can act as its owner. The course deployment turns it on deliberately (see above). |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | on Vercel | The hosted libSQL database. `vercel integration add turso` sets both. |
+| `FENCEPOST_DB` | no | A local SQLite path or a `libsql://` URL. It takes priority over `TURSO_DATABASE_URL`. Defaults to `fencepost.db` locally and `/tmp` on Vercel, which is not a real option (see Deploying). |
+| `FENCEPOST_ALLOWED_ORIGIN` | on Vercel | Comma-separated origins allowed to call the API. Defaults to `*` locally. On Vercel an empty value allows nothing and the front end loads blank, so list every alias the front end is served on. |
 | `CHAT_MODEL`, `SCREENER_MODEL`, `MODEL_TIMEOUT` | no | Model overrides. Defaults are in `proxy/model.py`. |
-| `LIMIT_CHAT_PER_DAY`, `LIMIT_VISION_PER_HOUR`, `LIMIT_SUBMISSION_PER_HOUR` | no | Rate limits. Defaults match the operations doc. |
-| `LIMIT_MODEL_CALLS_PER_DAY` | no | Ceiling on model calls across **everybody**, retries included, over a sliding 24 hours. Default `1000`. Open sign-up makes a fresh handle a fresh per-user quota, so this is what actually bounds spend. Reaching it looks like an outage: the Screener fails open, the Writer skips, the assistant says it is offline. |
-| `LIMIT_SESSIONS_PER_HOUR` | no | New identities `POST /api/session` will create per client address per hour. A handle that already exists is exchanged without counting: a guest's browser exchanges its handle again on every page load. Default `120`, generous on purpose — a lecture theatre can sit behind one campus NAT. The address is counted as a keyed hash, never stored. |
-| `LIMIT_PASSWORD_PER_15MIN` | no | Password work `POST /api/register` and `POST /api/login` will do per client address per 15 minutes. scrypt is memory-hard, and register (which also writes a row) and a login for a handle nobody holds run it with no per-user counter to bill, so this bounds the unauthenticated flood. Default `30`, keyed hash, same NAT caveat as sessions. `LIMIT_LOGIN_PER_15MIN` (default `10`) is the tighter per-account cap that stays on top of it. |
-
-## Tests
-
-None of them touch the network — the model is faked.
-
-```bash
-python tests/test_proxy.py && python tests/test_data_layer.py &&
-python tests/test_entrypoint.py && python tests/test_resources.py &&
-python tests/test_store.py && python tests/test_teardown.py &&
-python tests/test_batch_reports.py
-```
-
-431 tests. Two files have gone missing from that line since it was written. The last
-two until 2026-09-17, so thirty-one were never run by the documented command; then
-`test_batch_reports.py`, added on 2026-09-20 and left out the same day — and that one
-was worse, because it also had no `unittest.main()`, so running it by name printed
-nothing and exited 0. Adding a suite means adding it here. The data layer ones
-matter most: they pin the three access invariants — other people's entries never
-enter the assistant's context, a soft-deleted entry disappears on the next call, and
-a revoked grant stops both context and chat history immediately.
-
-## Generated files, and why they are committed
-
-`prompts/*.txt` and `schema.sql` are generated from the design documents. Since those documents
-are not in the repository, the generated files have to be, or a clone could neither prompt the
-model nor create its database.
-
-**Do not edit them by hand.** With the documents present:
-
-```bash
-python scripts/build_prompts.py && python scripts/build_schema.py
-```
-
-A test compares `schema.sql` against the document when the document is available, and skips when
-it is not.
-
-## Endpoints
-
-One entry point, `api/index.py`, routing by path. The Vercel Python builder resolves a single
-entrypoint from `pyproject.toml`, so a new endpoint is a new route, never a new file.
-
-| Path | What it does |
-|---|---|
-| `POST /api/session` | Exchange a handle for a token, creating the user on first use. Off unless `FENCEPOST_OPEN_SIGNUP` is set. |
-| `POST /api/sessions/revoke` | Sign out: refuse every token this person holds, the one making the call included. All of them, not one device — there is no session table to be selective with. **Accounts only**: a guest's handle is public and exchanges for a token under open sign-up, so anybody could otherwise sign a guest out, in a loop; a guest gets 403 `not_an_account`, and loses nothing by it. |
-| `POST /api/storyboards` | Create a storyboard and grant its owner access. The title is screened; a refusal creates nothing. |
-| `POST /api/storyboards/close` | Close a storyboard with a note. The note is screened, and a refused one leaves it open. Archiving is not deletion: the QR still works. |
-| `POST /api/videos` | Register a clip. Only a storage key is kept — there is no field for EXIF to land in. |
-| `POST /api/entries` | Submit an entry. Screened first, created only if nothing was rejected. Needs `contribute` or `reshare`. |
-| `POST /api/entries/edit` | Change your own entry. Changed fields go back through the Screener; a rejected edit leaves the original alone. |
-| `POST /api/entries/delete` | Soft delete your own entry. The assistant stops seeing it on the next call. |
-| `POST /api/share-links` | Issue a permissioned link. The plain token comes back once; only its hash is stored. Lasts `expires_in_days` (1–90), seven if unstated — reasoning above `SHARE_LINK_DAYS`. |
-| `GET /api/share-links?storyboard_id=` | The codes this storyboard has issued, revoked ones included so a revoke is visibly done. Needs `reshare`. Never returns a token — only the hash is stored, so it could not. |
-| `POST /api/share-links/redeem` | Turn a token into a grant. Upgrades only — a view link never demotes anyone. |
-| `POST /api/share-links/revoke` | Turn a link off. |
-| `POST /api/grants/revoke` | Take someone's access away. Effective on the next call, with no cache in between. |
-| `GET /api/timeline?storyboard_id=[&after=]` | Every contributor's entries, twenty at a time. Deliberately a different query from what the assistant sees. Paged because each entry carries a base64 frame and an unbounded list crosses the platform's 4.5 MB response cap, where the answer is a 413 rather than a slow page — arithmetic in `TIMELINE_PAGE`. `after` is the previous page's `next` (an entry id, not an offset, so a sighting posted mid-scroll cannot shift the window); a cursor this storyboard never issued is a 400, not a silent restart. `sightings`, `participants` and `first_seen` are counted over every live entry, because the header states all three and one page cannot answer them. |
-| `POST /api/forum/threads` | Start a thread. The body is screened first; a rejection creates nothing. |
-| `POST /api/forum/posts` | Reply to a thread, screened the same way. |
-| `GET /api/forum?storyboard_id=` | Threads on a storyboard. Reading needs any grant, posting needs `contribute`. |
-| `GET /api/forum/thread?thread_id=[&after=]` | A thread's replies, oldest first, thirty at a time (`FORUM_PAGE`): a reply runs to the free-text cap, so an unbounded thread crosses the same 4.5 MB response cap the timeline did. `after` is the previous page's `next` (a post id), and `next` is null on the last page; a cursor this thread never issued is a 400. |
-| `GET /api/review?storyboard_id=` | Entries flagged for checking. Never includes your own — the author is not told. |
-| `POST /api/review/vote` | One vote per person, changeable. Two agreeing votes settle it. |
-| `POST /api/review/dispose` | The owner keeps, labels or removes. Removal is a soft delete. |
-| `GET /api/dashboard` | The storyboards you can reach, active ones separated from past ones. |
-| `POST /api/assistant` | Dispatch to one of the three model roles by `role`. Add `"stream": true` for server-sent events, which only the chat role supports. |
-
-Every response carries `prompt_version`, which belongs in the database next to whatever the call
-produced. Errors are fixed copy: upstream text, prompt content and the key never leave the server.
-
-**Tokens expire, and deploying the change that gave them an expiry signs everyone out once.**
-Before 2026-09-18 a token was `<user_id>.<signature>`: deterministic, so one string per person
-for ever, with no issue time to expire and nothing but rotating the secret to revoke. Old
-two-part tokens are not accepted, so the first deploy of that change ends every existing
-session. In a tab running the new front end, accounts see "Your sign-in has ended" and sign
-in again; in a tab still on the old code, an account sees the assistant's "Sign in again" line
-once and its next action runs as the guest until the page is reloaded - so deploy when nobody
-is signed in, or ask account holders to reload. Guests are re-issued a token
-against the same handle without noticing — **but only in a tab running the new front end**. A
-tab opened before `fencepost-web` rebuilt still runs the old code, which shows one error and
-recovers on the next click. Deploy order narrows that window; nothing closes it for a tab that
-stays open across both deploys. Reasoning in `docs/data-model.md` §1.2.
-
-**The signed material carries a version tag, `v2|`,** so an API rolled back to a build from
-before that change refuses new tokens outright instead of reading them as phantom user ids.
+| `LIMIT_CHAT_PER_DAY`, `LIMIT_VISION_PER_HOUR`, `LIMIT_SUBMISSION_PER_HOUR` | no | Per-user rate limits. Defaults are in `proxy/ports.py`. |
+| `LIMIT_MODEL_CALLS_PER_DAY` | no | Model calls across all users, retries included, over a rolling 24 hours. Default `1000`. Open sign-up gives every new handle a fresh per-user quota, so this is the limit that actually caps spending. Hitting it looks like an outage: the Screener lets posts through, the Writer is skipped and the assistant says it is offline. |
+| `LIMIT_SESSIONS_PER_HOUR` | no | New identities `POST /api/session` creates per client address per hour. Default `120`, high on purpose because a lecture theatre can share one campus address. Exchanging an existing handle is not counted. Addresses are kept only as a keyed hash. |
+| `LIMIT_PASSWORD_PER_15MIN` | no | Register and login attempts per client address per 15 minutes. Default `30`, because scrypt is expensive and a login for an unknown handle has no account to count against. `LIMIT_LOGIN_PER_15MIN` (default `10`) is the per-account limit on top. |
 
 ## Running it locally
 
@@ -129,77 +97,152 @@ before that change refuses new tokens outright instead of reading them as phanto
 python scripts/serve_local.py --port 8787
 ```
 
-That is the same handler Vercel runs. To check the model connection and whether the chat model
-accepts image input:
+This runs the same handler Vercel runs. To check the model connection, and that the chat model
+accepts images:
 
 ```bash
 python scripts/smoke.py
 ```
 
-## Red-line tests
+For the front end, see [web/README.md](web/README.md).
 
-29 cases covering the safety rules, 10 of them asserted automatically and the rest printed for a
-human to judge. Needs a key and spends real tokens.
+## Tests
+
+The Python tests never use the network; the model is faked. Run them on Python 3.12, because
+the libsql client some of them import is not available for 3.14 yet:
+
+```bash
+py -3.12 -m unittest discover tests
+```
+
+(`py` is the Windows launcher. Elsewhere use `python3.12`.) Read the `OK` or `FAILED` line at
+the end. If you pipe the output through `grep` or `tail`, the pipeline can exit 0 even when
+tests failed. The data layer tests are the important ones.
+They hold the three access rules: other people's posts never reach the assistant, a deleted
+post is gone on the next call, and a revoked grant cuts off both context and chat history
+straight away.
+
+The front end tests use Node's built-in test runner:
+
+```bash
+cd web
+npm install
+npm test
+```
+
+Two batch runs use a real key and cost real tokens. Run both after changing a prompt or
+switching `MODEL_PROVIDER`, and keep the reports:
 
 ```bash
 python tests/run_redline.py
+python tests/run_nonenglish.py
 ```
 
-Run it after any prompt change and keep the report.
+`run_redline.py` has 29 safety cases; 10 are checked automatically and the rest are printed for
+a person to judge. `run_nonenglish.py` has 70 cases checking that posts in other languages are
+never rejected outright.
+
+## Generated files
+
+`prompts/*.txt` and `schema.sql` are generated from the design documents. The documents are not
+in the repository, so the generated files have to be, or a fresh clone could not prompt the
+model or create its database. Do not edit them by hand. With the documents present:
+
+```bash
+python scripts/build_prompts.py && python scripts/build_schema.py
+```
+
+A test compares `schema.sql` with the document when the document is available and skips
+otherwise.
+
+## Endpoints
+
+Everything goes through one entry point, `api/index.py`, which routes by path. Vercel's Python
+builder takes a single entrypoint from `pyproject.toml`, so a new endpoint is added as a new
+route in that file.
+
+| Path | What it does |
+|---|---|
+| `POST /api/session` | Swap a handle for a token, creating the user the first time. Only works when `FENCEPOST_OPEN_SIGNUP` is set. |
+| `POST /api/register`, `POST /api/login` | Create or sign in to an account with a password. |
+| `POST /api/sessions/revoke` | Sign out every token the account holds, including the current one. There is no session table, so it cannot sign out a single device. Accounts only: a guest's handle is public, so a guest gets 403 `not_an_account`. |
+| `POST /api/storyboards` | Create a storyboard and give the owner access. The title is screened first. |
+| `POST /api/storyboards/close` | Close a storyboard with a note. The note is screened. A closed storyboard is archived, not deleted, and its QR code still works. |
+| `POST /api/videos` | Register a clip. Only a storage key is stored, so there is nowhere for EXIF data to go. |
+| `POST /api/entries` | Post a sighting. Needs `contribute` or `reshare`. It is screened first and only created if nothing was rejected. |
+| `POST /api/entries/edit` | Edit your own post. Changed fields are screened again; a rejected edit keeps the original. |
+| `POST /api/entries/delete` | Delete your own post (soft delete). The assistant stops seeing it on the next call. |
+| `POST /api/entries/remove` | A storyboard owner removes someone else's post. The database records who removed it. |
+| `POST /api/share-links` | Make a share link, with `"short_code": true` for a three-word code. The plain token is returned once and only its hash is kept. `expires_in_days` is 1 to 90 (default 7), or 1 to 7 with a short code (default 1). |
+| `GET /api/share-links?storyboard_id=` | The codes a storyboard has issued, revoked ones included. Needs `reshare`. Never returns a token. |
+| `POST /api/share-links/redeem` | Turn a token or short code into access. It only ever upgrades: a view link never lowers anyone's level. |
+| `POST /api/share-links/revoke` | Turn a link off. |
+| `GET /api/grants?storyboard_id=` | Who has access and at what level. Needs `reshare`. |
+| `POST /api/grants/revoke` | Remove someone's access. Takes effect on the next call, with no cache. |
+| `GET /api/timeline?storyboard_id=[&after=]` | All posts on a storyboard, twenty per page. This is a separate query from what the assistant sees. Each post carries a base64 image and Vercel caps responses at 4.5 MB, so it has to be paged (the numbers are next to `TIMELINE_PAGE`). `after` is the previous page's `next`, a post id rather than an offset, so a new post cannot shift the pages. An unknown cursor gets a 400. The sighting count, participants and first-seen date are counted over all posts, not just the page. |
+| `GET /api/forum?storyboard_id=` | Discussion threads on a storyboard. Reading needs any access, posting needs `contribute`. |
+| `POST /api/forum/threads` | Start a thread. The text is screened first. |
+| `POST /api/forum/posts` | Reply to a thread, screened the same way. |
+| `POST /api/forum/posts/delete` | Delete your own reply. |
+| `POST /api/forum/posts/remove` | A storyboard owner removes someone else's reply. |
+| `GET /api/forum/thread?thread_id=[&after=]` | A thread's replies, oldest first, thirty per page (`FORUM_PAGE`), with the same cursor rules as the timeline. `next` is null on the last page. |
+| `GET /api/review?storyboard_id=` | Posts flagged for checking. Never shows your own, so authors are not told they were flagged. |
+| `POST /api/review/vote` | One vote per person, which can be changed. Two matching votes decide it. |
+| `POST /api/review/dispose` | The owner keeps, labels or removes a flagged post. Removing is a soft delete. |
+| `GET /api/dashboard` | The storyboards you can access, split into active and past. |
+| `GET /api/record` | Your own record of what you have posted. There is no version of this for other people. |
+| `POST /api/assistant` | Call one of the three model roles, chosen by `role`. Add `"stream": true` for server-sent events (chat only). |
+
+Every response includes `prompt_version`, which is stored alongside whatever the call produced.
+Error messages are fixed text, so model output, prompt content and keys never reach the client.
+
+A token looks like `<user_id>.<issued_at>.<signature>` and lasts 30 days (`TOKEN_TTL_SECONDS`).
+The signed part starts with `v2|`, so if the API is ever rolled back to a build from before
+tokens had an expiry, it rejects new tokens instead of misreading them.
 
 ## Deploying
 
-**Two projects, one repository, two different triggers.** This is the thing to hold in your
-head before touching anything at the repo root.
+One repository builds two Vercel projects, and they deploy differently:
 
-| project | what it serves | how it deploys |
+| Project | Serves | Deploys |
 |---|---|---|
-| `fencepost` | the Python API, `fencepost-api.vercel.app` | `vercel deploy --prod` from this directory |
-| `fencepost-web` | the front end, `fencepost-app.vercel.app` | automatically, on every push to `main` |
+| `fencepost` | the Python API, `fencepost-api.vercel.app` | `vercel deploy --prod` from the repository root |
+| `fencepost-web` | the front end, `fencepost-app.vercel.app` (Root Directory `web/`) | automatically on every push to `main` |
 
-So a `git push` rebuilds the front end and does **nothing** to the API, and a `vercel deploy`
-does the opposite. Neither one tells you anything about the other.
+A `git push` rebuilds the front end and does nothing to the API, and `vercel deploy` does the
+opposite.
 
-**A root-level build file affects both.** `.vercelignore` is read for both projects, and
-`fencepost-web` has `web/` as its Root Directory. On 2026-09-17 a `web/` entry was added to
-`.vercelignore` to trim the Python bundle; it deleted the front end's source instead. Next.js
-found no app directory, emitted a single 404 page through the pages router, and Vercel
-deployed that and reported **Ready**. Every route on the site answered 404 for about an hour
-while the dashboard showed green.
+Files at the repository root, such as `.vercelignore`, `vercel.json` and `pyproject.toml`, are
+read by both projects. On 2026-09-17 we added `web/` to `.vercelignore` to make the Python
+bundle smaller, and it removed the front end's source instead. The build still passed: Next.js
+produced a single 404 page, Vercel marked it Ready, and every page on the site was a 404 for
+about an hour. Because of that:
 
-Two things came out of that, and they are why this section is longer than the command:
-
-- **Trimming the API bundle does not belong in `.vercelignore`.** It lives in `vercel.json`
-  under `functions["api/index.py"].excludeFiles`, which is scoped to that one function and
-  cannot reach another project's build. `.vercelignore` now holds only what nobody may ever
-  upload: `.env*`, `*.db`, and the two files carrying plaintext share tokens.
-- **After any deploy, and after any change to a root build file, run the check.** A few
-  seconds, no credentials, writes nothing:
+- Trimming the API bundle goes in `vercel.json` under
+  `functions["api/index.py"].excludeFiles`, which only affects that one function.
+  `.vercelignore` only lists files that should never be uploaded at all, like `.env*` and
+  `*.db`.
+- After every deploy, and after any change to a root build file, run:
 
   ```bash
   python scripts/check_deploy.py
   ```
 
-  It loads real pages on the front end and every route on the API, and exits non-zero if
-  either is not serving. A green deployment status cannot tell you whether what got deployed
-  is what you meant to deploy; this can. It is not `scripts/verify_deployment.py`, which walks
-  ten authenticated chains and leaves a `verify-*` user in the production database each run.
+  It takes a few seconds, needs no credentials and writes nothing. It loads real pages on the
+  front end and every route on the API, and exits non-zero if either one is not serving what it
+  should. It is different from `scripts/verify_deployment.py`, which signs in, walks ten full
+  request chains and leaves a `verify-*` user in the production database each time.
 
-**Order, when a change touches both sides:** push first, so `fencepost-web` rebuilds against
-an API that is still the old one — the front end is written to tolerate that. Then run
-`check_deploy.py`: after a change that adds a route it reports the API as stale, which is what
-it should say at that point. Then deploy the API and run the check again. The other order puts
-the new API in front of old front-end code for as long as the web build takes.
+When a change touches both sides, push first. The front end is written to cope with an older
+API, so it can rebuild while the API is still the old version. `check_deploy.py` will report
+the API as out of date at that point if the change added a route. Then deploy the API and run
+the check again. Doing it the other way round puts the new API in front of the old front end
+for as long as the web build takes.
 
-```bash
-vercel deploy
-```
-
-Set the model key (`OPENAI_API_KEY` with `MODEL_PROVIDER=openai`, as production runs since 2026-10-04,
-or `DASHSCOPE_API_KEY`) and `FENCEPOST_TOKEN_SECRET` in the Vercel project first, with
-`vercel env add`. Two things to know: new projects have deployment protection on, so a plain
-request gets Vercel's own 401 rather than ours (`vercel curl` carries your session through), and
-the API needs a hosted database. `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` come from
-`vercel integration add turso`. Do not fall back to SQLite on Vercel: it only survives in `/tmp`,
-per instance, until the next cold start, which gives one handle two user ids and makes the
-storyboard the dashboard just listed return 403. It runs; it does not persist.
+Before the first `vercel deploy`, add the model key (`OPENAI_API_KEY` with
+`MODEL_PROVIDER=openai`, or `DASHSCOPE_API_KEY`) and `FENCEPOST_TOKEN_SECRET` with
+`vercel env add`. New projects have deployment protection on, so a plain request gets Vercel's
+401 rather than ours; `vercel curl` sends your session along. The API also needs the Turso
+database. Do not fall back to SQLite on Vercel: it lives in `/tmp` on each instance and is lost
+on the next cold start, which gives one handle two user ids and makes storyboards the dashboard
+just listed return 403.
