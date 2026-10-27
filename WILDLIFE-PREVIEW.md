@@ -44,3 +44,17 @@ The remaining server model settings and OpenAI SDK are shared by the unrelated l
 Only `/wildlife/help.html` mounts Wildlife Help. It selects predefined prototype responses locally from common-situation prompts or recognised words. Nothing is transmitted or saved, and the feature needs no API, credentials or deployment binding. The four-category response table retains safety, privacy, contacts, sources, QR and three-button controls. Fencepost’s own help page and manual contribution forms remain unchanged. See wildlife-backend/DISPLAY-HELP.md.
 
 The public display and companion help page share two separately labelled RSPCA Queensland wildlife and Triple Zero human-emergency contacts. Every call action requires confirmation; numbers, sources and review metadata live in the canonical shared configuration. See wildlife-backend/CONTACTS.md.
+
+## Fencepost booth storyboard on the display
+
+The home screen can show one real Fencepost storyboard, the booth storyboard, beside the park stories, and carries a QR into it. Whatever a visitor posts there appears on the screen within about 15 seconds when nobody is using the screen (if somebody is, it waits until 45 seconds after they stop), and the QR panel says so before they scan. Fencepost's permissions are unchanged: the QR is a contribute-level share link that expires, and the screen is a view-level member that reads `GET /api/timeline` like any other member.
+
+The screen's token stays on the server. `/api/booth-feed` (`web/lib/booth-feed-server.js`) holds it in server-only variables, reads the timeline, keeps the newest 12 entries and drops the author id and handle before anything reaches the page, so contributors are not named on a public screen. Nothing is cached: an entry its author deletes leaves the screen on the next poll even mid-interaction or mid-narration, and a failed poll clears the booth entries rather than keeping them.
+
+Setup on the booth laptop, after creating the booth storyboard in Fencepost (its title should say it is shown on the screen):
+
+    python scripts/issue_booth_screen.py https://fencepost-api.vercel.app --owner <handle> --list
+    python scripts/issue_booth_screen.py https://fencepost-api.vercel.app --owner <handle> --storyboard <id>
+    cd web && npm run build && npm start
+
+The script issues both links (3 days by default), checks each by redeeming it, checks the screen can read the timeline, and writes `web/.env.production.local`. It prints no token and refuses to overwrite that file. `npm run build` copies the QR link into `web/public/wildlife/shared/config.js`, a tracked file, so never commit that file from the booth laptop; restore it with `git checkout -- web/public/wildlife/shared/config.js` after the show and delete `web/.env.production.local`. Open `http://localhost:3000/wildlife/index.html` full screen. Without those settings the booth panel and feed stay off and the display behaves as before. The help page's "Continue privately" QR is deliberately not pointed at the booth storyboard, because that storyboard is public on the screen.

@@ -3,6 +3,9 @@ export const config = {
   supabaseUrl: "",
   supabaseAnonKey: "",
   fencepostBaseUrl: "", // Empty uses this deployment's /fencepost/ companion.
+  // A permissioned Fencepost share link (/s/<token>) into the booth storyboard. Whatever is
+  // posted there is shown on this screen, so the QR says so. Empty hides the booth panel.
+  boothJoinUrl: "",
   park: "local-park",
   idleMs: 120000,
   rotateMs: 45000,

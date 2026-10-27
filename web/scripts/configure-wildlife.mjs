@@ -1,4 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import nextEnv from "@next/env";
+// prebuild runs before Next loads any .env file, so on a machine configured by file (the booth
+// laptop: web/.env.production.local) nothing below would see the values. Load them the way
+// next build will.
+nextEnv.loadEnvConfig(fileURLToPath(new URL("..", import.meta.url)));
 const target = new URL("../public/wildlife/shared/config.js", import.meta.url);
 const boundary = "\n// Deployment public configuration\n";
 let text = (await readFile(target, "utf8")).split(boundary)[0];
@@ -7,6 +13,7 @@ for (const [field, key] of Object.entries({
   supabaseUrl: "NEXT_PUBLIC_WN_SUPABASE_URL",
   supabaseAnonKey: "NEXT_PUBLIC_WN_SUPABASE_ANON_KEY",
   fencepostBaseUrl: "NEXT_PUBLIC_WN_FENCEPOST_URL",
+  boothJoinUrl: "NEXT_PUBLIC_WN_BOOTH_JOIN_URL",
 })) {
   const value = process.env[key];
   if (!value) continue;
@@ -20,7 +27,11 @@ for (const [field, key] of Object.entries({
         "Never put a service-role or secret key in public configuration.",
       );
   }
-  if (field.endsWith("Url") && !/^https:\/\//.test(value))
+  // https, except a server on this machine, which is how the booth setup is tested.
+  if (
+    field.endsWith("Url") &&
+    !/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(value)
+  )
     throw Error("Public deployment URLs must use HTTPS.");
   overrides[field] = value;
 }
