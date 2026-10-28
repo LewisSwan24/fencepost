@@ -30,6 +30,15 @@ const CHECK_LABELS = {
   location: "Exact location removed from public wording",
   welfare: "Animal welfare risk checked",
 };
+// One wording for the help choices, used by the Help page and the home shortcuts alike.
+const HELP_OPTIONS = [
+  "Animal appears healthy",
+  "Animal may be injured",
+  "Animal may be trapped",
+  "Animal is on or near a road",
+  "I am not sure",
+];
+const HELP_SHORTCUTS = { injured: 1, trapped: 2, road: 3, unsure: 4 };
 export async function mount(root) {
   let replyTo = null,
     editingComment = null,
@@ -78,8 +87,8 @@ export async function mount(root) {
   function authHeader() {
     const user = api.account();
     return user
-      ? `<div class="account-header"><span>◉ ${esc(user.displayName)} <small>${user.role === "moderator" ? "Moderator" : "Resident"}</small></span><a href="#${user.role === "moderator" ? "moderator" : "profile"}">${user.role === "moderator" ? "Moderator dashboard" : "My activity"}</a>${button("Logout", "logout")}</div>`
-      : '<div class="account-header"><a href="#stories">◇ Browse</a><a href="#login">↪ Sign in</a></div>';
+      ? `<div class="account-header"><span>${esc(user.displayName)} <small>${user.role === "moderator" ? "Moderator" : "Resident"}</small></span><a href="#${user.role === "moderator" ? "moderator" : "profile"}">${user.role === "moderator" ? "Moderator dashboard" : "My activity"}</a>${button("Log out", "logout")}</div>`
+      : '<div class="account-header"><a href="#login">Sign in</a></div>';
   }
   function loginHtml() {
     return `<section class="login-panel"><p class="eyebrow">Fencepost / Exhibition accounts</p><h1>Sign in to Fencepost</h1><p>${demoAccountNotice}</p><form id="account-login" novalidate>${field("Email", "email", "email", "", 'required autocomplete="username"')}${field("Password", "password", "password", "", 'required autocomplete="off"')}${button("Show password", "toggle-password", 'aria-pressed="false"')}<p id="login-error" role="alert"></p><button type="submit">Sign in</button></form>${button("Continue browsing as guest", "guest")}<details class="demo-accounts" open><summary>Demonstration accounts</summary>${demoAccounts.map((a) => `<article><strong>${esc(a.role === "moderator" ? "Moderator" : "Community user")} · ${esc(a.displayName)}</strong><p>${esc(a.email)}<br>Password: <code>${esc(a.password)}</code></p>${button(a.role === "moderator" ? "Use moderator account" : "Use resident account", "fill-account", `data-id="${a.id}"`)}</article>`).join("")}<p class="small">Hardcoded accounts protect only the prototype interface. They are not production-level security. Do not enter real personal information.</p>${api.live ? '<p class="notice">This connected instance uses Supabase accounts. Hardcoded accounts apply only to local demo data and never grant backend access.</p>' : ""}</details></section>`;
@@ -90,30 +99,30 @@ export async function mount(root) {
     if (section === "my-observations")
       return `<h1>My observations</h1><p>Your own public wording and status only. Private rescue details and moderator notes are not shown.</p>${observations.map((o) => `<article class="notice"><span class="status-label">${{ pending: "Awaiting review", approved: "Approved", rejected: "Rejected", urgent: "Urgent", clarification: "Clarification requested", removed: "Removed" }[o.status] || esc(o.status)}</span><h2>Possible ${esc(name(o.possibleSpecies))}</h2><p>${esc(o.description)}</p><p>${esc(o.publicArea)} · ${esc(o.approximateTime)}</p></article>`).join("") || "<p>You have not submitted any observations yet.</p>"}<a class="link-button" href="#share">Share an observation</a>`;
     const saved = await api.savedStories();
-    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a href="#my-observations">My observations (${observations.length}) →</a><a href="#registrations">My prototype volunteer registrations →</a><a href="#share">Share an observation →</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${button("Logout", "logout")}`;
+    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a href="#my-observations">My observations (${observations.length}) →</a><a href="#registrations">My volunteer registrations →</a><a href="#share">Share an observation →</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${button("Log out", "logout")}`;
   }
   function discussionHtml(storyId, comments) {
     const user = api.account();
-    return `<section class="discussion"><h2>Discussion</h2><p>Share experiences respectfully. Do not include exact wildlife locations or personal information.</p><p class="small">Comments appear immediately after validation. Automated checks are imperfect; reporting and human moderation remain available.</p><div class="comment-list">${comments.map((c) => `<article class="comment-card" id="comment-${esc(c.id)}"><header><strong>${esc(c.authorDisplayName || "Community member")}</strong><span>${c.updatedAt ? "Updated" : "Comment"}</span></header>${c.parentCommentId ? `<p class="small">↳ Reply to ${esc(comments.find((parent) => parent.id === c.parentCommentId)?.authorDisplayName || "a comment that is no longer visible")}</p>` : ""}<p>${esc(c.body)}</p><div class="comment-actions">${user ? button("Reply", "reply-comment", `data-id="${esc(c.id)}"`) : ""}${user?.id === c.authorId ? button("Edit", "edit-comment", `data-id="${esc(c.id)}"`) + button("Delete", "delete-comment", `data-id="${esc(c.id)}"`) : button("Report", "report", `data-id="${esc(c.id)}"`) + ""}</div></article>`).join("") || "<p>No comments yet.</p>"}</div>${user ? `<form id="comment-form" data-story="${esc(storyId)}"><p id="reply-state">${replyTo ? "Replying to a comment." : ""}${editingComment ? "Editing your comment." : ""}</p>${text("Your comment", "body", commentDraft, 500)}<div id="comment-validation" role="alert"></div><label class="tick"><input type="checkbox" name="warningAcknowledged">I checked any caution shown and want to post this wording.</label><button>${editingComment ? "Save comment" : "Post comment"}</button>${button("Cancel reply or edit", "cancel-comment")}</form>` : '<p><a class="link-button" href="#login">Sign in to comment</a> Guests can read the discussion.</p>'}${reportingComment ? `<form id="report-form"><h3>Report a comment</h3>${select("Reason", "reason", reportReasons)}${field("Details (optional)", "details", "text", "", 'maxlength="500"')}<button>Send report</button>${button("Cancel", "cancel-report")}</form>` : ""}</section>`;
+    return `<section class="discussion"><h2>Discussion</h2><p>Share experiences respectfully. Do not include exact wildlife locations or personal information.</p><p class="small">Comments appear immediately after validation. Automated checks are imperfect; reporting and human moderation remain available.</p><div class="comment-list">${comments.map((c) => `<article class="comment-card" id="comment-${esc(c.id)}"><header><strong>${esc(c.authorDisplayName || "Community member")}</strong><span>${c.updatedAt ? "Updated" : "Comment"}</span></header>${c.parentCommentId ? `<p class="small">↳ Reply to ${esc(comments.find((parent) => parent.id === c.parentCommentId)?.authorDisplayName || "a comment that is no longer visible")}</p>` : ""}<p>${esc(c.body)}</p><div class="comment-actions">${user ? button("Reply", "reply-comment", `data-id="${esc(c.id)}" aria-label="Reply to ${esc(c.authorDisplayName || "Community member")}"`) : ""}${user?.id === c.authorId ? button("Edit", "edit-comment", `data-id="${esc(c.id)}"`) + button("Delete", "delete-comment", `data-id="${esc(c.id)}"`) : button("Report", "report", `data-id="${esc(c.id)}" aria-label="Report comment by ${esc(c.authorDisplayName || "Community member")}"`) + ""}</div></article>`).join("") || "<p>No comments yet.</p>"}</div>${user ? `<form id="comment-form" data-story="${esc(storyId)}"><p id="reply-state">${replyTo ? "Replying to a comment." : ""}${editingComment ? "Editing your comment." : ""}</p>${text("Your comment", "body", commentDraft, 500)}<div id="comment-validation" role="alert"></div><label class="tick"><input type="checkbox" name="warningAcknowledged">I checked any caution shown and want to post this wording.</label><button>${editingComment ? "Save comment" : "Post comment"}</button>${button("Cancel reply or edit", "cancel-comment")}</form>` : '<p><a class="link-button" href="#login">Sign in to comment</a> Guests can read the discussion.</p>'}${reportingComment ? `<form id="report-form"><h3>Report a comment</h3>${select("Reason", "reason", reportReasons)}${field("Details (optional)", "details", "text", "", 'maxlength="500"')}<button>Send report</button>${button("Cancel", "cancel-report")}</form>` : ""}</section>`;
   }
   function storyCard(s, featured = false) {
-    return `<article class="mobile-card ${featured ? "featured-story" : ""}">${image(api.publicImage(s.mediaUrl) || species.find((x) => x.id === s.species)?.image || "illustration:park", `Possible ${name(s.species)}`)}<div class="card-body"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h${featured ? "2" : "3"}>Possible ${esc(name(s.species))}</h${featured ? "2" : "3"}><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><p>${esc(s.storyText)}</p><p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p><a class="link-button" href="#story/${esc(s.id)}">Read story →</a></div></article>`;
+    return `<article class="mobile-card ${featured ? "featured-story" : ""}">${image(api.publicImage(s.mediaUrl) || species.find((x) => x.id === s.species)?.image || "illustration:park", `Possible ${name(s.species)}`)}<div class="card-body"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h${featured ? "2" : "3"}>Possible ${esc(name(s.species))}</h${featured ? "2" : "3"}><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><p>${esc(s.storyText)}</p>${featured ? `<p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p>` : ""}<a class="card-link" href="#story/${esc(s.id)}" aria-label="Read the story: possible ${esc(name(s.species))}">Read story →</a></div></article>`;
   }
-  function homeHtml(all, opportunities, updates) {
-    return `<section class="phone-intro"><p class="eyebrow">Your local park / Everyone is welcome</p><h1>Wildlife stories from your neighbourhood</h1><p>Read moderated community observations, learn how to respond responsibly and discover optional ways to care for local habitat.</p><a class="secondary-button" href="#share">Share an observation →</a></section><section aria-labelledby="featured-title"><div class="section-heading"><h2 id="featured-title">A moment nearby</h2><span>Featured local story</span></div>${all.length ? storyCard(all[0], true) : "<p>No approved stories are available yet.</p>"}</section><section class="guidance-card"><p class="status-label guidance-label">Safe Response · professional sources</p><h2>What should I do?</h2><p>Keep your distance. Do not touch, feed or chase wildlife. Read practical guidance before you need it.</p><div class="guidance-shortcuts"><a href="#help/injured">Injured animal →</a><a href="#help/trapped">Trapped animal →</a><a href="#help/road">Near a road →</a><a href="#help/unsure">I’m not sure →</a></div><p class="small">Official references are separate from residents’ observations. Current contact verification remains required.</p></section><section class="feed-section"><div class="section-heading"><h2>Recent wildlife stories</h2><span>Read. Notice. Leave space.</span></div><div class="story-grid">${
+  function homeHtml(all, opportunities) {
+    return `<section class="phone-intro"><p class="eyebrow">Your local park / Everyone is welcome</p><h1>Wildlife stories from your neighbourhood</h1><p>Read moderated community observations, learn how to respond responsibly and discover optional ways to care for local habitat.</p><a class="link-button" href="#share">Share an observation</a></section><section aria-labelledby="featured-title"><div class="section-heading"><h2 id="featured-title">A moment nearby</h2></div>${all.length ? storyCard(all[0], true) : "<p>No approved stories are available yet.</p>"}</section><section class="guidance-card"><p class="status-label guidance-label">Safe Response · professional sources</p><h2>What should I do?</h2><p>Keep your distance. Do not touch, feed or chase wildlife. Read practical guidance before you need it.</p><div class="guidance-shortcuts">${Object.entries(HELP_SHORTCUTS)
+      .map(([key, i]) => `<a class="secondary-button" href="#help/${key}">${HELP_OPTIONS[i]}</a>`)
+      .join("")}</div><p class="small">Official references are separate from residents’ observations. Current contact verification remains required.</p></section><section class="feed-section"><div class="section-heading"><h2>Recent wildlife stories</h2></div><div class="story-grid">${
       all
         .slice(1)
         .map((story) => storyCard(story))
         .join("") || "<p>No other approved stories yet.</p>"
-    }</div></section><section class="feed-section community-preview"><p class="eyebrow">Optional ways to care</p><h2>Volunteer in your neighbourhood</h2><p>Habitat care, at your own pace. Volunteers never handle wildlife.</p><div class="opportunity-grid">${
+    }</div></section><section class="feed-section community-preview"><div class="section-heading"><h2>Volunteer in your neighbourhood</h2><a href="#community">All activities and updates →</a></div><p>Habitat care, at your own pace. Volunteers never handle wildlife.</p><div class="opportunity-grid">${
       opportunities
         .filter((o) => o.status !== "completed")
+        .slice(0, 2)
         .map((o) => opportunityCard(o, "#opportunity/" + o.id))
         .join("") || "<p>No current activities.</p>"
-    }</div></section><section class="feed-section"><div class="section-heading"><h2>Community Updates</h2><a href="#updates">All updates →</a></div><p>Fictional exhibition samples show how community care could be shared.</p><div class="update-grid">${updates
-      .filter((o) => o.id !== "outcome-demo")
-      .map((o) => outcomeCard(o, "#update/" + o.id))
-      .join("")}</div></section>`;
+    }</div></section>`;
   }
   function clearEditor() {
     draft = {};
@@ -152,7 +161,9 @@ export async function mount(root) {
       return;
     }
 
-    root.innerHTML = `<div class="fencepost-app"><header class="mobile-header"><a href="#stories" class="brand">Fencepost<span> ●</span></a><span>Wildlife Neighbours</span></header>${authHeader()}${modeNote(api.live)}<nav class="mobile-nav" aria-label="Fencepost navigation">${["Stories", "Learn", "Share", "Help", "Community"].map((n) => `<a href="#${n.toLowerCase()}">${n}</a>`).join("")}</nav><main class="mobile-main"><div id="feedback" tabindex="-1" role="status"></div><div id="content"><p>Loading…</p></div></main><footer><a href="#login">Sign in</a><a href="#receipts">My submission receipts</a><a href="#credits">Image credits</a><a href="${asset("index.html")}">Public display</a></footer></div>`;
+    // One header row: brand, sections, account. On a phone the sections move to a bar
+    // along the bottom of the screen (mobile.css).
+    root.innerHTML = `<div class="fencepost-app"><header class="mobile-header"><a href="#stories" class="brand">Fencepost<span> ●</span></a><nav class="mobile-nav" aria-label="Fencepost navigation">${["Stories", "Learn", "Share", "Help", "Community"].map((n) => `<a href="#${n.toLowerCase()}">${n}</a>`).join("")}</nav>${authHeader()}</header>${modeNote(api.live)}<main class="mobile-main"><div id="feedback" tabindex="-1" role="status"></div><div id="content"><p>Loading…</p></div></main><footer><span>Wildlife Neighbours · prototype</span><a href="#receipts">My submission receipts</a><a href="#credits">Image credits</a><a href="${asset("index.html")}">Park display</a></footer></div>`;
     try {
       const route = hash(),
         [section, param] = route.split("/");
@@ -165,12 +176,11 @@ export async function mount(root) {
       } else if (["profile", "my-observations"].includes(section)) {
         html = await profileHtml(section);
       } else if (section === "stories") {
-        const [all, opportunities, updates] = await Promise.all([
+        const [all, opportunities] = await Promise.all([
           api.stories(),
           api.opportunities(),
-          api.outcomes(),
         ]);
-        html = homeHtml(all, opportunities, updates);
+        html = homeHtml(all, opportunities);
       } else if (section === "story") {
         const s = (await api.stories()).find((x) => x.id === param);
         if (!s)
@@ -179,21 +189,21 @@ export async function mount(root) {
         else {
           const sp = species.find((x) => x.id === s.species);
           const comments = await api.comments(s.id);
-          html = `<a href="#stories">← Stories</a><h1>Possible ${esc(name(s.species))}</h1>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h2>Resident observation</h2><p>${esc(s.storyText)}</p><p>${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Reference information; source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p><h2>Safe Response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><h2>Public privacy information</h2><p>Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p>Reviewed by ${esc(s.reviewedBy)}</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}${discussionHtml(s.id, comments)}`;
+          html = `<a class="return-link" href="#stories">← Stories</a><h1>Possible ${esc(name(s.species))}</h1>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h2>Resident observation</h2><p>${esc(s.storyText)}</p><p>${esc(s.publicArea)} · ${esc(s.approximateTime)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Reference information; source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p><h2>Safe Response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><h2>Public privacy information</h2><p>Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p>Reviewed by ${esc(s.reviewedBy)}</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}${discussionHtml(s.id, comments)}`;
         }
       } else if (section === "learn") {
-        html = `<h1>Meet the animal</h1>${species.map((s) => `<article class="mobile-card">${image(s.image, s.name)}<div><h2>${esc(s.name)}</h2><p>${esc(s.fact)}</p><a href="#species/${s.id}">Learn together →</a></div></article>`).join("")}`;
+        html = `<h1>Meet the animals</h1><div class="story-grid">${species.map((s) => `<article class="mobile-card">${image(s.image, s.name)}<div class="card-body"><h3>${esc(s.name)}</h3><p>${esc(s.fact)}</p><a class="card-link" href="#species/${s.id}" aria-label="About the ${esc(s.name)}">About this animal →</a></div></article>`).join("")}</div>`;
       } else if (section === "species") {
         const s = species.find((x) => x.id === param) || species[0];
-        html = `<a class="return-link" href="#learn">← Return to previous screen</a><h1>${esc(s.name)}</h1>${image(s.image, s.name, "detail-image")}<p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="notice"><strong>Safe Response</strong><br>${esc(s.advice)}</p><h2>Wildlife fact · source linked</h2><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p><a class="link-button" href="#activity/${s.id}">Start a mini quiz together →</a>`;
+        html = `<a class="return-link" href="#learn">← Learn</a><h1>${esc(s.name)}</h1>${image(s.image, s.name, "detail-image")}<p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="notice"><strong>Safe Response</strong><br>${esc(s.advice)}</p><h2>Wildlife fact</h2><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p><a class="link-button" href="#activity/${s.id}">Start the quiz</a>`;
       } else if (section === "activity") {
         const s = species.find((x) => x.id === param) || species[0];
         html =
           '<h1 class="quiz-page-heading">Meet the Animal quiz</h1><div id="activity-root"></div>';
       } else if (section === "share") {
-        html = `<h1>Share an observation</h1><p>Text is enough. A photograph and nickname are optional. No account needed.</p><p class="notice">Observe from a safe distance. Do not approach, follow, feed or disturb wildlife to create a post. If driving, submit only after parking safely.</p><p>Is the animal injured or trapped? <a href="#rescue">Animal Needs Help →</a></p>${submissionForm(false)}`;
+        html = `<h1>Share an observation</h1><p>Text is enough. A photograph and nickname are optional. No account needed.</p><p class="notice">Observe from a safe distance. Do not approach, follow, feed or disturb wildlife to create a post. If driving, submit only after parking safely.</p><p class="rescue-route">Is the animal injured or trapped? <a href="#rescue">Use the private help form →</a></p>${submissionForm(false)}`;
       } else if (section === "rescue") {
-        html = `<h1>Animal Needs Help</h1><p class="notice">This form does not dispatch rescue assistance and is not monitored for emergencies. <a href="#help">Read safety guidance and contact a wildlife organisation directly.</a></p><p>Exact location is shared privately only to support an appropriate response. In local demo mode, use fictional details only.</p>${submissionForm(true)}`;
+        html = `<h1>Animal needs help</h1><p class="notice">This form does not dispatch rescue assistance and is not monitored for emergencies. <a href="#help">Read safety guidance and contact a wildlife organisation directly.</a></p><p>Exact location is shared privately only to support an appropriate response. In local demo mode, use fictional details only.</p>${submissionForm(true)}`;
       } else if (section === "preview") {
         html = `<h1>This is what may become public after review</h1><article class="notice"><p>Public nickname preference: ${esc(draft.nickname || "Anonymous")} (removed from public-display stories)</p><h2>Possible ${esc(name(draft.possibleSpecies))}</h2><p>${esc(draft.publicArea)} · ${esc(draft.approximateTime)}</p><p>${esc(draft.description)}</p>${photo ? image(photo, "Your optional image awaiting human review") : ""}</article><p>Hidden: exact rescue location, condition details, submission receipt and internal moderation notes. Images remain private until reviewed.</p>${draft.injuryConcern ? '<p class="notice">This welfare report remains private. It will not become a public story without a separate human privacy review.</p>' : ""}${button("Edit", "edit-draft")}${button("Cancel", "cancel-draft")}${button("Send for review", "submit-observation")}`;
       } else if (section === "sent") {
@@ -210,7 +220,7 @@ export async function mount(root) {
           api.opportunities(),
           api.outcomes(),
         ]);
-        html = `<p class="eyebrow">Optional ways to care</p><h1>Volunteer in your neighbourhood</h1><p>Choose a task that suits you. Every unverified event is a sample; no wildlife handling is included.</p><a class="secondary-button" href="#registrations">My prototype registrations →</a><div class="opportunity-grid">${
+        html = `<p class="eyebrow">Optional ways to care</p><h1>Volunteer in your neighbourhood</h1><p>Choose a task that suits you. Every unverified event is a sample; no wildlife handling is included.</p><a class="secondary-button" href="#registrations">My registrations</a><div class="opportunity-grid">${
           opportunities
             .filter((o) => o.status !== "completed")
             .map((o) => opportunityCard(o, "#opportunity/" + o.id))
@@ -221,14 +231,14 @@ export async function mount(root) {
           .join("")}</div>`;
       } else if (section === "updates") {
         const updates = await api.outcomes();
-        html = `<a class="return-link" href="#community">← Return to previous screen</a><h1>Community Updates</h1><p>Fictional exhibition samples. No real event or measured impact is claimed.</p><div class="update-grid">${updates
+        html = `<a class="return-link" href="#community">← Community</a><h1>Community Updates</h1><p>Fictional exhibition samples. No real event or measured impact is claimed.</p><div class="update-grid">${updates
           .filter((o) => o.id !== "outcome-demo")
           .map((o) => outcomeCard(o, "#update/" + o.id))
           .join("")}</div>`;
       } else if (section === "update") {
         const update = (await api.outcomes()).find((o) => o.id === param);
         html =
-          '<a class="return-link" href="#community">← Return to previous screen</a>' +
+          '<a class="return-link" href="#community">← Community</a>' +
           (update
             ? outcomeDetail(
                 update,
@@ -253,7 +263,7 @@ export async function mount(root) {
             ? registrationForm(o)
             : "<p>This activity is not currently accepting registrations.</p>";
       } else if (section === "registrations") {
-        html = `<h1>My prototype registrations</h1><p>Stored only on this browser, including when the shared story backend is connected. Nothing is sent to a real organiser. Use a fictional email.</p>${
+        html = `<h1>My registrations</h1><p>Stored only on this browser, including when the shared story backend is connected. Nothing is sent to a real organiser. Use a fictional email.</p>${
           regs()
             .map(
               (r) =>
@@ -296,7 +306,7 @@ export async function mount(root) {
         });
       }
       if (section === "help" && param) {
-        const i = { injured: 1, trapped: 2, road: 3, unsure: 4 }[param];
+        const i = HELP_SHORTCUTS[param];
         if (i !== undefined)
           root
             .querySelector(`[data-action="guidance"][data-index="${i}"]`)
@@ -315,10 +325,10 @@ export async function mount(root) {
   }
   async function helpHtml() {
     const contacts = additionalReviewedContacts([...config.contacts, ...(await api.sources())]);
-    return `<h1>Is it hurt? What should I do?</h1><p>Observe from a safe distance. Do not touch, feed or chase wildlife. Keep children and pets away.</p><div class="help-options">${["Animal appears healthy", "Animal may be injured", "Animal may be trapped", "Animal is on or near a road", "I am not sure"].map((x, i) => button(x, "guidance", `data-index="${i}"`)).join("")}</div><div id="guidance" role="status"></div><h2>Professional contacts</h2>${contactOptions()}${contacts.length ? contacts.map((c) => `<article class="notice"><strong>${esc(c.name)}</strong><p>${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p></article>`).join("") : ""}<p>Check your state wildlife service’s official website. This prototype cannot dispatch assistance.</p>${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Source review pending; no official contact numbers are invented.</p>`;
+    return `<h1>Is it hurt? What should I do?</h1><p>Observe from a safe distance. Do not touch, feed or chase wildlife. Keep children and pets away.</p><div class="help-options">${HELP_OPTIONS.map((x, i) => button(x, "guidance", `data-index="${i}" aria-pressed="false"`)).join("")}</div><div id="guidance" role="status"></div><h2>Professional contacts</h2>${contactOptions()}${contacts.length ? contacts.map((c) => `<article class="notice"><strong>${esc(c.name)}</strong><p>${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p></article>`).join("") : ""}<p>Check your state wildlife service’s official website. This prototype cannot dispatch assistance.</p>${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Source review pending; no official contact numbers are invented.</p>`;
   }
   function opportunityHtml(o) {
-    return `<a class="return-link" href="#community">← Return to previous screen</a>${image(o.image || "illustration:volunteers", o.title, "detail-image")}<h1>${esc(o.title)}</h1><p class="label">${isVerifiedOpportunity(o) ? "Verified opportunity" : "SAMPLE COMMUNITY ACTIVITY — PROTOTYPE ONLY"}</p><p>${esc(o.description)}</p><dl>${[
+    return `<a class="return-link" href="#community">← Community</a>${image(o.image || "illustration:volunteers", o.title, "detail-image")}<h1>${esc(o.title)}</h1><p class="label">${isVerifiedOpportunity(o) ? "Verified opportunity" : "SAMPLE COMMUNITY ACTIVITY — PROTOTYPE ONLY"}</p><p>${esc(o.description)}</p><dl>${[
       ["Location", o.publicArea],
       ["Date", o.dateConfirmed ? o.date : "To be confirmed"],
       ["Time", o.startTime || "To be confirmed"],
@@ -334,11 +344,11 @@ export async function mount(root) {
       .map(([k, v]) => `<dt>${k}</dt><dd>${esc(v || "To be confirmed")}</dd>`)
       .join(
         "",
-      )}</dl><aside class="notice"><h2>Important</h2><ul><li>Participation is voluntary.</li><li>Volunteers will not handle wildlife.</li><li>Follow the organiser’s safety instructions.</li><li>Exact wildlife locations will not be provided.</li><li>Children must remain with their supervising adult.</li><li>Do not approach, feed or disturb animals.</li></ul></aside>${o.registrationOpen && o.registrationMode === "demo" ? `<a class="link-button" href="#register/${esc(o.id)}">Register interest — prototype</a>` : isVerifiedOpportunity(o) && o.registrationOpen ? sourceLink(o.registrationUrl, "Official registration") : "<p>This activity is not currently accepting registrations.</p>"}<p>No real event place can be reserved through this prototype.</p>`;
+      )}</dl><aside class="notice"><h2>Important</h2><ul><li>Participation is voluntary.</li><li>Volunteers will not handle wildlife.</li><li>Follow the organiser’s safety instructions.</li><li>Exact wildlife locations will not be provided.</li><li>Children must remain with their supervising adult.</li><li>Do not approach, feed or disturb animals.</li></ul></aside>${o.registrationOpen && o.registrationMode === "demo" ? `<a class="link-button" href="#register/${esc(o.id)}">Register interest</a>` : isVerifiedOpportunity(o) && o.registrationOpen ? sourceLink(o.registrationUrl, "Official registration") : "<p>This activity is not currently accepting registrations.</p>"}<p>No real event place can be reserved through this prototype.</p>`;
   }
   function registrationForm(o) {
     const d = editRegistration || {};
-    return `${image("illustration:volunteers", "Illustrative seated volunteer seedling preparation", "registration-image")}<h1>Register interest — prototype</h1><p>Use fictional contact details. Stored in this browser only, not sent to an organiser; no place is reserved.</p><form id="registration-form" data-opportunity="${esc(o.id)}" novalidate>${field("First name or nickname", "nickname", "text", d.nickname, 'required maxlength="60"')}${field("Email (fictional for demo)", "email", "email", d.email, 'required maxlength="254"')}${field("Number of adults", "adults", "number", d.adults ?? 1, 'required min="1" max="20"')}${field("Number of supervised children", "children", "number", d.children ?? 0, 'required min="0" max="20"')}${field("Accessibility requirements (optional)", "accessibilityNeeds", "text", d.accessibilityNeeds, 'maxlength="300"')}${select("Preferred role", "preferredRole", o.tasks || opportunity.tasks, d.preferredRole)}${tick("I understand this is a demonstration, not a real booking.", "prototypeConsent")}${tick("I understand volunteers will not handle wildlife.", "wildlifeConsent")}${tick("I agree to follow organiser safety instructions and supervise children.", "safetyConsent")}<button>Record prototype registration</button></form>`;
+    return `${image("illustration:volunteers", "Illustrative seated volunteer seedling preparation", "registration-image")}<h1>Register interest</h1><p>Use fictional contact details. Stored in this browser only, not sent to an organiser; no place is reserved.</p><form id="registration-form" data-opportunity="${esc(o.id)}" novalidate>${field("First name or nickname", "nickname", "text", d.nickname, 'required maxlength="60"')}${field("Email (fictional for demo)", "email", "email", d.email, 'required maxlength="254"')}${field("Number of adults", "adults", "number", d.adults ?? 1, 'required min="1" max="20"')}${field("Number of supervised children", "children", "number", d.children ?? 0, 'required min="0" max="20"')}${field("Accessibility requirements (optional)", "accessibilityNeeds", "text", d.accessibilityNeeds, 'maxlength="300"')}${select("Preferred role", "preferredRole", o.tasks || opportunity.tasks, d.preferredRole)}${tick("I understand this is a demonstration, not a real booking.", "prototypeConsent")}${tick("I understand volunteers will not handle wildlife.", "wildlifeConsent")}${tick("I agree to follow organiser safety instructions and supervise children.", "safetyConsent")}<button>Record prototype registration</button></form>`;
   }
   async function moderatorHtml(tab = "") {
     queueData = await api.queue();
@@ -933,6 +943,9 @@ export async function mount(root) {
         }
       }
       if (a === "guidance") {
+        root
+          .querySelectorAll('[data-action="guidance"]')
+          .forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
         const messages = [
           "If it is moving freely and shows no obvious distress, give it space and let it move on. If unsure, seek professional advice.",
           "Keep your distance and keep children and pets away. Contact an appropriate wildlife organisation directly. Do not handle the animal.",
@@ -950,7 +963,11 @@ export async function mount(root) {
       );
     }
   }
-  const onHash = () => render();
+  // A new section starts at its top, not wherever the last one was scrolled to.
+  const onHash = () => {
+    window.scrollTo(0, 0);
+    render();
+  };
   const onStorage = (e) => {
     if (e.key === "wn-demo-session") {
       clearEditor();
