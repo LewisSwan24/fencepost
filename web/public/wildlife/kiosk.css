@@ -717,3 +717,80 @@ main .story-copy > .status-label {
 .contact-card:not(.contact-emergency) .contact-kicker {
   color: var(--accent);
 }
+
+/* Second look at the poster-matched screen. The panels that were still sage (the wildlife
+   fact, the demo notice) go to a warm tint, since green now means a control. The
+   observation label had been picked up by ".story-copy > p" and set at body size, larger
+   than the section eyebrows; it is an eyebrow like them. The on-screen keys are a mouse
+   fallback for the remote, so they are outlined like the places beside them rather than
+   being the brightest thing in the dock. */
+:root {
+  --sage: #f3ece2;
+}
+.story-copy > p.status-label {
+  font-size: var(--k-label) !important;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.story-controls .story-position {
+  align-self: center;
+  margin: 0 0.2em;
+  color: var(--muted);
+  font-size: var(--k-small);
+  white-space: nowrap;
+}
+.photo-note a {
+  color: inherit;
+}
+.kiosk-dock .control-guide button {
+  border: 2px solid rgba(255, 252, 245, 0.35);
+  background: none;
+  color: var(--white);
+}
+/* With the position between Previous and Next, the row needs a little less padding to keep
+   Listen on the same line at 1920x1080. */
+.story-copy .story-controls {
+  column-gap: clamp(6px, 0.45vw, 10px);
+}
+.story-copy .story-controls > button,
+.story-copy .story-controls > a,
+.story-copy > [data-action="narrate"] {
+  padding: 0 0.9em;
+}
+/* The story photo carries one note. The illustration's caption said the same thing as the
+   note and sat on top of it. The buttons get room from the lines above them. */
+.hero-photo figcaption {
+  display: none;
+}
+.story-copy > .story-controls,
+.story-copy > [data-action="narrate"] {
+  margin-top: clamp(8px, 1.6vh, 30px) !important;
+}
+
+/* Third look, page by page. Every illustration carried "Original illustration · prototype
+   content" across a fifth of the picture, even on cards and pages that already say
+   "Sample" above the title; the caption stays where nothing else says it (an animal's own
+   page, the quiz). The possum's photo was 324px tall and the drawings beside it 240px,
+   so the names under them did not line up. The quiz still had sage panels. And a page
+   that scrolls fades at the foot instead of showing a heading cut in half by the dock. */
+:is(.species-card, .update-card, .opportunity-card, .update-detail) figcaption {
+  display: none;
+}
+.species-card > .illustrated {
+  height: clamp(150px, 30vh, 520px) !important;
+  flex: 0 0 auto;
+}
+.species-card > .illustrated .art {
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+.animal-quiz .quiz-portrait,
+.animal-quiz .answer-letter {
+  background: var(--sage);
+}
+main.more-below {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - clamp(32px, 5vh, 72px)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - clamp(32px, 5vh, 72px)), transparent);
+}

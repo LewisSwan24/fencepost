@@ -24,7 +24,10 @@ export function initControls() {
     if (e.target !== selected && selectable().includes(e.target))
       focus(e.target);
   });
-  function focus(el, scroll = true) {
+  // scroll: "center" when the visitor moves the selection, "nearest" when content
+  // changes under it, false for a tap or a page's first selection (which must leave
+  // the page title on screen).
+  function focus(el, scroll = "center") {
     document.querySelectorAll(".macro-focus").forEach((x) => {
       x.classList.remove("macro-focus");
       x.removeAttribute("data-selected");
@@ -41,16 +44,25 @@ export function initControls() {
             .replace(/\s+/g, " ")
             .trim();
       el.focus({ preventScroll: true });
-      if (scroll) el.scrollIntoView({ block: "center" });
+      if (scroll) el.scrollIntoView({ block: scroll });
     }
   }
-  // A fresh selection skips links to other sites: those small source and credit links
-  // only open the phone QR, so they make a poor first stop.
-  const firstStop = (items) =>
-    items.find((e) => !e.matches('a[target="_blank"]')) || items[0];
+  // A fresh selection prefers what is already on screen, skipping links to other sites
+  // (they only open the phone QR) and the Clear Help text box (the remote cannot type).
+  // With nothing on screen it starts at the top, so Next walks the page in order.
+  const firstStop = (items) => {
+    const main = document.querySelector("main").getBoundingClientRect();
+    const usable = items.filter((e) => !e.matches('a[target="_blank"], textarea'));
+    const onScreen = (e) => {
+      const r = e.getBoundingClientRect();
+      return r.top >= main.top && r.bottom <= main.bottom;
+    };
+    return usable.find(onScreen) || items[0];
+  };
   function refresh() {
     const items = selectable();
-    if (!items.includes(selected)) focus(firstStop(items));
+    if (!items.includes(selected))
+      focus(firstStop(items), selected ? "nearest" : false);
   }
   function next() {
     const items = selectable();
@@ -137,7 +149,8 @@ export function initControls() {
         location.replace("index.html");
       else {
         document.dispatchEvent(new Event("wn-idle"));
-        focus(firstStop(selectable()));
+        document.querySelector("main").scrollTop = 0;
+        focus(firstStop(selectable()), false);
       }
     }, config.idleMs);
   }
