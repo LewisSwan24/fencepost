@@ -44,15 +44,16 @@ let list = [],
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const intro = (label, title, text = "") =>
   `<section class="page-heading"><p class="eyebrow">${label}</p><h1>${title}</h1>${text ? `<p>${text}</p>` : ""}</section>`;
-// Each return link names where it goes. From a top-level page "previous" was home too,
-// so those pages show Home alone instead of two links to the same place.
+// Each return link names where it goes. The places in the dock (Explore & Play, Clear Help,
+// Community Action) have none: Home is in the dock beside them, marked as where you are.
+// A page one level down gets one link, to its parent; Home is already in the dock.
 const returnNames = {
   "animals.html": "All animals",
   "community.html": "Community Action",
   "updates.html": "All updates",
 };
 const returnLinks = (href = "index.html") =>
-  `<nav class="return-options" aria-label="Return options">${href === "index.html" ? "" : `<a href="${esc(href)}">← ${returnNames[href]}</a>`}<a href="index.html">⌂ Home</a></nav>`;
+  `<nav class="return-options" aria-label="Return options">${href === "index.html" ? `<a href="index.html">⌂ Home</a>` : `<a href="${esc(href)}">← ${returnNames[href]}</a>`}</nav>`;
 const selectedSpecies = () =>
   species.find((s) => s.id === query.get("animal")) || species[0];
 function stopAudio() {
@@ -114,10 +115,20 @@ function storyHtml(s, full = false) {
   if (s.booth)
     return boothStoryHtml(
       s,
-      `<p class="story-position">Story ${index + 1} of ${list.length}</p><div class="story-controls"><button data-action="previous">Previous story</button><button data-action="next">Next story</button></div>`,
+      `<div class="story-controls"><button data-action="previous">Previous story</button><span class="story-position">${index + 1} of ${list.length}</span><button data-action="next">Next story</button></div>`,
     );
   const sp = species.find((x) => x.id === s.species);
-  return `<article class="hero ${full ? "full-story" : ""}"><div class="hero-photo">${image(api.publicImage(s.mediaUrl) || sp?.image || "illustration:park", `Possible ${name(s.species)}`)}<span class="photo-note">${s.sample ? "Sample observation · illustrative image" : "Human-reviewed public media"}</span></div><div class="story-copy"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p>${esc(s.storyText)}</p><dl class="story-meta"><div><dt>Public location</dt><dd>${esc(s.publicArea)}</dd></div><div><dt>Approximate time</dt><dd>${esc(s.approximateTime)}</dd></div></dl><aside class="fact"><span class="eyebrow">Wildlife information · source linked</span><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Official source review pending unless confirmed by the responsible reviewer.</p></aside><p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p>${s.species === "brushtail" && s.sample ? `<p class="small">${sourceLink("https://commons.wikimedia.org/wiki/File:Brushtail_Possum_IMG_5017.jpg", "Illustrative photo: Andrew Mercer · CC BY-SA 4.0")}</p>` : ""}${full ? '<h2>Safe Response</h2><p>Observe quietly from a distance. Never approach, feed or handle wildlife.</p><p class="small">Broad area only. Contributor identity and private rescue details are not public.</p>' : `<p class="story-position">Story ${index + 1} of ${list.length}</p><div class="story-controls"><a class="link-button" href="story.html?id=${encodeURIComponent(s.id)}">Read full story →</a><button data-action="previous">Previous story</button><button data-action="next">Next story</button></div>`}<button data-action="narrate">Listen</button><p id="audio-status" role="status"></p></div></article>`;
+  const picture = api.publicImage(s.mediaUrl) || sp?.image || "illustration:park";
+  // One note on the photo: what the picture is, and its credit when it has one. The
+  // illustration's own caption is hidden here (kiosk.css) so the two do not stack.
+  const note = !s.sample
+    ? "Human-reviewed public media"
+    : s.species === "brushtail"
+      ? `Sample observation · ${sourceLink("https://commons.wikimedia.org/wiki/File:Brushtail_Possum_IMG_5017.jpg", "Illustrative photo: Andrew Mercer · CC BY-SA 4.0")}`
+      : picture.startsWith("illustration:")
+        ? "Sample observation · original illustration"
+        : "Sample observation · illustrative image";
+  return `<article class="hero ${full ? "full-story" : ""}"><div class="hero-photo">${image(picture, `Possible ${name(s.species)}`)}<span class="photo-note">${note}</span></div><div class="story-copy"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p>${esc(s.storyText)}</p><dl class="story-meta"><div><dt>Public location</dt><dd>${esc(s.publicArea)}</dd></div><div><dt>Approximate time</dt><dd>${esc(s.approximateTime)}</dd></div></dl><aside class="fact"><span class="eyebrow">Wildlife information</span><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Official source review pending unless confirmed by the responsible reviewer.</p></aside><p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p>${full ? '<h2>Safe Response</h2><p>Observe quietly from a distance. Never approach, feed or handle wildlife.</p><p class="small">Broad area only. Contributor identity and private rescue details are not public.</p>' : `<div class="story-controls"><a class="link-button" href="story.html?id=${encodeURIComponent(s.id)}">Read full story →</a><button data-action="previous">Previous story</button><span class="story-position">${index + 1} of ${list.length}</span><button data-action="next">Next story</button></div>`}<button data-action="narrate">Listen</button><p id="audio-status" role="status"></p></div></article>`;
 }
 function drawStory() {
   const target = document.querySelector("#story");
@@ -160,7 +171,7 @@ async function load() {
       list = [...boothStories, ...wildStories];
       boothStories.forEach((s) => boothSeen.add(s.id));
       index = Math.min(index, Math.max(0, list.length - 1));
-      main.innerHTML = `${modeNote(api.live)}<section class="intro"><p class="eyebrow">01 / Local Stories</p><span>Look. Learn. Leave space.</span></section><div id="story">${storyHtml(list[index])}</div>${config.boothJoinUrl ? boothPanelHtml(config.boothJoinUrl, qr(config.boothJoinUrl, "Scan to join the Fencepost booth storyboard")) : ""}<section class="home-zones"><a class="zone" href="animals.html"><span class="eyebrow">02</span><h2>Explore &amp; Play</h2><p>Six animals. One small activity each.</p></a><a class="zone" href="help.html"><span class="eyebrow">03</span><h2>Clear Help</h2><p>Is it hurt? Practical guidance without a phone.</p></a><a class="zone" href="community.html"><span class="eyebrow">05</span><h2>Community Action</h2><p>Optional tasks and sample Community Updates.</p></a></section>`;
+      main.innerHTML = `${modeNote(api.live)}<section class="intro"><p class="eyebrow">01 / Local Stories</p></section><div id="story">${storyHtml(list[index])}</div>${config.boothJoinUrl ? boothPanelHtml(config.boothJoinUrl, qr(config.boothJoinUrl, "Scan to join the Fencepost booth storyboard")) : ""}<section class="home-zones"><a class="zone" href="animals.html"><span class="eyebrow">02</span><h2>Explore &amp; Play</h2><p>Six animals. One small activity each.</p></a><a class="zone" href="help.html"><span class="eyebrow">03</span><h2>Clear Help</h2><p>Is it hurt? Practical guidance without a phone.</p></a><a class="zone" href="community.html"><span class="eyebrow">05</span><h2>Community Action</h2><p>Optional tasks and sample Community Updates.</p></a></section>`;
       scheduleStory();
     } else if (page === "story.html") {
       const all = await api.stories(),
@@ -172,7 +183,6 @@ async function load() {
         `<p class="eyebrow">Read full story / Take your time</p>${story ? storyHtml(story, true) : "<h1>Story unavailable</h1><p>This observation is still being reviewed or has been removed.</p>"}`;
     } else if (page === "animals.html")
       main.innerHTML =
-        returnLinks() +
         intro(
           "02 / Explore &amp; Play",
           "Who shares our neighbourhood?",
@@ -183,7 +193,7 @@ async function load() {
       const s = selectedSpecies();
       main.innerHTML =
         returnLinks("animals.html") +
-        `<article class="species-detail">${image(s.image, s.name)}<div><p class="eyebrow">02 / Explore &amp; Play</p><h1>${esc(s.name)}</h1><p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="guidance">${esc(s.advice)}</p><aside class="fact"><strong>Wildlife fact · source linked</strong><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p></aside><a class="link-button activity-start" href="activity.html?animal=${s.id}">Start a mini quiz together →</a></div></article>`;
+        `<article class="species-detail">${image(s.image, s.name)}<div><p class="eyebrow">02 / Explore &amp; Play</p><h1>${esc(s.name)}</h1><p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="guidance">${esc(s.advice)}</p><aside class="fact"><strong>Wildlife fact</strong><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p></aside><a class="link-button activity-start" href="activity.html?animal=${s.id}">Start a mini quiz together →</a></div></article>`;
     } else if (page === "activity.html") {
       const s = selectedSpecies();
       main.innerHTML =
@@ -195,7 +205,6 @@ async function load() {
     } else if (page === "help.html") {
       const contacts = additionalReviewedContacts([...config.contacts, ...(await api.sources())]);
       main.innerHTML =
-        returnLinks() +
         intro(
           "03 / Clear Help",
           "Stay safe. Ask a wildlife rescuer.",
@@ -218,7 +227,6 @@ async function load() {
         updates = await api.outcomes(),
         url = fencepostUrl("stories");
       main.innerHTML =
-        returnLinks() +
         intro(
           "05 / Community Action",
           "Care for the places we share.",
@@ -419,6 +427,29 @@ async function refreshFeed() {
 window.addEventListener("storage", (e) => {
   if (e.key === "wn-demo-v2") refreshFeed();
 });
+// The dock shows where the visitor is: a story belongs to Home, an animal to Explore & Play,
+// the updates to Community Action.
+const dockHome = {
+  "story.html": "index.html",
+  "species.html": "animals.html",
+  "activity.html": "animals.html",
+  "updates.html": "community.html",
+  "update.html": "community.html",
+};
+document
+  .querySelector(`.bottom-nav a[href="${dockHome[page] || page}"]`)
+  ?.setAttribute("aria-current", "page");
+// A page longer than the screen fades out at the foot of main until it is scrolled to the
+// end, so the line the dock cuts through reads as "more below", not as a clipped heading.
+const markMore = () =>
+  main.classList.toggle(
+    "more-below",
+    main.scrollTop + main.clientHeight < main.scrollHeight - 4,
+  );
+main.addEventListener("scroll", markMore, { passive: true });
+new MutationObserver(markMore).observe(main, { childList: true, subtree: true });
+main.addEventListener("load", markMore, true);
+window.addEventListener("resize", markMore);
 await load();
 if (api.live || boothOn)
   setInterval(refreshFeed, boothOn ? BOOTH_POLL_MS : 30000);
