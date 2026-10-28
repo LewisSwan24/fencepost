@@ -25,5 +25,6 @@ demo-secrets.txt
 .agents/
 skills-lock.json
 
-# arduino-cli build output for the share tag
+# arduino-cli build output for the stick firmware
 hardware/share-tag/build/
+hardware/kiosk-remote/build/
