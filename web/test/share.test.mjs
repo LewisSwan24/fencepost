@@ -263,3 +263,33 @@ test("revoking somebody takes them out, and does not touch the codes", async () 
   assert.equal(rowFor("priya_r"), undefined);
   assert.equal(codeRows().length, codes, "revoking a person turned off a code as well");
 });
+
+test("a code just made is brought into view and focused, not left above the fold", async () => {
+  // The button is at the foot of a long page and the code appears at the top. On a phone,
+  // tapping it changed nothing you could see; the square was a screen and a half up.
+  const user = await open(fresh());
+  const scrolled = [];
+  const was = window.HTMLElement.prototype.scrollIntoView;
+  window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this); };
+  try {
+    await user.click(makeCode());
+    await screen.findByRole("img");
+    await waitFor(() => assert.ok(scrolled.length > 0, "nothing was scrolled into view"));
+    const panel = scrolled.at(-1);
+    assert.ok(panel.contains(screen.getByRole("img")), "what came into view is not the code");
+    assert.equal(document.activeElement, panel, "focus stayed on the button at the bottom");
+  } finally {
+    window.HTMLElement.prototype.scrollIntoView = was;
+  }
+});
+
+test("the lifetime chips say which one is chosen, not only by colour", async () => {
+  const user = await open(fresh());
+  const pressed = () => [...document.querySelectorAll(".chip")]
+    .filter((c) => c.getAttribute("aria-pressed") === "true").map((c) => c.textContent);
+  assert.deepEqual(pressed(), [EXPIRY.find((e) => e.id === DEFAULT_EXPIRY_DAYS).label]);
+
+  const other = EXPIRY.find((e) => e.id !== DEFAULT_EXPIRY_DAYS);
+  await user.click(chip(other.label));
+  assert.deepEqual(pressed(), [other.label]);
+});

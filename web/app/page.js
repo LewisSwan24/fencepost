@@ -22,6 +22,7 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(null);
+  const [failed, setFailed] = useState(null);
   const [code, setCode] = useState("");
 
   useEffect(() => {
@@ -32,8 +33,10 @@ export default function Home() {
   }, []);
 
   async function create() {
+    if (!title.trim() || busy) return;
     setBusy(true);
     setBlocked(null);
+    setFailed(null);
     try {
       const made = await createStoryboard(title.trim());
       // A refused title comes back 200 with published:false and no storyboard_id, so catch
@@ -46,7 +49,9 @@ export default function Home() {
       }
       router.push("/b/" + made.storyboard_id);
     } catch (e) {
-      setError(e.message);
+      // Said in the sheet, where the person is looking. Set on the page it landed at the top
+      // of the list, behind the scrim, while the sheet sat there unchanged.
+      setFailed(e.message);
       setBusy(false);
     }
   }
@@ -135,28 +140,32 @@ export default function Home() {
       {newOpen ? (
         <Sheet onClose={() => setNewOpen(false)} labelledBy="new-title">
           <h2 id="new-title" className={ui.sheetTitle}>New storyboard</h2>
-          <label htmlFor="sb-title" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Title</label>
-          {/* Capped where the server caps it, so nobody types past a limit they cannot
-              see and then meets a 400 that explains nothing. */}
-          <input id="sb-title" value={title}
-                 onChange={(e) => { setTitle(e.target.value); setBlocked(null); }}
-                 maxLength={120}
-                 placeholder="The one in the jacaranda"
-                 style={{
-                   width: "100%", height: 48, padding: "0 16px", marginTop: 6,
-                   borderRadius: 999, border: "1px solid var(--line)",
-                   background: "var(--bg)", color: "var(--text)", fontSize: 15,
-                 }} />
-          {blocked ? (
-            <>
-              <p className={styles.refused}>{blocked}</p>
-              <p className={styles.blockedQuiet}>{COPY.blockedKept}</p>
-            </>
-          ) : null}
-          <button type="button" className={ui.btn} style={{ marginTop: 20 }}
-                  disabled={!title.trim() || busy} onClick={create}>
-            {busy ? "Creating…" : "Create"}
-          </button>
+          {/* A form so that Enter makes it, as it does in the code box on the page behind. */}
+          <form onSubmit={(e) => { e.preventDefault(); create(); }}>
+            <label htmlFor="sb-title" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Title</label>
+            {/* Capped where the server caps it, so nobody types past a limit they cannot
+                see and then meets a 400 that explains nothing. */}
+            <input id="sb-title" value={title}
+                   onChange={(e) => { setTitle(e.target.value); setBlocked(null); setFailed(null); }}
+                   maxLength={120}
+                   placeholder="The one in the jacaranda"
+                   style={{
+                     width: "100%", height: 48, padding: "0 16px", marginTop: 6,
+                     borderRadius: 999, border: "1px solid var(--line)",
+                     background: "var(--bg)", color: "var(--text)", fontSize: 15,
+                   }} />
+            {blocked ? (
+              <>
+                <p className={styles.refused}>{blocked}</p>
+                <p className={styles.blockedQuiet}>{COPY.blockedKept}</p>
+              </>
+            ) : null}
+            <ErrorNote className={styles.refused}>{failed}</ErrorNote>
+            <button type="submit" className={ui.btn} style={{ marginTop: 20 }}
+                    disabled={!title.trim() || busy}>
+              {busy ? "Creating…" : "Create"}
+            </button>
+          </form>
         </Sheet>
       ) : null}
     </div>

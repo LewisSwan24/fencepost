@@ -2,6 +2,10 @@
    inventing a second look for the same control — that file is a route module and a
    component here cannot import it, so the values are repeated deliberately. */
 
+.about {
+  margin: 44px 0 0; font-size: 15px; line-height: 1.5; color: var(--text-body);
+}
+
 .form { display: flex; flex-direction: column; gap: 18px; }
 
 .field { display: flex; flex-direction: column; gap: 7px; }

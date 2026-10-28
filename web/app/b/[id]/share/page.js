@@ -9,7 +9,7 @@
 // Only an owner can revoke (the server's revoke_grant answers not_the_owner), so where
 // owner_id does not match, the button is not drawn rather than drawn and then refused.
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { grants, issueShareLink, revokeGrant, shareLinks, revokeShareLink, me }
   from "../../../../lib/api";
@@ -39,6 +39,7 @@ export default function Share({ params }) {
   const [who, setWho] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const made = useRef(null);
 
   // The address a scan lands on. Null until a code exists, which is also what keeps the
   // placeholder in place. window is read here rather than at module scope because this file
@@ -89,6 +90,17 @@ export default function Share({ params }) {
   }, [id]);
 
   const iAmOwner = who && access && who.user_id === access.owner_id;
+
+  // The button that makes a code sits at the foot of a long page, and the code it makes
+  // appears at the top. On a phone that meant tapping it and seeing nothing change: the
+  // square and the three words were a screen and a half above, and the one thing a person
+  // came here to show was the one thing off screen. So a new code is brought into view and
+  // focused, which is also what makes a screen reader say it.
+  useEffect(() => {
+    if (!issued || !made.current) return;
+    made.current.scrollIntoView?.({ block: "start" });
+    made.current.focus({ preventScroll: true });
+  }, [issued]);
 
   async function issue() {
     setBusy(true);
@@ -163,7 +175,7 @@ export default function Share({ params }) {
             reason a placeholder was chosen in the first place is that both are wrong.
             QrCode returns null when it cannot encode a value, so the same fallback covers a
             token the library refuses. */}
-        <div className={styles.qrWrap}>
+        <div ref={made} tabIndex={-1} className={styles.qrWrap}>
           {/* The code first, the square beside it as the other way in (#54). Spelled out
               in words so it can be read aloud at the fence, and announced as one thing. */}
           {issued?.short_code ? (
@@ -207,7 +219,7 @@ export default function Share({ params }) {
         <div className={ui.kicker}>{COPY.linkExpires}</div>
         <div className={styles.chips}>
           {expiryChoices.map((option) => (
-            <button key={option.id} type="button"
+            <button key={option.id} type="button" aria-pressed={days === option.id}
                     className={[styles.chip, days === option.id ? styles.chipOn : ""].join(" ")}
                     onClick={() => { setDays(option.id); setIssued(null); }}>
               {option.label}

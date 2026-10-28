@@ -8,3 +8,7 @@
 }
 .title { font-size: 25px; margin: 0 0 12px; }
 .body { font-size: 16px; line-height: 1.6; color: var(--text-body); margin: 0; }
+.home {
+  align-self: flex-start; margin-top: 24px; padding: 12px 20px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--text); font-size: 15px; text-decoration: none;
+}

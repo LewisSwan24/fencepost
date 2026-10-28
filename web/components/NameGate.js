@@ -75,7 +75,11 @@ export default function NameGate({ children }) {
   return (
     <div className={ui.screen}>
       <div className={ui.body}>
-        <h1 className={ui.h1} style={{ marginTop: 44 }}>{COPY.nameTitle}</h1>
+        {/* The first screen anybody sees, so it is also the only place to say what this is.
+            Somebody who has just walked up to the stand, or scanned a neighbour's code, met a
+            question about their name with nothing to say what the name was for. */}
+        <p className={styles.about}>{COPY.nameAbout}</p>
+        <h1 className={ui.h1} style={{ marginTop: 22 }}>{COPY.nameTitle}</h1>
         <p className={ui.lede}>{COPY.nameLede}</p>
 
         <form className={styles.form}
