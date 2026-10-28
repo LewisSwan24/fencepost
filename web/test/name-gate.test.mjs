@@ -174,3 +174,14 @@ test("in fixtures mode it never asks, because the name would not be used", async
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(JSON.parse(line), { asked: false, opened: true, stored: null });
 });
+
+test("the first screen says what Fencepost is before it asks for a name", async () => {
+  // Somebody who has just walked up, or scanned a neighbour's code, was asked their name
+  // with nothing on screen to say what the name was for.
+  await open();
+  const about = screen.getByText(COPY.nameAbout);
+  const title = screen.getByRole("heading", { level: 1 });
+  assert.ok(about.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+            "the explanation comes after the question it is meant to explain");
+  assert.match(COPY.nameAbout, /possum/i);
+});

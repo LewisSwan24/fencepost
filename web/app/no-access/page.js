@@ -24,6 +24,10 @@ export default function NoAccess() {
       </span>
       <h1 className={styles.title}>{COPY.noAccessTitle}</h1>
       <p className={styles.body}>{COPY.noAccessBody}</p>
+      {/* A way out that says nothing about the code. A mistyped short code lands here too,
+          and the page used to be a dead end: no button, the three words gone, and the only
+          way back the browser's own. Home is where the code box is. */}
+      <a href="/" className={styles.home}>{COPY.noAccessHome}</a>
     </div>
   );
 }

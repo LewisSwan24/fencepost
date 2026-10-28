@@ -151,3 +151,25 @@ test("a title the Screener allows opens the storyboard it just made", async () =
   assert.equal(how, "push");
   assert.match(where, /^\/b\/sb_\w+$/, `went to ${where} rather than to the new storyboard`);
 });
+
+test("Enter in the title makes the storyboard, as it does in the code box", async () => {
+  const user = userEvent.setup({ document });
+  await renderScreen(Home);
+  await loaded();
+
+  await user.click(screen.getByRole("button", { name: "New storyboard" }));
+  await user.type(titleField(), "Fence at number 14{Enter}");
+
+  await waitFor(() => assert.equal(navigated.length, 1));
+  assert.match(navigated[0][1], /^\/b\/sb_\w+$/);
+});
+
+test("Enter on an empty title makes nothing", async () => {
+  const user = userEvent.setup({ document });
+  await renderScreen(Home);
+  await loaded();
+
+  await user.click(screen.getByRole("button", { name: "New storyboard" }));
+  await user.type(titleField(), "   {Enter}");
+  assert.equal(navigated.length, 0);
+});

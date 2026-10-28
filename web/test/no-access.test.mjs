@@ -54,3 +54,17 @@ test("nothing about any storyboard is on the page, not even in the tab title", (
   }
   assert.equal(metadata.title, "Fencepost");
 });
+
+test("it is not a dead end: there is a way back to where codes are typed", () => {
+  // A mistyped short code lands here as well, and the page used to offer nothing but the
+  // browser's own Back.
+  render(<NoAccess />);
+  const home = screen.getByRole("link", { name: COPY.noAccessHome });
+  assert.equal(home.getAttribute("href"), "/");
+});
+
+test("it speaks to somebody who typed three words as well as somebody who scanned", () => {
+  render(<NoAccess />);
+  assert.match(COPY.noAccessBody, /three words/);
+  assert.ok(screen.getByText(COPY.noAccessBody));
+});

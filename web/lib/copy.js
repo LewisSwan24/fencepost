@@ -86,6 +86,7 @@ export const COPY = {
   // your sightings do not come with you, which is the same thing the sign-in screen already
   // says out loud. Skipping is a first-class answer, not a failure — it gives the random
   // name, which is what everybody got until now.
+  nameAbout: "Fencepost is where neighbours keep the possums on their street together: your own clips, a few words, shared only with the people you choose.",
   nameTitle: "What should we call you?",
   nameLede: "This is what sits beside your sightings and in the list of who a storyboard is shared with. It isn't an account and there's no password.",
   nameLabel: "Your name",
@@ -215,7 +216,10 @@ export const COPY = {
   // you say what needs covering, and saying "nothing does" is a deliberate act rather than
   // the default.
   maskNote: "This is the frame you picked. Nothing is detected automatically — cover what you know is there.",
-  maskNoFrame: "No frame from a clip this time, so there is nothing here to cover.",
+  // Mostly after the placeholder stills. The screen before was called "Pick a frame", so
+  // "no frame" read as a contradiction; what is actually missing is a frame of their own.
+  // Not "those were placeholder stills": a reload here loses a real clip's frames too.
+  maskNoFrame: "No frame from your own clip this time, so there is nothing of yours to cover. With your own clip, this is where faces, house numbers and number plates get covered.",
   // A photograph was not picked out of anything, so it is not "the frame you picked".
   maskPhoto: "Your photograph. Nothing is detected automatically — cover what you know is there.",
   maskNothing: "Nothing in this frame identifies a person or a house",
@@ -382,7 +386,10 @@ export const COPY = {
   codeState: { revoked: "Turned off", expired: "Expired", used_up: "Used up" },
 
   noAccessTitle: "This link doesn't work",
-  noAccessBody: "Ask whoever shared it with you for a new one.",
+  // "If you typed three words" covers the short code without saying anything about whether
+  // any code exists: a typo, an expired code and a revoked one still read the same.
+  noAccessBody: "If you typed three words, check them. Otherwise ask whoever shared it with you for a new one.",
+  noAccessHome: "Back to Fencepost",
 };
 
 // The three access levels, smallest first, each containing the one before it. The ids match
