@@ -44,9 +44,13 @@ export function initControls() {
       if (scroll) el.scrollIntoView({ block: "center" });
     }
   }
+  // A fresh selection skips links to other sites: those small source and credit links
+  // only open the phone QR, so they make a poor first stop.
+  const firstStop = (items) =>
+    items.find((e) => !e.matches('a[target="_blank"]')) || items[0];
   function refresh() {
     const items = selectable();
-    if (!items.includes(selected)) focus(items[0]);
+    if (!items.includes(selected)) focus(firstStop(items));
   }
   function next() {
     const items = selectable();
@@ -133,7 +137,7 @@ export function initControls() {
         location.replace("index.html");
       else {
         document.dispatchEvent(new Event("wn-idle"));
-        focus(selectable()[0]);
+        focus(firstStop(selectable()));
       }
     }, config.idleMs);
   }

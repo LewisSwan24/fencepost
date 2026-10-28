@@ -44,15 +44,25 @@ let list = [],
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const intro = (label, title, text = "") =>
   `<section class="page-heading"><p class="eyebrow">${label}</p><h1>${title}</h1>${text ? `<p>${text}</p>` : ""}</section>`;
-const returnLinks = (
-  href = "index.html",
-  label = "← Return to previous screen",
-) =>
-  `<nav class="return-options" aria-label="Return options"><a href="${esc(href)}">${label}</a><a href="index.html">⌂ Return to home</a></nav>`;
+// Each return link names where it goes. From a top-level page "previous" was home too,
+// so those pages show Home alone instead of two links to the same place.
+const returnNames = {
+  "animals.html": "All animals",
+  "community.html": "Community",
+  "updates.html": "All updates",
+};
+const returnLinks = (href = "index.html") =>
+  `<nav class="return-options" aria-label="Return options">${href === "index.html" ? "" : `<a href="${esc(href)}">← ${returnNames[href]}</a>`}<a href="index.html">⌂ Home</a></nav>`;
 const selectedSpecies = () =>
   species.find((s) => s.id === query.get("animal")) || species[0];
 function stopAudio() {
   window.speechSynthesis?.cancel();
+}
+// The narration button says what it will do next, instead of "Listen / pause" for both.
+function narrateLabel(text) {
+  document
+    .querySelectorAll('[data-action="narrate"]')
+    .forEach((b) => (b.textContent = text));
 }
 function scheduleStory() {
   clearTimeout(timer);
@@ -107,7 +117,7 @@ function storyHtml(s, full = false) {
       `<p class="story-position">Story ${index + 1} of ${list.length}</p><div class="story-controls"><button data-action="previous">Previous story</button><button data-action="next">Next story</button></div>`,
     );
   const sp = species.find((x) => x.id === s.species);
-  return `<article class="hero ${full ? "full-story" : ""}"><div class="hero-photo">${image(api.publicImage(s.mediaUrl) || sp?.image || "illustration:park", `Possible ${name(s.species)}`)}<span class="photo-note">${s.sample ? "Sample observation · illustrative image" : "Human-reviewed public media"}</span></div><div class="story-copy"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p>${esc(s.storyText)}</p><dl class="story-meta"><div><dt>Public location</dt><dd>${esc(s.publicArea)}</dd></div><div><dt>Approximate time</dt><dd>${esc(s.approximateTime)}</dd></div></dl><aside class="fact"><span class="eyebrow">Wildlife information · source linked</span><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Official source review pending unless confirmed by the responsible reviewer.</p></aside><p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p>${s.species === "brushtail" && s.sample ? `<p class="small">${sourceLink("https://commons.wikimedia.org/wiki/File:Brushtail_Possum_IMG_5017.jpg", "Illustrative photo: Andrew Mercer · CC BY-SA 4.0")}</p>` : ""}${full ? '<h2>Safe Response</h2><p>Observe quietly from a distance. Never approach, feed or handle wildlife.</p><p class="small">Broad area only. Contributor identity and private rescue details are not public.</p>' : `<p class="story-position">Story ${index + 1} of ${list.length}</p><div class="story-controls"><button data-action="previous">Previous story</button><button data-action="next">Next story</button><a class="link-button" href="story.html?id=${encodeURIComponent(s.id)}">Read full story →</a></div>`}<button data-action="narrate">Listen to story / pause narration</button><p id="audio-status" role="status"></p></div></article>`;
+  return `<article class="hero ${full ? "full-story" : ""}"><div class="hero-photo">${image(api.publicImage(s.mediaUrl) || sp?.image || "illustration:park", `Possible ${name(s.species)}`)}<span class="photo-note">${s.sample ? "Sample observation · illustrative image" : "Human-reviewed public media"}</span></div><div class="story-copy"><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p>${esc(s.storyText)}</p><dl class="story-meta"><div><dt>Public location</dt><dd>${esc(s.publicArea)}</dd></div><div><dt>Approximate time</dt><dd>${esc(s.approximateTime)}</dd></div></dl><aside class="fact"><span class="eyebrow">Wildlife information · source linked</span><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Official source review pending unless confirmed by the responsible reviewer.</p></aside><p class="review-label">Approved for Public Display · Reviewed by ${esc(s.reviewedBy)}</p>${s.species === "brushtail" && s.sample ? `<p class="small">${sourceLink("https://commons.wikimedia.org/wiki/File:Brushtail_Possum_IMG_5017.jpg", "Illustrative photo: Andrew Mercer · CC BY-SA 4.0")}</p>` : ""}${full ? '<h2>Safe Response</h2><p>Observe quietly from a distance. Never approach, feed or handle wildlife.</p><p class="small">Broad area only. Contributor identity and private rescue details are not public.</p>' : `<p class="story-position">Story ${index + 1} of ${list.length}</p><div class="story-controls"><a class="link-button" href="story.html?id=${encodeURIComponent(s.id)}">Read full story →</a><button data-action="previous">Previous story</button><button data-action="next">Next story</button></div>`}<button data-action="narrate">Listen</button><p id="audio-status" role="status"></p></div></article>`;
 }
 function drawStory() {
   const target = document.querySelector("#story");
@@ -150,7 +160,7 @@ async function load() {
       list = [...boothStories, ...wildStories];
       boothStories.forEach((s) => boothSeen.add(s.id));
       index = Math.min(index, Math.max(0, list.length - 1));
-      main.innerHTML = `${modeNote(api.live)}<section class="intro"><p class="eyebrow">01 / Local Wildlife Story</p><span>Look. Learn. Leave space.</span></section><div id="story">${storyHtml(list[index])}</div>${config.boothJoinUrl ? boothPanelHtml(config.boothJoinUrl, qr(config.boothJoinUrl, "Scan to join the Fencepost booth storyboard")) : ""}<section class="home-zones"><a class="zone" href="help.html"><span class="eyebrow">02 / Is it hurt?</span><h2>What should I do?</h2><p>Read practical guidance without a phone.</p></a><a class="zone" href="animals.html"><span class="eyebrow">03 / Meet the animal</span><h2>Discover together</h2><p>Six animals. One small activity each.</p></a><a class="zone" href="community.html"><span class="eyebrow">04 / Read, share or volunteer</span><h2>Care for shared places</h2><p>Optional tasks and sample Community Updates.</p></a></section>`;
+      main.innerHTML = `${modeNote(api.live)}<section class="intro"><p class="eyebrow">01 / Local Wildlife Story</p><span>Look. Learn. Leave space.</span></section><div id="story">${storyHtml(list[index])}</div>${config.boothJoinUrl ? boothPanelHtml(config.boothJoinUrl, qr(config.boothJoinUrl, "Scan to join the Fencepost booth storyboard")) : ""}<section class="home-zones"><a class="zone" href="help.html"><span class="eyebrow">02</span><h2>Is it hurt?</h2><p>Read practical guidance without a phone.</p></a><a class="zone" href="animals.html"><span class="eyebrow">03</span><h2>Meet the animals</h2><p>Six animals. One small activity each.</p></a><a class="zone" href="community.html"><span class="eyebrow">04</span><h2>Community</h2><p>Optional tasks and sample Community Updates.</p></a></section>`;
       scheduleStory();
     } else if (page === "story.html") {
       const all = await api.stories(),
@@ -164,7 +174,7 @@ async function load() {
       main.innerHTML =
         returnLinks() +
         intro(
-          "03 / Meet the animal",
+          "03 / Meet the animals",
           "Who shares our neighbourhood?",
           "Choose an animal. Learn one fact and try a short activity.",
         ) +
@@ -173,7 +183,7 @@ async function load() {
       const s = selectedSpecies();
       main.innerHTML =
         returnLinks("animals.html") +
-        `<article class="species-detail">${image(s.image, s.name)}<div><p class="eyebrow">03 / Meet the animal</p><h1>${esc(s.name)}</h1><p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="guidance">${esc(s.advice)}</p><aside class="fact"><strong>Wildlife fact · source linked</strong><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p></aside><a class="link-button activity-start" href="activity.html?animal=${s.id}">Start a mini quiz together →</a></div></article>`;
+        `<article class="species-detail">${image(s.image, s.name)}<div><p class="eyebrow">03 / Meet the animals</p><h1>${esc(s.name)}</h1><p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="guidance">${esc(s.advice)}</p><aside class="fact"><strong>Wildlife fact · source linked</strong><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p></aside><a class="link-button activity-start" href="activity.html?animal=${s.id}">Start a mini quiz together →</a></div></article>`;
     } else if (page === "activity.html") {
       const s = selectedSpecies();
       main.innerHTML =
@@ -193,7 +203,12 @@ async function load() {
         ) +
         `<section class="help-grid"><div id="wildlife-help-root"></div><article><h2>Professional contacts</h2>${contactOptions()}${contacts.length ? contacts.map((c) => `<p><strong>${esc(c.name)}</strong> · ${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p>`).join("") : ""}${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Official reference review pending. This prototype cannot dispatch rescue help.</p><div class="wildlife-private"><h3>Continue privately in Fencepost</h3>${qr(fencepostUrl("rescue"), "Scan to continue privately in Fencepost")}</div></article></section>`;
       contactCleanup?.();
-      contactCleanup = mountContactDialogs(main);
+      // This screen cannot dial: the confirmation shows the number as a QR for a phone.
+      contactCleanup = mountContactDialogs(main, undefined, {
+        callAction: (c) =>
+          `${qr(`tel:${c.number}`, `Scan to call ${c.mnemonic} on your phone`, false)}<p>Scan to call from your phone. This screen cannot make calls.</p>`,
+        opened: drawQr,
+      });
       helpCleanup?.();
       helpCleanup = mountWildlifeHelp(document.querySelector("#wildlife-help-root"));
     } else if (page === "community.html") {
@@ -205,7 +220,7 @@ async function load() {
       main.innerHTML =
         returnLinks() +
         intro(
-          "04 / Read, share or volunteer",
+          "04 / Community",
           "Care for the places we share.",
           "Participation is voluntary. Volunteers do not handle wildlife.",
         ) +
@@ -261,7 +276,7 @@ main.addEventListener("click", (e) => {
     e.preventDefault();
     clearTimeout(timer);
     const dialog = document.createElement("dialog");
-    dialog.innerHTML = `<h2>Continue on your phone</h2><p>Scan for the selected page. The display stays here.</p>${qr(external.href, "Scan to open the selected page", false)}<p class="small">${esc(external.href)}</p><button data-action="close-source">← Return to previous screen</button><a href="index.html">⌂ Return to home</a>`;
+    dialog.innerHTML = `<h2>Continue on your phone</h2><p>Scan for the selected page. The display stays here.</p>${qr(external.href, "Scan to open the selected page", false)}<p class="small">${esc(external.href)}</p><button data-action="close-source">← Close</button><a href="index.html">⌂ Home</a>`;
     dialog.addEventListener("cancel", (e) => e.preventDefault());
     main.append(dialog);
     dialog.showModal();
@@ -290,9 +305,13 @@ main.addEventListener("click", (e) => {
       return;
     }
     if (speechSynthesis.speaking) {
-      speechSynthesis.paused
-        ? speechSynthesis.resume()
-        : speechSynthesis.pause();
+      if (speechSynthesis.paused) {
+        speechSynthesis.resume();
+        narrateLabel("Pause");
+      } else {
+        speechSynthesis.pause();
+        narrateLabel("Resume");
+      }
       return;
     }
     const story = list[index];
@@ -303,15 +322,18 @@ main.addEventListener("click", (e) => {
     );
     narration.volume = controls.getVolume();
     narration.onend = () => {
+      if (!speechSynthesis.speaking) narrateLabel("Listen");
       lastInteraction = Date.now();
       scheduleStory();
     };
     narration.onerror = () => {
+      if (!speechSynthesis.speaking) narrateLabel("Listen");
       if (status.isConnected)
         status.textContent = "Audio unavailable. Read the story above.";
       scheduleStory();
     };
     speechSynthesis.speak(narration);
+    narrateLabel("Pause");
   }
 });
 document.addEventListener("wn-volume", (e) => {

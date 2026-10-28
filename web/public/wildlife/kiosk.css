@@ -1,0 +1,686 @@
+/* The community display at booth size, loaded after styles.css by the display pages only.
+   fencepost/index.html (the phone site) also loads styles.css, which is why none of this
+   lives there.
+
+   Measured on 1920x1080 before this file: every page was taller than the screen, the dock
+   was a fixed 217px band that covered the bottom of the story card (its own Previous and
+   Next buttons included), and most text was 12-17px Arial, read from two or three metres
+   away. So the page is now exactly one screen: a slim header, a dock, and between them a
+   main area that scrolls on its own when a page is longer than that. The three-key
+   controls already scroll the selected item into view, and with the dock out of the way
+   of the content nothing they select can be hidden behind it.
+
+   Sizes are tied to the screen height so a 1366x768 or 4K panel gets the same proportions.
+   The fonts are the ones the Fencepost app already ships (web/app/fonts), so the two read
+   as one exhibit and nothing is fetched at the venue. */
+
+@font-face {
+  font-family: "Figtree";
+  src: url("assets/fonts/figtree-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Figtree";
+  src: url("assets/fonts/figtree-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Figtree";
+  src: url("assets/fonts/figtree-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Caprasimo";
+  src: url("assets/fonts/caprasimo-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  /* Five sizes instead of eighteen. At 1080 high: 17, 22, 26, 38 and 60px. */
+  --k-label: clamp(13px, 1.6vh, 24px);
+  --k-small: clamp(16px, 2vh, 30px);
+  --k-body: clamp(19px, 2.4vh, 36px);
+  --k-h2: clamp(26px, 3.5vh, 54px);
+  --k-h1: clamp(36px, 5vh, 78px);
+  --k-gap: clamp(12px, 2vh, 32px);
+  --k-edge: clamp(20px, 2.6vw, 64px);
+  --k-radius: clamp(12px, 1.6vh, 24px);
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  font-family: "Figtree", Arial, Helvetica, sans-serif;
+  font-size: var(--k-body);
+  line-height: 1.4;
+}
+/* styles.css centres these in a 1440px column with auto margins. On a grid track an auto
+   margin stops the item stretching, so main grew to its content and took the dock with it;
+   and a 1440px column leaves a quarter of a 1920 screen empty. */
+.site-header,
+main,
+footer {
+  width: auto;
+  margin: 0;
+}
+main {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding: var(--k-gap);
+  padding: var(--k-gap) var(--k-edge);
+  scrollbar-width: none;
+}
+main::-webkit-scrollbar {
+  display: none;
+}
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+p {
+  max-width: 62ch;
+}
+
+/* Header: one line, and the demo notice joins it rather than taking a band of its own. */
+.site-header {
+  padding: clamp(10px, 1.4vh, 24px) var(--k-edge);
+}
+.brand {
+  font-family: "Caprasimo", Georgia, serif;
+  font-size: clamp(22px, 3vh, 44px);
+  line-height: 1;
+  letter-spacing: 0;
+}
+.brand strong {
+  font-weight: 400;
+}
+/* One line instead of two: the header is the cheapest height on the screen to give back. */
+.brand br {
+  display: none;
+}
+.brand strong::before {
+  content: " ";
+}
+.header-note {
+  font-size: var(--k-small);
+}
+.prototype {
+  font-size: var(--k-label);
+  padding: 0.4em 1em;
+}
+.mode-note {
+  font-size: var(--k-label);
+  padding: 0.5em 1em;
+  margin: 0 0 var(--k-gap);
+  max-width: none;
+}
+.eyebrow,
+.label,
+.status-label,
+.story-meta dt {
+  font-size: var(--k-label) !important;
+  letter-spacing: 0.1em;
+}
+.intro {
+  margin-bottom: var(--k-gap);
+}
+.intro > span {
+  font-size: var(--k-small);
+}
+
+/* Home: the featured story beside a column of the three ways in. The column used to sit
+   under the story, below the fold. */
+main:has(> .home-zones) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 21vw, 520px);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: var(--k-gap);
+  overflow: hidden;
+}
+main:has(> .home-zones) > .intro {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+}
+main:has(> .home-zones) > #story {
+  grid-column: 1;
+  grid-row: 2 / -1;
+  min-height: 0;
+  display: flex;
+}
+main:has(> .home-zones) > .home-zones {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--k-gap);
+  margin: 0;
+  min-height: 0;
+}
+/* The demo notice closes the column of ways in instead of being a band across the screen. */
+main:has(> .home-zones) > .mode-note {
+  grid-column: 2;
+  grid-row: 4;
+  margin: 0;
+}
+/* The booth join panel (only when config.boothJoinUrl is set) takes the foot of the
+   right column, so it never lands in an implicit row and gets clipped. The QR sits beside
+   the heading and the paragraph runs the full width underneath. */
+main:has(> .home-zones) > .booth-panel {
+  grid-column: 2;
+  grid-row: 3;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: calc(var(--k-gap) * 0.6);
+  row-gap: 0.4em;
+  margin: 0;
+  padding: calc(var(--k-gap) * 0.6);
+  border-radius: var(--k-radius);
+}
+main:has(> .home-zones) > .booth-panel > div:first-child {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+main:has(> .home-zones) > .booth-panel > div:last-child {
+  display: contents;
+}
+main:has(> .home-zones) > .booth-panel .eyebrow {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  margin: 0;
+}
+main:has(> .home-zones) > .booth-panel h2 {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  font-size: var(--k-small);
+  margin: 0;
+}
+main:has(> .home-zones) > .booth-panel p:not(.eyebrow) {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  font-size: var(--k-label);
+  line-height: 1.4;
+  margin: 0;
+}
+main:has(> .home-zones) > .booth-panel .qr-link {
+  width: clamp(130px, 14vh, 240px);
+  margin: 0;
+}
+.home-zones .zone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--k-gap) !important;
+  border-radius: var(--k-radius);
+  background: var(--white);
+}
+.zone h2 {
+  font-size: var(--k-h2) !important;
+  margin: 0.25em 0;
+}
+.zone p {
+  font-size: var(--k-small);
+  margin: 0;
+}
+/* With the booth panel in the column the three ways in tighten up to make room for it. */
+main:has(> .booth-panel) .home-zones .zone {
+  padding: calc(var(--k-gap) * 0.6) var(--k-gap) !important;
+}
+main:has(> .booth-panel) .zone h2 {
+  font-size: calc(var(--k-small) * 1.2) !important;
+  margin: 0.15em 0;
+}
+main:has(> .booth-panel) .zone p {
+  font-size: var(--k-label);
+}
+
+/* The story card fills the space it is given; the photograph shrinks before the words do. */
+.hero {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 0.62fr 1fr;
+  border-radius: var(--k-radius);
+}
+.hero-photo {
+  min-height: 0 !important;
+}
+.photo-note {
+  font-size: var(--k-label);
+}
+/* A wrapping row rather than a column, so "Story 1 of 6", the story buttons and Listen share
+   one line at the foot of the card instead of taking three. */
+.story-copy {
+  padding: clamp(14px, 2vh, 36px) clamp(20px, 2vw, 48px) !important;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: clamp(5px, 0.8vh, 14px) clamp(10px, 1vw, 20px);
+}
+.story-copy > * {
+  flex: 0 0 100%;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+.story-copy > .status-label {
+  flex: 0 0 auto;
+  padding: 0.35em 0.8em;
+  line-height: 1.1;
+}
+.story-copy > .review-label,
+.story-copy > .small {
+  flex: 0 1 auto;
+}
+.story-copy > .story-position,
+.story-copy > .story-controls,
+.story-copy > [data-action="narrate"] {
+  flex: 0 0 auto;
+}
+.story-copy > .story-position {
+  margin-right: auto !important;
+}
+.story-copy > p:empty {
+  display: none;
+}
+.story-copy .fact .eyebrow {
+  display: block;
+  margin-bottom: 0.3em;
+}
+.story-copy .fact .small {
+  margin: 0.3em 0 0 !important;
+}
+.story-copy h1 {
+  font-size: var(--k-h1) !important;
+}
+.story-copy > p {
+  font-size: var(--k-body) !important;
+}
+.story-copy .fact p {
+  font-size: var(--k-small) !important;
+}
+.story-copy .small,
+.story-copy .review-label,
+.story-copy .story-position,
+.story-meta dd {
+  font-size: var(--k-small) !important;
+}
+.story-copy .fact {
+  padding: 0.6em 0.9em !important;
+  border-radius: calc(var(--k-radius) * 0.75);
+}
+.story-copy .story-meta {
+  padding-top: 0.5em !important;
+}
+.story-controls {
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+.story-copy .story-controls button,
+.story-copy .story-controls a,
+.return-options a,
+.link-button,
+main button {
+  font-size: var(--k-small) !important;
+  min-height: clamp(44px, 5vh, 76px) !important;
+  padding: 0 1.1em;
+  border-radius: 999px;
+}
+/* Three weights of button, so the eye finds the one that matters: filled for the main
+   action, outlined for moving between things, plain for extras like narration and the
+   way back. Narration used to be the widest button on the card. */
+main .link-button,
+main button.primary {
+  background: var(--ink) !important;
+  color: var(--white) !important;
+  border: 2px solid var(--ink) !important;
+}
+.story-copy .story-controls button {
+  background: var(--white) !important;
+  color: var(--ink) !important;
+  border: 2px solid var(--ink) !important;
+}
+.story-copy [data-action="narrate"],
+.return-options a {
+  background: transparent !important;
+  color: var(--ink) !important;
+  border: 2px solid rgba(25, 60, 49, 0.45) !important;
+  width: auto;
+}
+.story-copy [data-action="narrate"]::before {
+  content: "♪ ";
+}
+.return-options {
+  gap: 0.5em;
+}
+.story-copy .fact a {
+  font-size: var(--k-label);
+}
+
+/* Inner pages. */
+.page-heading h1,
+main > h1,
+main section > h1 {
+  font-size: var(--k-h1);
+}
+main h2 {
+  font-size: var(--k-h2);
+}
+main h3 {
+  font-size: calc(var(--k-h2) * 0.8);
+}
+main p,
+main li,
+main dd,
+main label,
+main summary,
+main textarea {
+  font-size: var(--k-body);
+}
+main .small,
+main small,
+.notice {
+  font-size: var(--k-small);
+}
+.species-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: var(--k-gap) !important;
+}
+.species-card {
+  border-radius: var(--k-radius);
+}
+.species-card img {
+  height: clamp(120px, 17vh, 300px) !important;
+}
+.species-card h2 {
+  font-size: calc(var(--k-h2) * 0.85) !important;
+}
+
+/* Where the three keys are. A heavy outline and a tint, visible from across the stand; the
+   old marker was a thin line round a 14px link. */
+.macro-focus {
+  outline: clamp(4px, 0.6vh, 8px) solid var(--accent) !important;
+  outline-offset: clamp(3px, 0.4vh, 6px) !important;
+  box-shadow: 0 0 0 clamp(8px, 1.2vh, 16px) rgba(148, 65, 36, 0.18) !important;
+  border-radius: 10px;
+}
+a.zone.macro-focus,
+.species-card.macro-focus,
+.species-card .macro-focus {
+  background: #f6e7dc;
+}
+
+/* The dock: one row of places and keys, one quiet row of instructions. It was three bands
+   and a fifth of the screen. */
+.kiosk-dock {
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "nav keys"
+    "foot keys";
+  align-items: center;
+  column-gap: var(--k-gap);
+  padding: clamp(8px, 1.2vh, 20px) var(--k-edge);
+  background: var(--ink);
+  color: var(--white);
+}
+.kiosk-dock .bottom-nav {
+  grid-area: nav;
+  position: static;
+  display: flex;
+  justify-content: flex-start;
+  gap: clamp(6px, 0.6vw, 16px);
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+.kiosk-dock .bottom-nav a {
+  font-size: var(--k-small);
+  min-height: clamp(44px, 5vh, 76px);
+  padding: 0 1.1em;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 252, 245, 0.35);
+  color: var(--white);
+  background: none;
+}
+.kiosk-dock .bottom-nav a[aria-current="page"] {
+  background: var(--white);
+  color: var(--ink);
+  border-color: var(--white);
+}
+.kiosk-dock .control-guide {
+  grid-area: keys;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 6px clamp(6px, 0.6vw, 14px);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--white);
+}
+.kiosk-dock .control-guide button {
+  font-size: var(--k-small);
+  min-height: clamp(44px, 5vh, 76px);
+  padding: 0 1.2em;
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--ink);
+  border: 0;
+}
+.kiosk-dock .control-guide > span:first-of-type {
+  grid-column: 1 / -1;
+  font-size: var(--k-label);
+  opacity: 0.8;
+  text-align: center;
+}
+/* Still announced; the outline on the page is what a person standing there looks for. */
+.kiosk-dock #selected-option {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.kiosk-dock #volume-state {
+  position: fixed;
+  right: var(--k-edge);
+  bottom: calc(clamp(44px, 5vh, 76px) * 2 + 24px);
+  font-size: var(--k-small);
+  background: var(--ink);
+  color: var(--white);
+  padding: 0.4em 1em;
+  border-radius: 999px;
+}
+.kiosk-dock #volume-state:empty {
+  display: none;
+}
+.kiosk-dock footer {
+  grid-area: foot;
+  position: static;
+  margin: 0;
+  padding: 0.3em 0 0;
+  background: none;
+  border: 0;
+  color: var(--sage);
+  font-size: var(--k-label);
+  text-align: left;
+}
+
+/* QR codes are scanned from arm's length off a screen, not a page: 180px was small at 1080.
+   The "continue on your phone" dialog puts the code beside the words and the two ways back
+   on one row. */
+.qr-link {
+  width: clamp(180px, 22vh, 340px);
+}
+dialog {
+  width: min(clamp(560px, 50vw, 1100px), 90vw);
+  padding: clamp(24px, 3.5vh, 56px);
+  border-radius: var(--k-radius);
+  font-size: var(--k-body);
+}
+dialog[open] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: clamp(20px, 2vw, 48px);
+  align-items: center;
+}
+dialog[open] > * {
+  grid-column: 1 / -1;
+  margin: 0 0 0.5em;
+}
+dialog[open] > h2 {
+  font-size: var(--k-h2);
+}
+dialog[open] > .qr-link {
+  grid-column: 1;
+  grid-row: span 3;
+  width: clamp(200px, 30vh, 460px);
+  margin: 0.5em 0;
+}
+dialog[open] > .qr-link ~ .small {
+  grid-column: 2;
+  font-size: var(--k-small);
+}
+dialog[open] > button,
+dialog[open] > a {
+  grid-column: 2;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: clamp(44px, 5vh, 76px);
+  padding: 0 1.2em;
+  font-size: var(--k-small);
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  text-decoration: none;
+}
+/* The call confirmation on the display: the same width and type as the phone QR dialog,
+   with the number's QR beside the words and Cancel under them. */
+dialog.contact-dialog {
+  width: min(clamp(560px, 50vw, 1100px), 90vw);
+}
+dialog.contact-dialog p {
+  font-size: var(--k-body);
+}
+dialog.contact-dialog .contact-dialog-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: clamp(20px, 2vw, 48px);
+  align-items: center;
+}
+dialog.contact-dialog .contact-dialog-actions .qr-link {
+  grid-row: span 2;
+  margin: 0;
+}
+dialog.contact-dialog .contact-dialog-actions button {
+  justify-self: start;
+}
+
+/* The small print that was left at 10-16px: captions, card metadata, contact sources and
+   the quiz's own hints. Nothing on the display is smaller than the label size now. */
+figcaption,
+.photo-note,
+.contact-kicker,
+.contact-review,
+.contact-review time,
+.card-meta,
+.related-link,
+.species-card span,
+.fact a,
+.quiz-kicker {
+  font-size: var(--k-label) !important;
+}
+.contact-source a,
+.contact-warning,
+.wildlife-transparency,
+.quiz-hint,
+.answer-letter {
+  font-size: var(--k-small) !important;
+}
+
+/* Meet the animal: all six on one row, so the page is one screen and every card is the same
+   shape. They were three and three, with the second row under the dock. */
+@media (min-aspect-ratio: 4/3) {
+  .species-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  }
+}
+.species-card {
+  display: flex;
+  flex-direction: column;
+}
+.species-card img {
+  width: 100%;
+  height: clamp(150px, 30vh, 520px) !important;
+  object-fit: cover;
+}
+.species-card > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  padding: var(--k-gap) !important;
+}
+.species-card > div > span {
+  margin-top: auto;
+}
+
+/* One animal: the photograph narrower so the facts beside it fit without scrolling. */
+.species-detail {
+  grid-template-columns: 0.8fr 1fr !important;
+  gap: calc(var(--k-gap) * 1.5) !important;
+  align-items: start;
+}
+.species-detail > img {
+  max-height: calc(100vh - 340px);
+  width: 100%;
+  object-fit: cover;
+  border-radius: var(--k-radius);
+}
+.species-detail h1 {
+  margin: 0.15em 0 0.3em;
+}
+.species-detail dl,
+.species-detail dd,
+.species-detail dt {
+  margin-top: 0;
+  margin-bottom: 0.15em;
+}
+.species-detail > div {
+  padding-top: 0 !important;
+}
+/* Active time, habitat and behaviour side by side rather than six stacked lines. */
+.species-detail dl {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
+  column-gap: var(--k-gap);
+  margin-bottom: var(--k-gap) !important;
+}
+.species-detail dt {
+  font-size: var(--k-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

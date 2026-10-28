@@ -27,6 +27,7 @@ export function contactOptions(contacts = config.assistanceContacts) {
 export function mountContactDialogs(
   root,
   contacts = config.assistanceContacts,
+  { callAction, opened } = {},
 ) {
   let active = null,
     opener = null;
@@ -57,13 +58,14 @@ export function mountContactDialogs(
     dialog.className = `contact-dialog contact-${contact.kind}`;
     dialog.setAttribute("aria-labelledby", "contact-dialog-title");
     dialog.setAttribute("aria-describedby", "contact-dialog-description");
-    dialog.innerHTML = `<h2 id="contact-dialog-title">${esc(contact.confirmationTitle)}</h2><p id="contact-dialog-description">${esc(contact.confirmationBody)}</p><div class="contact-dialog-actions"><a class="contact-call" data-contact-confirm href="${esc(contactHref(contact))}">${phoneIcon}<span>${esc(confirmLabel(contact))}</span></a><button type="button" data-contact-cancel autofocus>Cancel</button></div>`;
+    dialog.innerHTML = `<h2 id="contact-dialog-title">${esc(contact.confirmationTitle)}</h2><p id="contact-dialog-description">${esc(contact.confirmationBody)}</p><div class="contact-dialog-actions">${callAction ? callAction(contact) : `<a class="contact-call" data-contact-confirm href="${esc(contactHref(contact))}">${phoneIcon}<span>${esc(confirmLabel(contact))}</span></a>`}<button type="button" data-contact-cancel autofocus>Cancel</button></div>`;
     dialog.addEventListener("cancel", (event) => {
       event.preventDefault();
       close();
     });
     root.append(dialog);
     dialog.showModal();
+    opened?.(dialog);
     dialog.querySelector("[data-contact-cancel]").focus();
   }
   function key(event) {
