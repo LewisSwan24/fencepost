@@ -108,6 +108,40 @@ test("an upstream failure is a 502 with nothing from upstream in it", async () =
   }
 });
 
+test("requests that arrive together share one walk, and nothing is kept after it", async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const fetchImpl = async () => {
+    calls++;
+    await gate;
+    return page([row(1)]);
+  };
+  const together = Promise.all(
+    Array.from({ length: 5 }, () => handleBoothFeed({ env, fetchImpl })),
+  );
+  release();
+  const responses = await together;
+  assert.equal(calls, 1, "five requests in flight, one upstream walk");
+  assert.deepEqual(responses.map((r) => r.status), [200, 200, 200, 200, 200]);
+  await handleBoothFeed({ env, fetchImpl });
+  assert.equal(calls, 2, "the next request reads afresh: deletions are never served stale");
+});
+
+test("every page of one walk shares a single deadline", async () => {
+  const signals = [];
+  await handleBoothFeed({
+    env,
+    fetchImpl: async (url, init) => {
+      signals.push(init.signal);
+      return signals.length === 1 ? page([row(1)], "e1") : page([row(2)]);
+    },
+  });
+  assert.equal(signals.length, 2);
+  assert.ok(signals[0] instanceof AbortSignal);
+  assert.equal(signals[0], signals[1]);
+});
+
 test("a timeline that never ends is an error, not the oldest page passed off as latest", async () => {
   const response = await handleBoothFeed({
     env,

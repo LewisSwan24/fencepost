@@ -20,6 +20,8 @@ export const BOOTH_LIMIT = 12;
 // storyboard runs for one day; past this many pages something is wrong, and an error is
 // better than showing the oldest entries as though they were the latest.
 const MAX_PAGES = 25;
+// One deadline for the whole walk, not one per page, so a slow API cannot hold a request
+// open for MAX_PAGES times as long.
 const TIMEOUT_MS = 8000;
 const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
 
@@ -45,6 +47,7 @@ export const publicEntry = (row) => ({
 
 async function readAll({ token, storyboard, api }, fetchImpl) {
   const entries = [];
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
   let after = null;
   for (let page = 0; page < MAX_PAGES; page++) {
     const query = new URLSearchParams({ storyboard_id: storyboard });
@@ -52,7 +55,7 @@ async function readAll({ token, storyboard, api }, fetchImpl) {
     const response = await fetchImpl(`${api}/api/timeline?${query}`, {
       headers: { authorization: "Bearer " + token },
       cache: "no-store",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal,
     });
     if (!response.ok) throw Error("timeline " + response.status);
     const body = await response.json();
@@ -64,6 +67,20 @@ async function readAll({ token, storyboard, api }, fetchImpl) {
   throw Error("timeline too long");
 }
 
+// The route needs no sign-in, so anybody who can reach the booth laptop could ask it over and
+// over, and each ask is a walk over the API. Requests that arrive while a walk is running
+// share that walk instead of starting their own. This is not a cache: once the walk finishes
+// nothing is kept, so the next request reads afresh and a deletion is never served stale.
+let inFlight = null;
+
+function walkOnce(config, fetchImpl) {
+  if (!inFlight)
+    inFlight = readAll(config, fetchImpl).finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
+}
+
 export async function handleBoothFeed({
   env = process.env,
   fetchImpl = fetch,
@@ -71,7 +88,7 @@ export async function handleBoothFeed({
   const config = settings(env);
   if (!config) return json(503, { error: "booth_not_configured" });
   try {
-    const entries = await readAll(config, fetchImpl);
+    const entries = await walkOnce(config, fetchImpl);
     // Oldest first from the API; the screen leads with the newest.
     const latest = entries.slice(-BOOTH_LIMIT).reverse().map(publicEntry);
     return json(200, { entries: latest });
