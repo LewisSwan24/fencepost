@@ -86,7 +86,7 @@
 .contact-review {
   font-size: 13px;
   margin: 0;
-  color: #526458;
+  color: var(--muted, #526458);
 }
 .contact-dialog {
   width: min(560px, calc(100vw - 32px));

@@ -684,3 +684,36 @@ figcaption,
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+/* Matched to the booth poster, which is cream, warm black and terracotta with no green.
+   Text goes warm black and green is kept for what can be pressed, so on this screen green
+   means "a control". Labels and section numbers take the poster's terracotta, darkened
+   from its #c0764a (3.1:1 on cream) to #9e5326 (5.0:1) so small type still reads. Hairlines
+   go warm, and the header gets the poster's thin terracotta rule. */
+:root {
+  --text: #24241e;
+  --muted: #615a52;
+  --accent: #9e5326;
+  --line: #dccfc2;
+  --rule: #c0764a;
+}
+body {
+  color: var(--text);
+}
+.site-header {
+  border-bottom-color: var(--rule);
+}
+main .eyebrow,
+main .label,
+main .status-label {
+  color: var(--accent);
+}
+main .status-label,
+main .story-copy > .status-label {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.contact-card:not(.contact-emergency) .contact-kicker {
+  color: var(--accent);
+}

@@ -48,7 +48,7 @@ const intro = (label, title, text = "") =>
 // so those pages show Home alone instead of two links to the same place.
 const returnNames = {
   "animals.html": "All animals",
-  "community.html": "Community",
+  "community.html": "Community Action",
   "updates.html": "All updates",
 };
 const returnLinks = (href = "index.html") =>
@@ -160,7 +160,7 @@ async function load() {
       list = [...boothStories, ...wildStories];
       boothStories.forEach((s) => boothSeen.add(s.id));
       index = Math.min(index, Math.max(0, list.length - 1));
-      main.innerHTML = `${modeNote(api.live)}<section class="intro"><p class="eyebrow">01 / Local Wildlife Story</p><span>Look. Learn. Leave space.</span></section><div id="story">${storyHtml(list[index])}</div>${config.boothJoinUrl ? boothPanelHtml(config.boothJoinUrl, qr(config.boothJoinUrl, "Scan to join the Fencepost booth storyboard")) : ""}<section class="home-zones"><a class="zone" href="help.html"><span class="eyebrow">02</span><h2>Is it hurt?</h2><p>Read practical guidance without a phone.</p></a><a class="zone" href="animals.html"><span class="eyebrow">03</span><h2>Meet the animals</h2><p>Six animals. One small activity each.</p></a><a class="zone" href="community.html"><span class="eyebrow">04</span><h2>Community</h2><p>Optional tasks and sample Community Updates.</p></a></section>`;
+      main.innerHTML = `${modeNote(api.live)}<section class="intro"><p class="eyebrow">01 / Local Stories</p><span>Look. Learn. Leave space.</span></section><div id="story">${storyHtml(list[index])}</div>${config.boothJoinUrl ? boothPanelHtml(config.boothJoinUrl, qr(config.boothJoinUrl, "Scan to join the Fencepost booth storyboard")) : ""}<section class="home-zones"><a class="zone" href="animals.html"><span class="eyebrow">02</span><h2>Explore &amp; Play</h2><p>Six animals. One small activity each.</p></a><a class="zone" href="help.html"><span class="eyebrow">03</span><h2>Clear Help</h2><p>Is it hurt? Practical guidance without a phone.</p></a><a class="zone" href="community.html"><span class="eyebrow">05</span><h2>Community Action</h2><p>Optional tasks and sample Community Updates.</p></a></section>`;
       scheduleStory();
     } else if (page === "story.html") {
       const all = await api.stories(),
@@ -174,7 +174,7 @@ async function load() {
       main.innerHTML =
         returnLinks() +
         intro(
-          "03 / Meet the animals",
+          "02 / Explore &amp; Play",
           "Who shares our neighbourhood?",
           "Choose an animal. Learn one fact and try a short activity.",
         ) +
@@ -183,7 +183,7 @@ async function load() {
       const s = selectedSpecies();
       main.innerHTML =
         returnLinks("animals.html") +
-        `<article class="species-detail">${image(s.image, s.name)}<div><p class="eyebrow">03 / Meet the animals</p><h1>${esc(s.name)}</h1><p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="guidance">${esc(s.advice)}</p><aside class="fact"><strong>Wildlife fact · source linked</strong><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p></aside><a class="link-button activity-start" href="activity.html?animal=${s.id}">Start a mini quiz together →</a></div></article>`;
+        `<article class="species-detail">${image(s.image, s.name)}<div><p class="eyebrow">02 / Explore &amp; Play</p><h1>${esc(s.name)}</h1><p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="guidance">${esc(s.advice)}</p><aside class="fact"><strong>Wildlife fact · source linked</strong><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p></aside><a class="link-button activity-start" href="activity.html?animal=${s.id}">Start a mini quiz together →</a></div></article>`;
     } else if (page === "activity.html") {
       const s = selectedSpecies();
       main.innerHTML =
@@ -197,7 +197,7 @@ async function load() {
       main.innerHTML =
         returnLinks() +
         intro(
-          "02 / Is it hurt?",
+          "03 / Clear Help",
           "Stay safe. Ask a wildlife rescuer.",
           "Keep children and pets away. Do not touch, feed or chase wildlife.",
         ) +
@@ -220,7 +220,7 @@ async function load() {
       main.innerHTML =
         returnLinks() +
         intro(
-          "04 / Community",
+          "05 / Community Action",
           "Care for the places we share.",
           "Participation is voluntary. Volunteers do not handle wildlife.",
         ) +
@@ -235,7 +235,7 @@ async function load() {
       main.innerHTML =
         returnLinks("community.html") +
         intro(
-          "04 / Community Updates",
+          "05 / Community Updates",
           "Small actions. Shared care.",
           "These exhibition samples show how an activity could become a Community Update.",
         ) +

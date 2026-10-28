@@ -60,5 +60,5 @@ export function boothStoryHtml(s, position = "") {
 }
 
 export function boothPanelHtml(url, qrHtml) {
-  return `<section class="booth-panel" aria-label="Add your sighting"><div>${qrHtml}</div><div><p class="eyebrow">Fencepost booth storyboard</p><h2>Add your possum sighting</h2><p>Scan to join the booth storyboard on your phone. <strong>What you post there appears on this screen.</strong> You can delete it from your phone at any time and it leaves the screen within seconds.</p></div></section>`;
+  return `<section class="booth-panel" aria-label="Add your sighting"><div>${qrHtml}</div><div><p class="eyebrow">04 / Optional sharing</p><h2>Add your possum sighting</h2><p>Scan to join the booth storyboard on your phone. <strong>What you post there appears on this screen.</strong> You can delete it from your phone at any time and it leaves the screen within seconds.</p></div></section>`;
 }
