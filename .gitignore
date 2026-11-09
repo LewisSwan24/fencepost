@@ -3,7 +3,6 @@
 __pycache__/
 *.db
 docs/
-CLAUDE.md
 tests/redline_report_*.md
 .vercel/
 tests/nonenglish_report_*.md
@@ -21,9 +20,6 @@ joincode*.txt
 # and this one was missed, which is the more dangerous half of the same pair: a join code
 # can be revoked, while a password opens an account from anywhere until it is changed.
 demo-secrets.txt
-
-.agents/
-skills-lock.json
 
 # arduino-cli build output for the share tag
 hardware/share-tag/build/
