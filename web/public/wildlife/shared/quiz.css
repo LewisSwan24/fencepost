@@ -183,6 +183,8 @@
   font-weight: 700;
   text-decoration-thickness: 1px;
   text-underline-offset: 5px;
+  /* The arrow is its own element, and a flex row drops the space typed after it. */
+  gap: 0.28em;
 }
 .animal-quiz .quiz-total {
   font-size: 36px;

@@ -14,7 +14,7 @@ export const metadata = { title: "Fencepost — image credits" };
 export default function Credits() {
   return (
     <div className={styles.page}>
-      <a className={styles.back} href="/">← Fencepost</a>
+      <a className={styles.back} href="/" aria-label="Back to Fencepost">Fencepost</a>
       <h1 className={styles.title}>Image credits</h1>
 
       <p className={styles.lede}>

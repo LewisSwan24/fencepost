@@ -28,7 +28,7 @@ export function mountActivity(
   const button = (label, action) =>
     `<button type="button" data-quiz-option data-quiz-action="${action}">${label}</button>`;
   const returnLink = () =>
-    `<a class="quiz-return" data-quiz-option href="${esc(animalUrl)}">← ${esc(animal.name)}</a>`;
+    `<a class="quiz-return" data-quiz-option href="${esc(animalUrl)}" aria-label="Back to ${esc(animal.name)}"><span class="back-arrow" aria-hidden="true">←</span> ${esc(animal.name)}</a>`;
   const source = (q) =>
     `<p class="quiz-source">Wildlife information · <a class="out-link" href="${esc(q.source.url)}" target="_blank" rel="noreferrer"><span>${esc(q.source.title)}</span> <span class="out-arrow">↗</span></a></p>`;
   function draw(focus = true) {

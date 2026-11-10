@@ -225,13 +225,13 @@ export async function mount(root) {
           const comments = await api.comments(s.id);
           // The neighbour's words lead; checked information follows under its own label, so
           // the two are never read as one voice. Safety and privacy sit beside them.
-          html = `<a class="return-link" href="#stories">← Stories</a><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<div class="story-layout"><div class="story-main"><p class="eyebrow">Resident observation</p><p class="story-lede">${esc(s.storyText)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}</div><aside class="story-aside"><section class="notice"><h2>Safe response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><a class="go-link" href="#help">If it may be hurt</a></section><section class="privacy-note"><p class="eyebrow">Public privacy information</p><p class="small">Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p class="small">Reviewed by ${esc(s.reviewedBy)}</p></section></aside></div>${discussionHtml(s.id, comments)}`;
+          html = `<a class="return-link" href="#stories" aria-label="Back to Stories">Stories</a><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<div class="story-layout"><div class="story-main"><p class="eyebrow">Resident observation</p><p class="story-lede">${esc(s.storyText)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}</div><aside class="story-aside"><section class="notice"><h2>Safe response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><a class="go-link" href="#help">If it may be hurt</a></section><section class="privacy-note"><p class="eyebrow">Public privacy information</p><p class="small">Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p class="small">Reviewed by ${esc(s.reviewedBy)}</p></section></aside></div>${discussionHtml(s.id, comments)}`;
         }
       } else if (section === "learn") {
         html = `<h1>Meet the animals</h1><div class="story-grid">${species.map((s) => `<article class="mobile-card">${image(s.image, s.name)}<div class="card-body"><h3>${esc(s.name)}</h3><p>${esc(s.fact)}</p><a class="card-link" href="#species/${s.id}" aria-label="About the ${esc(s.name)}">About this animal →</a></div></article>`).join("")}</div>`;
       } else if (section === "species") {
         const s = species.find((x) => x.id === param) || species[0];
-        html = `<a class="return-link" href="#learn">← Learn</a><h1>${esc(s.name)}</h1>${image(s.image, s.name, "detail-image")}<p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="notice"><strong>Safe Response</strong><br>${esc(s.advice)}</p><h2>Wildlife fact</h2><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p><a class="link-button" href="#activity/${s.id}">Start the quiz</a>`;
+        html = `<a class="return-link" href="#learn" aria-label="Back to Learn">Learn</a><h1>${esc(s.name)}</h1>${image(s.image, s.name, "detail-image")}<p><i>${esc(s.scientific)}</i></p><dl><dt>Active time</dt><dd>${esc(s.active)}</dd><dt>Habitat</dt><dd>${esc(s.habitat)}</dd><dt>Behaviour</dt><dd>${esc(s.behaviour)}</dd></dl><p class="notice"><strong>Safe Response</strong><br>${esc(s.advice)}</p><h2>Wildlife fact</h2><p>${esc(s.fact)}</p>${sourceLink(s.source)}<p class="small">${esc(s.sourceStatus)}</p><a class="link-button" href="#activity/${s.id}">Start the quiz</a>`;
       } else if (section === "activity") {
         const s = species.find((x) => x.id === param) || species[0];
         html =
@@ -267,14 +267,14 @@ export async function mount(root) {
           .join("")}</div>`;
       } else if (section === "updates") {
         const updates = await api.outcomes();
-        html = `<a class="return-link" href="#community">← Community</a><h1>Community Updates</h1><p>Fictional exhibition samples. No real event or measured impact is claimed.</p><div class="update-grid">${updates
+        html = `<a class="return-link" href="#community" aria-label="Back to Community">Community</a><h1>Community Updates</h1><p>Fictional exhibition samples. No real event or measured impact is claimed.</p><div class="update-grid">${updates
           .filter((o) => o.id !== "outcome-demo")
           .map((o) => outcomeCard(o, "#update/" + o.id))
           .join("")}</div>`;
       } else if (section === "update") {
         const update = (await api.outcomes()).find((o) => o.id === param);
         html =
-          '<a class="return-link" href="#community">← Community</a>' +
+          '<a class="return-link" href="#community" aria-label="Back to Community">Community</a>' +
           (update
             ? outcomeDetail(
                 update,
@@ -306,7 +306,7 @@ export async function mount(root) {
                 `<article class="notice"><h2>${esc(r.reference)}</h2><p>${esc(r.nickname)} · ${esc(r.email)}</p><p>${r.adults} adults · ${r.children} supervised children · ${esc(r.preferredRole)}</p><p>Status: ${r.status === "cancelled" ? "Registration cancelled" : "Registration active"}</p>${button("Edit", "edit-registration", `data-id="${r.id}"`)}${button(r.status === "cancelled" ? "Restore" : "Cancel", "toggle-registration", `data-id="${r.id}"`)}</article>`,
             )
             .join("") || "<p>No registrations in this browser.</p>"
-        }<a href="#register/habitat-demo">Submit a new registration</a>`;
+        }<a class="go-link" href="#register/habitat-demo">Submit a new registration</a>`;
       } else if (section === "moderator") {
         html = await moderatorHtml(param);
       } else
@@ -364,7 +364,7 @@ export async function mount(root) {
     return `<h1>Is it hurt? What should I do?</h1><p>Observe from a safe distance. Do not touch, feed or chase wildlife. Keep children and pets away.</p><div class="help-options">${HELP_OPTIONS.map((x, i) => button(x, "guidance", `data-index="${i}" aria-pressed="false"`)).join("")}</div><div id="guidance" role="status"></div><h2>Professional contacts</h2>${contactOptions()}${contacts.length ? contacts.map((c) => `<article class="notice"><strong>${esc(c.name)}</strong><p>${esc(c.phone)}</p>${sourceLink(c.sourceUrl, "Official source")}<p>Reviewed: ${esc(c.reviewedAt)}</p></article>`).join("") : ""}<p>Check your state wildlife service’s official website. This prototype cannot dispatch assistance.</p>${sourceLink("https://www.qld.gov.au/environment/plants-animals/animals/care-injured-wildlife", "Queensland Government wildlife guidance")}<p class="small">Source review pending; no official contact numbers are invented.</p>`;
   }
   function opportunityHtml(o) {
-    return `<a class="return-link" href="#community">← Community</a>${image(o.image || "illustration:volunteers", o.title, "detail-image")}<h1>${esc(o.title)}</h1><p class="label">${isVerifiedOpportunity(o) ? "Verified opportunity" : "SAMPLE COMMUNITY ACTIVITY — PROTOTYPE ONLY"}</p><p>${esc(o.description)}</p><dl>${[
+    return `<a class="return-link" href="#community" aria-label="Back to Community">Community</a>${image(o.image || "illustration:volunteers", o.title, "detail-image")}<h1>${esc(o.title)}</h1><p class="label">${isVerifiedOpportunity(o) ? "Verified opportunity" : "SAMPLE COMMUNITY ACTIVITY — PROTOTYPE ONLY"}</p><p>${esc(o.description)}</p><dl>${[
       ["Location", o.publicArea],
       ["Date", o.dateConfirmed ? o.date : "To be confirmed"],
       ["Time", o.startTime || "To be confirmed"],

@@ -30,7 +30,13 @@ beforeEach(async () => {
   await settle();
 });
 
-const arrow = String.fromCodePoint(0x2192);
+const arrows = [0x2190, 0x2192].map((c) => String.fromCodePoint(c));
+// What a screen reader is given: the label, without anything marked as decoration.
+const spoken = (a) => {
+  const copy = a.cloneNode(true);
+  copy.querySelectorAll("[aria-hidden]").forEach((n) => n.remove());
+  return copy.textContent.trim();
+};
 
 test("the help link beside a story is a go-link with no arrow in its name", async () => {
   const story = root.querySelector('a[href^="#story/"]');
@@ -44,11 +50,11 @@ test("the help link beside a story is a go-link with no arrow in its name", asyn
 
 test("no link that stands alone carries a typed arrow", async () => {
   const story = root.querySelector('a[href^="#story/"]').getAttribute("href");
-  for (const hash of ["#", story, "#share", "#community"]) {
+  for (const hash of ["#", story, "#share", "#community", "#updates", "#species/brushtail", "#activity"]) {
     await go(hash);
     // Cards keep their own hidden label; the link covers the whole card and draws its arrow.
     const typed = [...root.querySelectorAll("a:not(.card-link):not(.link-button)")].filter((a) =>
-      a.textContent.includes(arrow),
+      arrows.some((arrow) => spoken(a).includes(arrow)),
     );
     assert.deepEqual(
       typed.map((a) => a.textContent),
@@ -56,6 +62,29 @@ test("no link that stands alone carries a typed arrow", async () => {
       `on ${hash}`,
     );
   }
+});
+
+test("a link back says where it goes back to, in words", async () => {
+  const story = root.querySelector('a[href^="#story/"]').getAttribute("href");
+  for (const [hash, place] of [
+    [story, "Stories"],
+    ["#species/brushtail", "Learn"],
+    ["#updates", "Community"],
+  ]) {
+    await go(hash);
+    const back = root.querySelector(".return-link");
+    assert.ok(back, `no way back on ${hash}`);
+    assert.equal(back.textContent, place);
+    assert.equal(back.getAttribute("aria-label"), "Back to " + place);
+  }
+});
+
+test("the quiz's way back keeps its arrow for the display, as decoration", async () => {
+  await go("#activity");
+  const back = root.querySelector(".quiz-return");
+  assert.ok(back, "the quiz has no way back");
+  assert.ok(back.querySelector('.back-arrow[aria-hidden="true"]'));
+  assert.match(back.getAttribute("aria-label"), /^Back to /);
 });
 
 test("the link back from a form sentence stays a link in the sentence", async () => {

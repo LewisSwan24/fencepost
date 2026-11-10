@@ -1,6 +1,21 @@
 .page { padding: max(28px, env(safe-area-inset-top)) 20px max(32px, env(safe-area-inset-bottom)); }
-.back { font-size: var(--fs-xs); color: var(--text-dim); text-decoration: none; }
-.back:hover { color: var(--text); }
+/* The way back, drawn as on the park pages: an arrow in a ring, then where it leads. */
+.back { gap: 12px; font-size: var(--fs-md); font-weight: 600; color: var(--accent); text-decoration: none; }
+.back::before {
+  content: "\2190";
+  content: "\2190" / "";
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  transition: background-color 0.15s, color 0.15s, transform 0.15s ease;
+}
+.back:hover::before { background: var(--accent); color: var(--on-accent); transform: translateX(-3px); }
 .title { font-size: var(--fs-display); margin: 16px 0 14px; }
 .lede { font-size: var(--fs-md); line-height: 1.65; color: var(--text-body); margin: 0 0 16px; text-wrap: pretty; }
 .lede a { color: var(--accent-hover); }

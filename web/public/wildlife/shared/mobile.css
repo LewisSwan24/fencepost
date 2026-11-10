@@ -260,12 +260,24 @@
   font-size: var(--fs-xs);
   font-weight: 400;
 }
+/* Sign in and My activity are the same small outlined button as Log out beside them, so
+   the header has one kind of control and no underlined text standing in for one. */
 .fencepost-app .account-header a {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  padding: 6px var(--s4);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-pill);
+  color: var(--ink);
   font-weight: 600;
+  text-decoration: none;
   white-space: nowrap;
+  transition: background-color 0.15s;
+}
+.fencepost-app .account-header a:hover {
+  background: var(--tint);
+  color: var(--ink);
 }
 /* The demo notice: one quiet line under the header, not a band above every title. */
 .fencepost-app .mode-note {
@@ -425,8 +437,7 @@
   :is(
     .card-link,
     .opportunity-card .link-button,
-    .update-card .link-button,
-    .return-link
+    .update-card .link-button
   ) {
   display: inline-flex;
   align-items: center;
@@ -445,8 +456,7 @@
   :is(
       .card-link,
       .opportunity-card .link-button,
-      .update-card .link-button,
-      .return-link
+      .update-card .link-button
     ):hover {
   background: none;
   color: var(--accent);
@@ -468,6 +478,8 @@
   color: var(--ink);
 }
 .fencepost-app .go-link::after,
+.fencepost-app .return-link::before,
+.fencepost-app .quiz-return .back-arrow,
 .fencepost-app
   :is(.mobile-card, .opportunity-card, .update-card)
   :is(.card-link, .link-button):not(.related-link)::before {
@@ -497,6 +509,37 @@
   background: var(--ink);
   color: #fff;
   transform: translateX(3px);
+}
+/* The way back is the same link turned round: the ring first, pointing left, then the name
+   of the place. The quiz's way back is shared with the park display, which needs the arrow
+   typed, so there the ring is drawn round the arrow already in the markup. */
+.fencepost-app :is(.return-link, .animal-quiz .quiz-return) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+.fencepost-app :is(.return-link, .animal-quiz .quiz-return):hover {
+  color: var(--ink);
+}
+.fencepost-app .return-link::before {
+  content: "\2190";
+  content: "\2190" / "";
+}
+.fencepost-app .return-link:hover::before,
+.fencepost-app .quiz-return:hover .back-arrow {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  transform: translateX(-3px);
 }
 /* Inside a sentence it stays a link in the sentence: underlined words, a bare arrow. */
 .fencepost-app p > .go-link {
@@ -1275,9 +1318,25 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+  /* A phone has no room for the name beside two buttons: with it, Log out was squeezed onto
+     two lines and ran off the edge. The name is on the activity page. A longer pair of
+     buttons (a moderator's) drops to a row of its own. */
+  .fencepost-app .mobile-header {
+    flex-wrap: wrap;
+    gap: var(--s2) var(--s3);
+  }
   .fencepost-app .account-header {
-    gap: 10px;
+    gap: var(--s2);
+    margin-left: auto;
     font-size: var(--fs-xs);
+  }
+  .fencepost-app .account-header > span {
+    display: none;
+  }
+  .fencepost-app .account-header :is(a, button) {
+    padding: 6px var(--s3);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
   }
   .fencepost-app footer {
     padding: var(--s3) var(--gutter);
@@ -1293,4 +1352,10 @@
   .fencepost-app * {
     transition: none !important;
   }
+}
+
+/* The update page is laid out for the park display at 1000px and centred; here it lines up
+   with the way back above it. */
+.fencepost-app .update-detail {
+  max-width: none;
 }

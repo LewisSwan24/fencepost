@@ -112,7 +112,7 @@ export default function Study() {
 
   return (
     <main className={styles.page}>
-      <a className={styles.back} href="/">← Fencepost</a>
+      <a className={styles.back} href="/" aria-label="Back to Fencepost">Fencepost</a>
       <h1 className={styles.title}>{COPY.studyTitle}</h1>
       <p className={styles.lede}>{COPY.studyLede}</p>
       {body}
