@@ -635,24 +635,91 @@
 
 /* ----------------------------------------------------------------- cards */
 
-/* No box: the picture, then the words under it. */
+/* A card is one link. Picture, title and summary share one surface, and anywhere on it goes
+   where the card's link goes: the link's ::after covers the card. The link names its
+   destination in its aria-label, so on screen it is only an arrow. The markup is shared
+   with the park display, so all of this is CSS, scoped to the web app. */
 .fencepost-app :is(.mobile-card, .opportunity-card, .update-card) {
+  position: relative;
   margin: 0;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: none;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-media);
+  background: var(--surface);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .fencepost-app :is(.mobile-card, .opportunity-card, .update-card) > :is(img, .illustrated) {
   display: block;
   width: 100%;
   height: 230px;
   object-fit: cover;
-  border-radius: var(--r-media);
+  border-radius: 0;
   overflow: hidden;
 }
 .fencepost-app :is(.mobile-card, .opportunity-card, .update-card) > .card-body {
-  padding: 18px 0 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s5) var(--s5) var(--s2);
+}
+.fencepost-app :is(.mobile-card, .opportunity-card, .update-card) :is(img, .art) {
+  transition: transform 0.25s ease;
+}
+.fencepost-app :is(.mobile-card, .opportunity-card, .update-card):hover {
+  border-color: var(--field);
+  box-shadow: 0 8px 24px rgba(36, 36, 30, 0.08);
+}
+.fencepost-app :is(.mobile-card, .opportunity-card, .update-card):hover :is(img, .art) {
+  transform: scale(1.03);
+}
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card)
+  :is(.card-link, .link-button):not(.related-link) {
+  align-self: flex-end;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  margin-top: auto;
+  font-size: 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card)
+  :is(.card-link, .link-button):not(.related-link)::before {
+  content: "\2192";
+  font-size: var(--fs-lg);
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card)
+  :is(.card-link, .link-button):not(.related-link)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card):hover
+  :is(.card-link, .link-button):not(.related-link)::before {
+  transform: translateX(4px);
+}
+/* Focus is drawn round the whole card, which is what the link stands for. */
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card)
+  :is(.card-link, .link-button):focus-visible {
+  outline: none;
+}
+.fencepost-app :is(.mobile-card, .opportunity-card, .update-card):has(:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+/* An update card's second link sits above the cover, so it still goes where it says. */
+.fencepost-app .update-card .related-link {
+  position: relative;
+  z-index: 2;
 }
 /* A card's picture carries no caption bar: the detail page and Image credits keep the
    credit. */
@@ -684,6 +751,14 @@
   .fencepost-app .story-grid > .mobile-card > :is(img, .illustrated) {
     height: 220px;
   }
+  /* Cards in a row are as tall as the tallest, with the arrow at each one's foot. */
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) > * {
+    display: flex;
+    flex-direction: column;
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) > * > .card-body {
+    flex: 1;
+  }
 }
 /* Every story in the list said "Neighbour Observation · Sample"; the site notice and the
    story page say it once, and repeating it on each card buried the titles. Activity and
@@ -699,15 +774,18 @@
 .fencepost-app .featured-story {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--s6);
-  align-items: center;
+  align-items: stretch;
 }
 .fencepost-app .featured-story > :is(img, .illustrated) {
   height: 100%;
   min-height: 360px;
 }
 .fencepost-app .featured-story > .card-body {
-  padding: 0;
+  justify-content: center;
+  padding: var(--s6) var(--s6) var(--s3);
+}
+.fencepost-app .featured-story :is(.card-link, .link-button) {
+  margin-top: var(--s3);
 }
 .fencepost-app .featured-story h2 {
   margin: 0 0 var(--s2);
@@ -1075,7 +1153,7 @@
     height: 240px;
   }
   .fencepost-app .featured-story > .card-body {
-    padding: 18px 0 0;
+    padding: var(--s4) var(--s4) var(--s1);
   }
   /* Lists: a square picture beside the title, the meta line and the link. The summary
      waits for the story page. About a third of the old height per card. */
@@ -1088,6 +1166,7 @@
     grid-template-columns: 96px minmax(0, 1fr);
     gap: 0 var(--s4);
     align-items: start;
+    padding: var(--s3);
   }
   .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) > * > :is(img, .illustrated) {
     width: 96px;
@@ -1110,9 +1189,6 @@
     .card-body
     > :is(p:not(.card-meta, .status-label), .small, .review-label, dl) {
     display: none;
-  }
-  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) :is(.card-link, .link-button) {
-    font-size: var(--fs-sm);
   }
   .fencepost-app .related-link {
     display: none;
