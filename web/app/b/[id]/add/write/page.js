@@ -60,7 +60,7 @@ export default function WriteItUp({ params }) {
       <div className={ui.body}>
         <div className={styles.head}>
           <div>
-            <h1 className={ui.h1} style={{ margin: 0, fontSize: 24 }}>
+            <h1 className={ui.h1} style={{ margin: 0 }}>
               Write it up
             </h1>
             <div className={styles.chosen}>{SPECIES_LABEL[draft.species]}</div>

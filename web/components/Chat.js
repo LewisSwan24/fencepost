@@ -57,7 +57,7 @@ export default function Chat({ storyboardId, onClose }) {
 
   return (
     <Sheet onClose={onClose} labelledBy="chat-title">
-      <h2 id="chat-title" className={ui.sheetTitle} style={{ fontSize: 16, marginBottom: 14 }}>
+      <h2 id="chat-title" className={ui.sheetTitle} style={{ fontSize: "var(--fs-md)", marginBottom: 14 }}>
         Possum Help
       </h2>
 

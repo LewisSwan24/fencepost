@@ -1,54 +1,61 @@
 .log { max-height: 46dvh; overflow-y: auto; padding-bottom: 6px; }
 .log::-webkit-scrollbar { width: 0; }
-.disclosure { font-size: 15px; line-height: 1.65; color: var(--text-body); margin: 0; text-wrap: pretty; }
+.disclosure { font-size: var(--fs-md); line-height: 1.65; color: var(--text-body); margin: 0; text-wrap: pretty; }
 .disclosure strong { font-weight: 700; color: var(--text); }
 .offline {
   padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--line);
-  font-size: 14.5px; line-height: 1.6; color: var(--text-muted); margin: 0; text-wrap: pretty;
+  font-size: var(--fs-md); line-height: 1.6; color: var(--text-muted); margin: 0; text-wrap: pretty;
 }
 .rowMe { display: flex; justify-content: flex-end; margin-top: 14px; }
 .rowIt { display: flex; margin-top: 14px; }
 /* The assistant side has no avatar and no name label. It is a passage of text. */
 .me {
   max-width: 84%; padding: 10px 15px; border-radius: var(--radius-md);
-  background: var(--surface-raised); font-size: 14.5px; line-height: 1.55;
+  background: var(--surface-raised); font-size: var(--fs-md); line-height: 1.55;
 }
-.it { max-width: 100%; font-size: 15px; line-height: 1.65; color: var(--text-body); text-wrap: pretty; }
-.working { margin-top: 16px; font-size: 14px; }
+.it { max-width: 100%; font-size: var(--fs-md); line-height: 1.65; color: var(--text-body); text-wrap: pretty; }
+.working { margin-top: 16px; font-size: var(--fs-sm); }
 
 .chips { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
 .chip {
   width: 100%; text-align: left; padding: 11px 15px; border: 1px solid var(--line);
   border-radius: var(--radius-md); background: transparent; color: var(--text-muted);
-  font-size: 13.5px; line-height: 1.45;
+  font-size: var(--fs-sm); line-height: 1.45;
 }
-.chip:hover { background: rgba(244, 235, 220, 0.06); color: var(--text); }
+.chip:hover { background: var(--surface-raised); color: var(--text); }
 
 .compose { display: flex; align-items: center; gap: 9px; margin-top: 16px; }
 .input {
   flex: 1; min-width: 0; height: 48px; padding: 0 18px; border-radius: var(--radius-pill);
-  border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: 14.5px;
+  border: 1px solid var(--field); background: var(--surface); color: var(--text); font-size: var(--fs-md);
 }
-.input:focus { border-color: var(--accent-hover); outline: none; }
+.input:focus { border-color: var(--accent-hover); outline: 2px solid var(--accent-hover); outline-offset: 1px; }
 .send {
   width: 48px; height: 48px; flex: none; border: 0; border-radius: 999px;
   background: var(--accent); color: var(--on-accent);
   display: flex; align-items: center; justify-content: center;
 }
-.send:hover:not(:disabled) { background: var(--accent-hover); }
+.send:hover:not(:disabled) { background: var(--accent-active); }
 
 /* These answers are pre-written. Quiet, but in the drawer rather than the footer — the
    thought that you are talking to an AI forms right here. */
 .study {
   margin: 12px 0 0; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--line);
-  font-size: 13.5px; line-height: 1.55; color: var(--text-body); text-wrap: pretty;
+  font-size: var(--fs-sm); line-height: 1.55; color: var(--text-body); text-wrap: pretty;
 }
 .studyText { margin: 0; }
 .studyStop {
   margin-top: 10px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--line);
-  background: none; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  background: none; color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
 }
-.studyStop:hover { background: rgba(244, 235, 220, 0.07); }
+.studyStop:hover { background: var(--surface-raised); }
 .canned {
-  margin: 10px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim);
+  margin: 10px 0 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim);
+}
+
+/* Every control a finger can land on is at least 44px tall (2026-11-10). */
+.chip {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
 }

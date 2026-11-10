@@ -5,7 +5,7 @@
   margin: 18px 0 20px;
 }
 .chosen {
-  font-size: 12.5px;
+  font-size: var(--fs-xs);
   color: var(--text-dim);
   margin-top: 3px;
 }
@@ -21,7 +21,7 @@
 }
 .labelRow label,
 .label {
-  font-size: 13px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   display: block;
   margin-bottom: 7px;
@@ -30,25 +30,26 @@
   margin-bottom: 0;
 }
 .optional {
-  font-size: 12px;
+  font-size: var(--fs-xs);
   color: var(--text-faint);
 }
 .input {
   width: 100%;
   padding: 13px 15px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--line);
+  border: 1px solid var(--field);
   background: var(--surface);
   color: var(--text);
-  font-size: 14.5px;
+  font-size: var(--fs-md);
   line-height: 1.6;
   resize: vertical;
 }
 .input:focus {
   border-color: var(--accent-hover);
-  outline: none;
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 1px;
 }
 .error {
   color: var(--accent-hover);
-  font-size: 13.5px;
+  font-size: var(--fs-sm);
 }

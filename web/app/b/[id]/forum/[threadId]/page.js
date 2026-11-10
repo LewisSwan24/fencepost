@@ -210,7 +210,7 @@ export default function Thread({ params }) {
       {clearing ? (
         <Sheet onClose={() => setClearing(null)} labelledBy="clear-title">
           <h2 id="clear-title" className={ui.sheetTitle}>{COPY.removeTitle}</h2>
-          <p style={{ fontSize: 14.5, lineHeight: 1.6, color: "var(--text-body)",
+          <p style={{ fontSize: "var(--fs-md)", lineHeight: 1.6, color: "var(--text-body)",
                       margin: "0 0 20px" }}>
             {COPY.removeBody}
           </p>
@@ -226,7 +226,7 @@ export default function Thread({ params }) {
       {confirming ? (
         <Sheet onClose={() => setConfirming(null)} labelledBy="take-down-title">
           <h2 id="take-down-title" className={ui.sheetTitle}>{COPY.deletePostTitle}</h2>
-          <p style={{ fontSize: 14.5, lineHeight: 1.6, color: "var(--text-body)",
+          <p style={{ fontSize: "var(--fs-md)", lineHeight: 1.6, color: "var(--text-body)",
                       margin: "0 0 20px" }}>
             {COPY.deletePostBody}
           </p>

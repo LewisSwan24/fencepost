@@ -30,13 +30,17 @@ const ROWS = pattern();
 
 export default function QrPlaceholder({ cell = 9 }) {
   return (
+    // Fixed colours, the same as QrCode.js: dark modules on a light square whatever the
+    // theme. Theme tokens inverted it when the site went light (2026-11-10), and an inverted
+    // code is one some phone cameras will not read.
     <div aria-hidden="true"
-         style={{ padding: 14, borderRadius: "var(--radius-md)", background: "var(--text)" }}>
+         style={{ padding: 14, borderRadius: "var(--radius-md)", background: "#f4ebdc",
+                  outline: "1px solid var(--line)" }}>
       {ROWS.map((row, y) => (
         <div key={y} style={{ display: "flex" }}>
           {row.map((on, x) => (
             <span key={x} style={{ width: cell, height: cell,
-                                   background: on ? "var(--on-accent)" : "transparent" }} />
+                                   background: on ? "#0f0d0b" : "transparent" }} />
           ))}
         </div>
       ))}

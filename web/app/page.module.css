@@ -2,20 +2,20 @@
   display: flex; align-items: center; justify-content: space-between;
   padding: max(12px, env(safe-area-inset-top)) 20px 2px; flex: none;
 }
-.wordmark { font-family: var(--font-display), serif; font-size: 19px; letter-spacing: -0.01em; }
+.wordmark { font-family: var(--font-display), serif; font-size: var(--fs-lg); letter-spacing: -0.01em; }
 .who {
   display: flex; align-items: center; gap: 7px; padding: 5px 12px 5px 8px;
   border-radius: var(--radius-pill); background: var(--surface);
-  font-size: 12.5px; color: var(--text-muted);
+  font-size: var(--fs-xs); color: var(--text-muted);
 }
 .who { text-decoration: none; }
 .who:hover .initials { color: var(--text); }
 .initials {
-  width: 20px; height: 20px; border-radius: 999px; background: var(--color-accent-2-800);
-  color: var(--color-accent-2-300); font-size: 10px; font-weight: 700;
+  width: 20px; height: 20px; border-radius: 999px; background: var(--leaf-wash);
+  color: var(--leaf); font-size: var(--fs-xs); font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
-.title { font-size: 28px; margin: 14px 0 22px; }
+.title { font-size: var(--fs-display); margin: 14px 0 22px; }
 
 /* The card is an <a>, so the browser underlines the title inside it. The whole card is the
    target — it has a border, a background and a picture — and an underline on one line of
@@ -27,17 +27,17 @@
   border: 0; background: var(--surface); border-radius: var(--radius-lg);
   overflow: hidden; color: inherit; text-decoration: none;
 }
-.cardPast { background: #211c17; }
+.cardPast { background: var(--surface-raised); }
 .cardBody { padding: 14px 16px 16px; }
-.cardTitle { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
-.cardTitlePast { font-size: 18px; color: var(--text-muted); }
+.cardTitle { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.01em; line-height: 1.25; }
+.cardTitlePast { font-size: var(--fs-md); color: var(--text-muted); }
 .meta {
   display: flex; align-items: center; gap: 8px; margin-top: 7px;
-  font-size: 12.5px; color: var(--text-dim); white-space: nowrap; flex-wrap: wrap;
+  font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; flex-wrap: wrap;
 }
-.dot { width: 3px; height: 3px; border-radius: 999px; background: var(--color-neutral-700); }
+.dot { width: 3px; height: 3px; border-radius: 999px; background: var(--text-faint); }
 .readonly {
-  font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase;
   padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-strong);
   color: var(--text-dim);
 }
@@ -47,9 +47,9 @@
   position: sticky; bottom: 0; margin-left: auto;
   display: block; width: 58px; height: 58px; border-radius: 999px; border: 0;
   background: var(--accent); color: var(--on-accent);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 24px rgba(36, 36, 30, 0.14);
 }
-.new:hover { background: var(--accent-hover); }
+.new:hover { background: var(--accent-active); }
 .newWrap {
   position: sticky; bottom: 0; display: flex; justify-content: flex-end;
   padding: 0 20px max(20px, env(safe-area-inset-bottom));
@@ -59,15 +59,15 @@
 
 .empty {
   padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--line);
-  color: var(--text-dim); font-size: 13.5px;
+  color: var(--text-dim); font-size: var(--fs-sm);
 }
 /* A refused title, in the new-storyboard sheet. Same pair as the forum sheet: the sentence
    that says what to change, then the line saying nothing was lost. */
-.refused { color: var(--accent-hover); font-size: 13.5px; margin: 12px 0 0; }
-.blockedQuiet { color: var(--text-dim); font-size: 13.5px; margin: 4px 0 0; }
+.refused { color: var(--accent-hover); font-size: var(--fs-sm); margin: 12px 0 0; }
+.blockedQuiet { color: var(--text-dim); font-size: var(--fs-sm); margin: 4px 0 0; }
 
 .mode {
-  font-size: 11.5px; color: var(--text-faint); text-align: center;
+  font-size: var(--fs-xs); color: var(--text-faint); text-align: center;
   padding: 8px 20px 0;
 }
 
@@ -77,14 +77,21 @@
 /* Got a code from a neighbour? (#54) */
 .codeForm { margin-top: 8px; }
 .codeForm label { display: block; }
-.codeHint { font-size: 12.5px; color: var(--text-dim); margin: -4px 0 10px; }
+.codeHint { font-size: var(--fs-xs); color: var(--text-dim); margin: -4px 0 10px; }
 .codeRow { display: flex; gap: 8px; }
 .codeInput {
   flex: 1; min-width: 0; height: 48px; padding: 0 16px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 15px;
+  border: 1px solid var(--field); background: var(--bg); color: var(--text); font-size: var(--fs-md);
 }
 .codeGo {
   flex: none; height: 48px; padding: 0 20px; border-radius: 999px; border: 1px solid var(--line-strong);
-  background: transparent; color: var(--text); font-size: 14px; font-weight: 600;
+  background: transparent; color: var(--text); font-size: var(--fs-sm); font-weight: 600;
 }
 .codeGo:disabled { opacity: 0.45; }
+
+/* Every control a finger can land on is at least 44px tall (2026-11-10). */
+.who {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}

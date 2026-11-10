@@ -1,29 +1,29 @@
 .cover { width: 100%; height: 150px; border-radius: var(--radius-lg); background: var(--surface-sunken); }
-.title { font-size: 25px; margin: 16px 0 8px; }
-.meta { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-dim); }
-.dot { width: 3px; height: 3px; border-radius: 999px; background: var(--color-neutral-700); }
+.title { font-size: var(--fs-display); margin: 16px 0 8px; }
+.meta { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-dim); }
+.dot { width: 3px; height: 3px; border-radius: 999px; background: var(--text-faint); }
 .people { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .who {
-  font-size: 12px; padding: 5px 11px; border-radius: 999px;
+  font-size: var(--fs-xs); padding: 5px 11px; border-radius: 999px;
   background: var(--surface); color: var(--text-muted);
 }
 .banner {
   display: flex; gap: 11px; margin-top: 16px; padding: 13px 15px;
   border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--line);
-  font-size: 13.5px; line-height: 1.55; color: var(--text-muted); text-wrap: pretty;
+  font-size: var(--fs-sm); line-height: 1.55; color: var(--text-muted); text-wrap: pretty;
 }
-.rule { height: 1px; background: rgba(244, 235, 220, 0.11); margin: 24px 0 20px; }
+.rule { height: 1px; background: var(--line); margin: 24px 0 20px; }
 
 .entry { margin-bottom: 30px; }
 .entryNew {
   padding: 14px; border-radius: var(--radius-lg);
-  background: var(--accent-wash); outline: 1px solid rgba(246, 160, 107, 0.4);
+  background: var(--accent-wash); outline: 1px solid var(--accent-hover);
 }
 .entryHead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.handle { font-size: 13px; font-weight: 600; }
-.when { font-size: 12px; color: var(--text-dim); }
+.handle { font-size: var(--fs-xs); font-weight: 600; }
+.when { font-size: var(--fs-xs); color: var(--text-dim); }
 .species {
-  margin-left: auto; font-size: 11px; padding: 4px 10px; border-radius: 999px;
+  margin-left: auto; font-size: var(--fs-xs); padding: 4px 10px; border-radius: 999px;
   background: var(--surface-raised); color: var(--text-muted); white-space: nowrap;
 }
 .shot { width: 100%; height: 170px; border-radius: var(--radius-md); background: var(--surface-sunken); }
@@ -31,23 +31,23 @@
   margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--leaf-wash);
 }
 .factKicker {
-  font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: var(--fs-xs); letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--leaf); margin-bottom: 5px;
 }
-.factText { font-size: 13.5px; line-height: 1.5; color: var(--text-body); }
-.story { margin-top: 12px; font-size: 15px; line-height: 1.6; color: var(--text-body); text-wrap: pretty; }
+.factText { font-size: var(--fs-sm); line-height: 1.5; color: var(--text-body); }
+.story { margin-top: 12px; font-size: var(--fs-md); line-height: 1.6; color: var(--text-body); text-wrap: pretty; }
 .toast {
   position: fixed; left: 20px; right: 20px; bottom: 96px; z-index: 20;
   max-width: 390px; margin: 0 auto;
   padding: 13px 18px; border-radius: 999px; background: var(--text); color: var(--on-accent);
-  font-size: 14px; font-weight: 600; text-align: center; animation: fp-fade 0.25s ease;
+  font-size: var(--fs-sm); font-weight: 600; text-align: center; animation: fp-fade 0.25s ease;
 }
 
 .quiet { color: var(--text-dim); }
 .shared {
   display: inline-flex; align-items: center; gap: 8px; margin: 0 8px;
   padding: 6px 13px; border-radius: 999px; background: var(--surface);
-  font-size: 12px; color: var(--text-muted); white-space: nowrap;
+  font-size: var(--fs-xs); color: var(--text-muted); white-space: nowrap;
 }
 
 .forumRow {
@@ -55,8 +55,8 @@
   padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-md);
   background: transparent; color: var(--text);
 }
-.forumRow:hover { background: rgba(244, 235, 220, 0.05); }
-.forumLabel { flex: 1; text-align: left; font-size: 15px; font-weight: 600; }
+.forumRow:hover { background: var(--surface-raised); }
+.forumLabel { flex: 1; text-align: left; font-size: var(--fs-md); font-weight: 600; }
 
 /* The public review label. Leaf green rather than a warning colour: this is not an error,
    it is neighbours checking a detail. */
@@ -64,30 +64,30 @@
 .checkedHead {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
   padding: 10px 14px; border: 0; border-radius: var(--radius-md);
-  background: rgba(174, 191, 146, 0.13); color: var(--color-accent-2-300);
-  font-size: 13px; font-weight: 600;
+  background: var(--leaf-wash); color: var(--leaf);
+  font-size: var(--fs-xs); font-weight: 600;
 }
-.checkedHead:hover { background: rgba(174, 191, 146, 0.2); }
+.checkedHead:hover { background: rgba(47, 93, 67, 0.16); }
 .checkedBody {
   padding: 14px 15px 15px; border-radius: 0 0 var(--radius-md) var(--radius-md);
-  background: rgba(174, 191, 146, 0.07); animation: fp-fade 0.2s ease;
+  background: var(--leaf-wash); animation: fp-fade 0.2s ease;
 }
-.checkedText { font-size: 13.5px; line-height: 1.6; color: var(--text-body); margin: 0; text-wrap: pretty; }
+.checkedText { font-size: var(--fs-sm); line-height: 1.6; color: var(--text-body); margin: 0; text-wrap: pretty; }
 .votes { display: flex; gap: 9px; margin-top: 14px; }
 /* The two vote buttons carry exactly equal weight: neither looks more like the right answer. */
 .vote {
   flex: 1; min-height: 42px; border: 1px solid var(--line-strong);
   border-radius: var(--radius-pill); background: transparent; color: var(--text);
-  font-size: 13.5px; font-weight: 600;
+  font-size: var(--fs-sm); font-weight: 600;
 }
-.vote:hover { background: rgba(244, 235, 220, 0.08); }
-.thanks { margin: 13px 0 0; font-size: 13px; color: var(--leaf); }
+.vote:hover { background: var(--surface-raised); }
+.thanks { margin: 13px 0 0; font-size: var(--fs-xs); color: var(--leaf); }
 
 .actions { display: flex; gap: 10px; }
 .action {
   flex: 1; min-height: 48px; border: 1px solid var(--line);
   border-radius: var(--radius-pill); background: var(--surface); color: var(--text);
-  font-size: 14px; font-weight: 600;
+  font-size: var(--fs-sm); font-weight: 600;
 }
 .action:hover { background: var(--surface-raised); }
 
@@ -101,7 +101,7 @@
 }
 .ownBtn {
   border: 1px solid var(--line); background: transparent; color: var(--text-muted);
-  border-radius: 999px; padding: 7px 15px; font-size: 13px; font-weight: 600;
+  border-radius: 999px; padding: 7px 15px; font-size: var(--fs-xs); font-weight: 600;
   cursor: pointer;
 }
 .ownBtn:hover { color: var(--text); border-color: var(--text-dim); }
@@ -110,18 +110,18 @@
 .editSpecies {
   display: inline-block; margin: 0 0 14px;
   border: 1px solid var(--line); border-radius: 999px;
-  padding: 5px 13px; font-size: 13px; color: var(--text-muted);
+  padding: 5px 13px; font-size: var(--fs-xs); color: var(--text-muted);
 }
 .field { margin-bottom: 14px; }
-.label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 6px; }
+.label { display: block; font-size: var(--fs-xs); color: var(--text-dim); margin-bottom: 6px; }
 .input {
   width: 100%; padding: 11px 13px; border-radius: var(--radius-md);
-  border: 1px solid var(--line); background: var(--bg); color: var(--text);
-  font: inherit; font-size: 15px; line-height: 1.55; resize: vertical;
+  border: 1px solid var(--field); background: var(--bg); color: var(--text);
+  font: inherit; font-size: var(--fs-md); line-height: 1.55; resize: vertical;
 }
 .sheetQuiet {
   width: 100%; margin-top: 10px; padding: 12px; border: 0; background: transparent;
-  color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer;
+  color: var(--text-dim); font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
 }
 
 /* A refused edit. Not an error red: the user did nothing wrong, that passage simply cannot
@@ -131,15 +131,15 @@
   border: 1px solid var(--line); border-radius: var(--radius-md);
   background: var(--surface-sunken);
 }
-.rejectedHead { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
-.rejectedText { font-size: 14px; line-height: 1.55; margin: 0 0 8px; color: var(--text-body); }
+.rejectedHead { font-size: var(--fs-xs); font-weight: 700; margin-bottom: 6px; }
+.rejectedText { font-size: var(--fs-sm); line-height: 1.55; margin: 0 0 8px; color: var(--text-body); }
 
 /* The way into closing. Quiet, but not hidden — rare, irreversible and owner-only. */
 .closeRow {
   display: block; width: 100%; margin-top: 26px; padding: 14px;
   border: 1px solid var(--line); border-radius: var(--radius-md);
   background: transparent; color: var(--text-dim);
-  font-size: 14px; font-weight: 600; cursor: pointer;
+  font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
 }
 .closeRow:hover { color: var(--text); border-color: var(--text-dim); }
 
@@ -151,11 +151,11 @@
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 .closedNoteText {
-  margin: 0; font-size: 15px; line-height: 1.6; color: var(--text-body);
+  margin: 0; font-size: var(--fs-md); line-height: 1.6; color: var(--text-body);
   text-wrap: pretty;
 }
 .closedNoteFrom {
-  display: block; margin-top: 8px; font-size: 12.5px; font-style: normal;
+  display: block; margin-top: 8px; font-size: var(--fs-xs); font-style: normal;
   color: var(--text-dim);
 }
 
@@ -174,7 +174,7 @@
   /* Sized by their words rather than in equal shares: the column is about 430px wide here,
      and equal shares broke "Ask Possum Help" onto two lines. Wrapping is still allowed, so a
      page zoomed to 320 wide grows taller instead of spilling sideways. */
-  div.dock > button { flex: 1 1 auto; width: auto; min-height: 44px; padding: 6px 14px; font-size: 15px; }
+  div.dock > button { flex: 1 1 auto; width: auto; min-height: 44px; padding: 6px 14px; font-size: var(--fs-md); }
   div.dock .actions { flex: 1 1 auto; }
   div.dock .action { flex: 1 1 auto; min-height: 44px; padding: 6px 12px; }
 }
@@ -182,4 +182,12 @@
    stuck to the bottom leaves room to read, so the footer sits at the end of the page. */
 @media (max-height: 260px) {
   div.dock { position: static; background: none; }
+}
+
+/* Every control a finger can land on is at least 44px tall (2026-11-10). */
+.ownBtn,
+.checkedHead {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
 }

@@ -1,65 +1,74 @@
-/* Design-system tokens, from the Claude Design Organic system (_ds/.../styles.css).
-   That system is light, and Fencepost uses a night-time inversion of the same ramps — the
-   hex values in the prototype were not picked by hand: #d67f48 is accent-500, #f6a06b is
-   400, #b2622d is 600, and the greys are neutral-300/400/500/700.
-   So what comes across is the ramps themselves, with semantic tokens built on them rather
-   than scattered hex values copied out. */
+/* One set of values for the whole site, shared with the park pages
+   (public/wildlife/shared/mobile.css, which declares the same values on .fencepost-app).
+
+   Until 2026-11-10 this file held a night-time theme: warm darks, because possums are
+   nocturnal and the product happens between dusk and the small hours. The park pages
+   that replaced the front of the site are light, and moving from one to the other read as
+   two products. The user chose one site (2026-11-10), so the storyboard screens now take
+   the park's paper, ink and terracotta. The night idea survives where it matters, in the
+   camera, which stays dark over the live picture.
+
+   The semantic names are kept, so the CSS modules did not have to change their meaning:
+   --accent is still "the thing you press", it is just green on paper now.
+
+   The original brief asked for one amber or warm-orange accent, for a dark page. On this
+   paper the old orange (#d67f48) carries white text at only 3.0 to 1, and the shade that
+   passes (#9e5326, 5.65 to 1) reads brown. The dark green is the park's and the booth
+   display's, carries white at 12.1 to 1, and is not the bright wildlife-app green the brief
+   ruled out. The user kept it (2026-11-10); terracotta stays for labels and emphasis. */
 
 :root {
-  /* ── Ramps (carried across from the design system as they are) ── */
-  --color-neutral-100: #f9f4ed;
-  --color-neutral-200: #eee7db;
-  --color-neutral-300: #dcd3c4;
-  --color-neutral-400: #c0b6a5;
-  --color-neutral-500: #a19786;
-  --color-neutral-600: #82796a;
-  --color-neutral-700: #645c50;
-  --color-neutral-800: #474238;
-  --color-neutral-900: #2e2b25;
+  /* ── Surfaces ── */
+  --bg-outer: #f5f1e7;       /* behind the content column */
+  --bg: #f5f1e7;             /* the page */
+  --surface: #fffcf5;        /* cards */
+  --surface-raised: #f3ece2; /* things on cards, tinted panels */
+  --surface-sunken: #ebe4d6; /* image slots before the image arrives */
 
-  --color-accent-300: #ffc6a5;
-  --color-accent-400: #f6a06b;
-  --color-accent-500: #d67f48;
-  --color-accent-600: #b2622d;
-  --color-accent-700: #8c491a;
+  /* ── Text, loudest to quietest. test/contrast.test.mjs holds every step to 4.5:1 on the
+     page and on a card, and to this order. Measured on the page: 13.8, 10.4, 7.8, 6.0, 5.0.
+     (No token name followed by a colon in comments here: the test reads this block.) */
+  --text: #24241e;
+  --text-body: #3b3832;
+  --text-muted: #4f4a43;
+  --text-dim: #615a52;
+  --text-faint: #6e665c;
+  --line: #dccfc2;
+  --line-strong: #c9bcae;
+  --field: #6f7d72;          /* field borders, 3.8 to 1 on the page; a border needs 3 */
 
-  --color-accent-2-300: #ccdbb2;
-  --color-accent-2-400: #aebf92;
-  --color-accent-2-800: #3d472b;
+  /* ── Action. Green is for what can be pressed; terracotta marks and labels. ── */
+  --accent: #193c31;
+  --accent-hover: #9e5326;   /* emphasis text and marks, 5.0 to 1 on the page */
+  --accent-active: #0f2a22;  /* a pressed or hovered green button */
+  --on-accent: #ffffff;
+  --accent-wash: rgba(25, 60, 49, 0.08);
+  --danger: #943323;         /* errors, 6.8 to 1 on the page */
 
-  --radius-sm: 8px;
-  --radius-md: 16px;
-  --radius-lg: 28px;
+  --leaf: #2f5d43;           /* the confirming green as text, 6.7 to 1 on the page */
+  --leaf-wash: rgba(47, 93, 67, 0.1);
+
+  /* ── Type: the six sizes the park uses. The page title is the park's phone size here,
+     because these screens are one column wide everywhere. ── */
+  --fs-xs: 13px;
+  --fs-sm: 15px;
+  --fs-md: 17px;
+  --fs-lg: 20px;
+  --fs-xl: 26px;
+  --fs-display: 34px;
+
+  /* ── Space and shape ── */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
   --radius-pill: 999px;
-
-  /* ── The night-time semantic layer ──
-     Possums are nocturnal and the whole product happens between dusk and the small hours.
-     Warm darks, neither blue-black nor pure black. */
-  --bg-outer: #100e0c;       /* outside the content area */
-  --bg: #1a1713;             /* the page */
-  --surface: #241e18;        /* cards */
-  --surface-raised: #2f2820; /* things on cards */
-  --surface-sunken: #14110e; /* image slots */
-
-  --text: #f4ebdc;
-  --text-body: var(--color-neutral-300);
-  --text-muted: var(--color-neutral-400);
-  --text-dim: var(--color-neutral-500);
-  /* The lightest step on this hue that clears 4.5:1 on a card (4.55 on --surface, 4.93 on
-     --bg). It was #7d7365 at 3.54 and 3.84, under small text everywhere it was used (#44).
-     test/contrast.test.mjs holds every text token to 4.5 and to this order. */
-  --text-faint: #908575;
-  --line: rgba(244, 235, 220, 0.14);
-  --line-strong: rgba(244, 235, 220, 0.22);
-
-  --accent: var(--color-accent-500);
-  --accent-hover: var(--color-accent-400);
-  --accent-active: var(--color-accent-600);
-  --on-accent: #201e1d;
-  --accent-wash: rgba(214, 127, 72, 0.12);
-
-  --leaf: var(--color-accent-2-400);
-  --leaf-wash: rgba(174, 191, 146, 0.09);
 }
 
 *,
@@ -78,23 +87,28 @@ body {
   background: var(--bg-outer);
   color: var(--text);
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 15px;
+  font-size: var(--fs-md);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
-/* The display face is reserved for the wordmark. The design system --font-heading is
-   Caprasimo, a heavy display face, and using it for body headings crosses the no-cartoon
-   line — every h1 in the prototype explicitly set the body face back, which was a
-   judgement rather than a coincidence, so it is written down as a rule here. */
+/* Headings in the body face, except the page title, which takes Caprasimo as it does on the
+   park pages (the minimal pass of 2026-10-28 made that the rule there; one site, one rule). */
 h1,
 h2,
 h3 {
   font-family: inherit;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   margin: 0;
+}
+
+h1 {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.1;
 }
 
 button,
@@ -120,8 +134,8 @@ textarea::placeholder {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent-hover);
-  outline-offset: 2px;
+  outline: 3px solid var(--accent-hover);
+  outline-offset: 3px;
 }
 
 a {

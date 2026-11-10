@@ -1,14 +1,14 @@
-.title { font-size: 26px; margin: 16px 0 6px; }
-.lede { font-size: 14px; line-height: 1.55; color: var(--text-dim); margin: 0 0 20px; }
+.title { font-size: var(--fs-display); margin: 16px 0 6px; }
+.lede { font-size: var(--fs-sm); line-height: 1.55; color: var(--text-dim); margin: 0 0 20px; }
 .qrWrap {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
   padding: 22px 20px; border-radius: var(--radius-lg); background: var(--surface);
 }
-.qrNote { font-size: 12px; line-height: 1.5; color: var(--text-dim); text-align: center; max-width: 250px; }
+.qrNote { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim); text-align: center; max-width: 250px; }
 .link {
   width: 100%; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
   background: var(--surface-sunken); color: var(--text-muted);
-  font-size: 12px; word-break: break-all; line-height: 1.5;
+  font-size: var(--fs-xs); word-break: break-all; line-height: 1.5;
 }
 
 .option {
@@ -21,8 +21,8 @@
 .pip { width: 18px; height: 18px; flex: none; border-radius: 999px; border: 1.5px solid var(--line-strong); }
 .pipOn { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 4px var(--bg); }
 .optionText { display: flex; flex-direction: column; gap: 3px; }
-.optionLabel { font-size: 15.5px; font-weight: 600; }
-.optionSub { font-size: 12.5px; line-height: 1.4; color: var(--text-dim); font-weight: 400; }
+.optionLabel { font-size: var(--fs-md); font-weight: 600; }
+.optionSub { font-size: var(--fs-xs); line-height: 1.4; color: var(--text-dim); font-weight: 400; }
 
 /* The short-code switch sits apart from the three levels and has a square mark, because it
    is an extra rather than a fourth choice among them. */
@@ -31,17 +31,17 @@
 
 /* The short code itself (#54): large enough to read aloud from, set apart from the square. */
 .words { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
-.wordsLabel { font-size: 12px; color: var(--text-dim); }
+.wordsLabel { font-size: var(--fs-xs); color: var(--text-dim); }
 .wordsCode {
-  font-size: 24px; font-weight: 700; letter-spacing: 0.01em; color: var(--text);
+  font-size: var(--fs-xl); font-weight: 700; letter-spacing: 0.01em; color: var(--text);
   overflow-wrap: anywhere;
 }
-.wordsWhere { font-size: 12px; line-height: 1.5; color: var(--text-dim); max-width: 260px; }
+.wordsWhere { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim); max-width: 260px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   min-height: 40px; padding: 0 16px; border-radius: var(--radius-pill);
-  border: 1px solid var(--line); background: transparent; color: var(--text-muted); font-size: 13.5px;
+  border: 1px solid var(--line); background: transparent; color: var(--text-muted); font-size: var(--fs-sm);
 }
 .chipOn { border: 0; background: var(--accent); color: var(--on-accent); font-weight: 600; }
 
@@ -51,19 +51,19 @@
 }
 .avatar {
   width: 34px; height: 34px; flex: none; border-radius: 999px;
-  background: var(--color-accent-2-800); color: var(--color-accent-2-300);
-  font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  background: var(--leaf-wash); color: var(--leaf);
+  font-size: var(--fs-xs); font-weight: 700; display: flex; align-items: center; justify-content: center;
 }
 .personText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.personName { font-size: 14.5px; font-weight: 600; }
-.personLevel { font-size: 12px; color: var(--text-dim); }
+.personName { font-size: var(--fs-md); font-weight: 600; }
+.personLevel { font-size: var(--fs-xs); color: var(--text-dim); }
 .revoke {
   margin-left: auto; flex: none; min-height: 40px; padding: 0 16px;
   border: 1px solid var(--line-strong); border-radius: var(--radius-pill);
-  background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600;
+  background: transparent; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600;
 }
-.revoke:hover { background: rgba(244, 235, 220, 0.08); color: var(--text); }
-.error { color: var(--accent-hover); font-size: 13.5px; }
+.revoke:hover { background: var(--surface-raised); color: var(--text); }
+.error { color: var(--danger); font-size: var(--fs-sm); }
 .quiet { color: var(--text-dim); }
 
 /* Codes already issued. Shaped differently from who-has-access on purpose: two different
@@ -74,9 +74,17 @@
 }
 .codeOff { opacity: 0.55; }
 .codeText { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-.codeLevel { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
+.codeLevel { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 600; }
 .codeState {
   border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px;
-  font-size: 11.5px; font-weight: 600; color: var(--text-dim);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text-dim);
 }
-.codeMeta { font-size: 12.5px; color: var(--text-dim); }
+.codeMeta { font-size: var(--fs-xs); color: var(--text-dim); }
+
+/* Every control a finger can land on is at least 44px tall (2026-11-10). */
+.chip,
+.revoke {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}

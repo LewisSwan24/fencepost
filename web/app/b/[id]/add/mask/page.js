@@ -234,7 +234,7 @@ export default function Mask({ params }) {
 
       <div className={ui.body}>
         <h1 className={ui.h1}>Mask the frame</h1>
-        <p style={{ fontSize: 14.5, lineHeight: 1.55, color: "var(--accent-hover)", margin: "0 0 16px" }}>
+        <p style={{ fontSize: "var(--fs-md)", lineHeight: 1.55, color: "var(--accent-hover)", margin: "0 0 16px" }}>
           {COPY.maskLede}
         </p>
 
@@ -309,13 +309,13 @@ export default function Mask({ params }) {
       {consent ? (
         <Sheet onClose={() => !sending && setConsent(false)} labelledBy="consent-title">
           <h2 id="consent-title" className={ui.sheetTitle}>{COPY.consentTitle}</h2>
-          <p style={{ fontSize: 14.5, lineHeight: 1.6, color: "var(--text-body)", margin: "0 0 16px" }}>
+          <p style={{ fontSize: "var(--fs-md)", lineHeight: 1.6, color: "var(--text-body)", margin: "0 0 16px" }}>
             {COPY.consentBody}
           </p>
           <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px",
                        display: "flex", flexDirection: "column", gap: 9 }}>
             {COPY.consentPoints.map((point) => (
-              <li key={point} style={{ display: "flex", gap: 10, fontSize: 13.5,
+              <li key={point} style={{ display: "flex", gap: 10, fontSize: "var(--fs-sm)",
                                        lineHeight: 1.5, color: "var(--text-muted)" }}>
                 <span style={{ color: "var(--accent-hover)" }} aria-hidden="true">·</span>
                 {point}

@@ -2,7 +2,7 @@
    third look for the same control. */
 
 .lede {
-  font-size: 15px; line-height: 1.6; color: var(--text-body); margin: 0 0 24px;
+  font-size: var(--fs-md); line-height: 1.6; color: var(--text-body); margin: 0 0 24px;
 }
 
 .form {
@@ -14,30 +14,37 @@
 }
 
 .label {
-  font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim);
+  font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim);
 }
 
 .input {
   width: 100%; padding: 13px 15px; border-radius: var(--radius-md);
-  border: 1px solid var(--line); background: var(--surface); color: var(--text);
-  font-size: 15px; line-height: 1.6;
+  border: 1px solid var(--field); background: var(--surface); color: var(--text);
+  font-size: var(--fs-md); line-height: 1.6;
 }
-.input:focus { border-color: var(--accent-hover); outline: none; }
+.input:focus { border-color: var(--accent-hover); outline: 2px solid var(--accent-hover); outline-offset: 1px; }
 
 /* Not an error, and not styled as one. It is a condition of making an account here, said
    before the account exists rather than discovered after the password is forgotten. */
 .warn {
-  font-size: 13px; line-height: 1.55; color: var(--text-dim); margin: 0;
+  font-size: var(--fs-xs); line-height: 1.55; color: var(--text-dim); margin: 0;
   padding: 11px 13px; border-radius: var(--radius-md); background: var(--surface);
 }
 
 .error {
-  font-size: 13.5px; line-height: 1.55; color: var(--accent-hover); margin: 0;
+  font-size: var(--fs-sm); line-height: 1.55; color: var(--danger); margin: 0;
 }
 
 .swap {
   margin-top: 22px; background: none; border: none; padding: 0;
-  font: inherit; font-size: 13.5px; color: var(--text-dim);
+  font: inherit; font-size: var(--fs-sm); color: var(--text-dim);
   text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }
 .swap:hover { color: var(--text-body); }
+
+/* Every control a finger can land on is at least 44px tall (2026-11-10). */
+.swap {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}

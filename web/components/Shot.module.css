@@ -2,7 +2,7 @@
   position: relative;
   width: 100%;
   overflow: hidden;
-  background: radial-gradient(120% 90% at 30% 20%, #2b241c 0%, var(--surface-sunken) 70%);
+  background: radial-gradient(120% 90% at 30% 20%, var(--surface-raised) 0%, var(--surface-sunken) 70%);
 }
 .md { border-radius: var(--radius-md); }
 .lg { border-radius: var(--radius-lg); }

@@ -3,6 +3,6 @@
   width: 44px; height: 44px; border-radius: 999px; background: var(--accent-wash);
   display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
 }
-.title { font-size: 25px; margin: 0 0 12px; }
-.reason { font-size: 16px; line-height: 1.6; color: var(--text-body); margin: 0 0 8px; text-wrap: pretty; }
-.kept { font-size: 13.5px; line-height: 1.6; color: var(--text-dim); margin: 0; }
+.title { font-size: var(--fs-display); margin: 0 0 12px; }
+.reason { font-size: var(--fs-md); line-height: 1.6; color: var(--text-body); margin: 0 0 8px; text-wrap: pretty; }
+.kept { font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); margin: 0; }

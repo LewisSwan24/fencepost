@@ -135,7 +135,7 @@ export default function Home() {
       {newOpen ? (
         <Sheet onClose={() => setNewOpen(false)} labelledBy="new-title">
           <h2 id="new-title" className={ui.sheetTitle}>New storyboard</h2>
-          <label htmlFor="sb-title" style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Title</label>
+          <label htmlFor="sb-title" style={{ fontSize: "var(--fs-xs)", color: "var(--text-dim)" }}>Title</label>
           {/* Capped where the server caps it, so nobody types past a limit they cannot
               see and then meets a 400 that explains nothing. */}
           <input id="sb-title" value={title}
@@ -145,7 +145,7 @@ export default function Home() {
                  style={{
                    width: "100%", height: 48, padding: "0 16px", marginTop: 6,
                    borderRadius: 999, border: "1px solid var(--line)",
-                   background: "var(--bg)", color: "var(--text)", fontSize: 15,
+                   background: "var(--bg)", color: "var(--text)", fontSize: "var(--fs-md)",
                  }} />
           {blocked ? (
             <>

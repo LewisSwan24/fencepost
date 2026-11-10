@@ -1,14 +1,14 @@
 .title {
-  font-size: 27px; font-weight: 800; letter-spacing: -0.02em;
+  font-size: var(--fs-display);
   line-height: 1.15; margin: 6px 0 10px;
 }
-.lede { font-size: 15px; line-height: 1.6; color: var(--text-body); margin: 0 0 22px; }
+.lede { font-size: var(--fs-md); line-height: 1.6; color: var(--text-body); margin: 0 0 22px; }
 .quiet { color: var(--text-dim); }
 .error { color: var(--text-dim); }
 
 /* A refused closing note. Readable rather than dim, unlike .error above: that one carries a
    failure the person cannot act on, this one is a sentence asking them to change a line. */
-.refused { color: var(--accent-hover); font-size: 13.5px; margin: 0 0 6px; }
+.refused { color: var(--accent-hover); font-size: var(--fs-sm); margin: 0 0 6px; }
 
 /* The four consequences. No warning colour: this is not an error, it is a weighty but
    ordinary act. */
@@ -18,7 +18,7 @@
   background: var(--surface-sunken);
 }
 .point {
-  position: relative; padding-left: 20px; font-size: 14.5px; line-height: 1.55;
+  position: relative; padding-left: 20px; font-size: var(--fs-md); line-height: 1.55;
   color: var(--text-body);
 }
 .point + .point { margin-top: 11px; }
@@ -28,27 +28,27 @@
 }
 
 .field { margin-bottom: 20px; }
-.label { display: block; font-size: 12.5px; color: var(--text-dim); margin-bottom: 7px; }
+.label { display: block; font-size: var(--fs-xs); color: var(--text-dim); margin-bottom: 7px; }
 .input {
   width: 100%; padding: 12px 14px; border-radius: var(--radius-md);
-  border: 1px solid var(--line); background: var(--bg); color: var(--text);
-  font: inherit; font-size: 15px; line-height: 1.55; resize: vertical;
+  border: 1px solid var(--field); background: var(--bg); color: var(--text);
+  font: inherit; font-size: var(--fs-md); line-height: 1.55; resize: vertical;
 }
 .hintRow {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px; margin-top: 7px;
 }
-.hint { font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
-.count { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.hint { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-dim); }
+.count { font-size: var(--fs-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* There is no need to do this. Above the button, because it should be read before the
    decision. */
 .notRequired {
-  font-size: 13.5px; line-height: 1.55; color: var(--text-dim);
+  font-size: var(--fs-sm); line-height: 1.55; color: var(--text-dim);
   margin: 0; padding-top: 16px; border-top: 1px solid var(--line);
 }
 
 .cancel {
   width: 100%; margin-top: 10px; padding: 12px; border: 0; background: transparent;
-  color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer;
+  color: var(--text-dim); font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
 }

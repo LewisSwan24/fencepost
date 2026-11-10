@@ -89,3 +89,20 @@ test("the cell size is the caller's", async () => {
   assert.equal(cell.style.width, "5px");
   assert.equal(cell.style.height, "5px");
 });
+
+// When the site went light (2026-11-10) the placeholder was coloured from theme tokens and
+// came out inverted: light modules on a dark square. It stands in for a code people will
+// scan, so it keeps the real code's dark-on-light whatever the theme says.
+test("the placeholder is dark modules on a light square, whatever the theme", async () => {
+  const square = await draw();
+  const module = [...square.querySelectorAll("span")].find((s) => s.style.background !== "transparent");
+  const lum = (css) => {
+    assert.match(css, /^#[0-9a-f]{6}$|^rgb/i, `${css} is not a fixed colour`);
+    const [r, g, b] = css.startsWith("#")
+      ? [1, 3, 5].map((i) => parseInt(css.slice(i, i + 2), 16))
+      : css.match(/\d+/g).map(Number);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  assert.ok(lum(square.style.background) > 200, "the square is not light");
+  assert.ok(lum(module.style.background) < 40, "the modules are not dark");
+});

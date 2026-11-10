@@ -89,7 +89,7 @@ export default function Capture({ params }) {
       <Steps at={0} />
 
       <div className={ui.body}>
-        <h1 className={ui.h1} style={{ fontSize: 28 }}>Add a sighting</h1>
+        <h1 className={ui.h1}>Add a sighting</h1>
         <p className={ui.lede}>{COPY.captureLede}</p>
 
         {/* Record opens the viewfinder in components/Camera.js and only reaches the first
