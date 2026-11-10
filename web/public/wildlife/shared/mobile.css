@@ -1,714 +1,18 @@
+/* Wildlife Neighbours, the park web app. One stylesheet, one set of values.
+
+   Until 2026-11-10 this file was three passes stacked on each other: the first design, a
+   "purpose-led" pass over it, and a minimal pass over both (Caprasimo and Figtree, three
+   button weights, flat cards, one header row). Most of the first two passes no longer
+   showed, but their values stayed: the colours were declared twice with different hexes,
+   and a page ended up with eleven font sizes. This version keeps every decision the
+   minimal pass made and writes each rule once, against the tokens below.
+
+   The three @imports are shared with the park display (kiosk.css) and are not edited here.
+   Where the web app needs them to look different, the rule is scoped to .fencepost-app. */
 @import url("./contacts.css");
 @import url("./quiz.css");
 @import url("./experience.css");
-.mobile-body {
-  background: #193c31;
-}
-.fencepost-app {
-  --paper: #f5f1e7;
-  --ink: #193c31;
-  --muted: #526458;
-  --line: #ced4c6;
-  --accent: #944124;
-  --sage: #e3e9da;
-  --white: #fffcf5;
-  background: var(--paper);
-  color: var(--ink);
-  max-width: 760px;
-  margin: auto;
-  min-height: 100vh;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 17px;
-  line-height: 1.5;
-}
-.fencepost-app * {
-  box-sizing: border-box;
-}
-.mobile-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 24px;
-  align-items: center;
-}
-.mobile-header > span {
-  font-size: 12px;
-}
-.mobile-nav {
-  display: flex;
-  justify-content: space-around;
-  gap: 4px;
-  position: sticky;
-  top: 0;
-  background: var(--ink);
-  z-index: 10;
-  padding: 8px;
-}
-.mobile-nav a {
-  color: white;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  padding: 6px;
-  text-decoration: none;
-}
-.mobile-main {
-  padding: 24px;
-  width: 100%;
-  min-height: 60vh;
-}
-.fencepost-app h1 {
-  font-size: 38px;
-  line-height: 1.1;
-  letter-spacing: -0.035em;
-}
-.fencepost-app h2 {
-  font-size: 27px;
-  margin-top: 24px;
-  line-height: 1.15;
-}
-.fencepost-app h3 {
-  font-size: 22px;
-}
-.fencepost-app p {
-  margin: 0 0 16px;
-}
-.fencepost-app a {
-  color: inherit;
-  text-decoration: underline;
-}
-.fencepost-app .mobile-nav a {
-  color: white;
-}
-.fencepost-app .mode-note {
-  margin: 0 16px 16px;
-  font-size: 13px;
-}
-.mobile-card {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  background: var(--white);
-  border-radius: 14px;
-  margin: 24px 0;
-}
-.mobile-card img {
-  display: block;
-  width: 100%;
-  height: 230px;
-  object-fit: cover;
-}
-.mobile-card > div {
-  padding: 22px;
-}
-.mobile-card h2 {
-  margin-top: 0;
-}
-.fencepost-app .label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--accent);
-}
-.fencepost-app .small {
-  font-size: 13px;
-  color: var(--muted);
-}
-.detail-image {
-  width: 100%;
-  max-height: 400px;
-  object-fit: cover;
-  border-radius: 14px;
-}
-.fencepost-app label {
-  display: block;
-  font-weight: 700;
-  margin: 18px 0;
-}
-.fencepost-app input,
-.fencepost-app select,
-.fencepost-app textarea {
-  width: 100%;
-  min-height: 48px;
-  padding: 12px;
-  border: 1px solid #526458;
-  background: var(--white);
-  color: var(--ink);
-  font: inherit;
-  border-radius: 7px;
-  margin-top: 6px;
-}
-.fencepost-app textarea {
-  min-height: 110px;
-  resize: vertical;
-}
-.fencepost-app input[type="file"] {
-  max-width: 100%;
-  font-size: 13px;
-}
-.fencepost-app .tick {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-weight: 400;
-}
-.fencepost-app input[type="checkbox"] {
-  width: 24px;
-  height: 24px;
-  min-height: 24px;
-  flex-shrink: 0;
-  margin-top: 0;
-}
-.fencepost-app button,
-.fencepost-app .link-button {
-  font: inherit;
-  min-height: 48px;
-  display: inline-flex;
-  align-items: center;
-  padding: 12px 16px;
-  margin: 6px 6px 6px 0;
-  border: 1px solid var(--ink);
-  border-radius: 8px;
-  background: var(--ink);
-  color: white;
-  cursor: pointer;
-  text-decoration: none;
-}
-.fencepost-app button:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-.fencepost-app :focus-visible {
-  outline: 4px solid var(--accent);
-  outline-offset: 4px;
-}
-.fencepost-app .notice {
-  padding: 20px;
-  border: 1px solid var(--line);
-  background: var(--sage);
-  border-radius: 10px;
-  margin: 20px 0;
-}
-.fencepost-app summary {
-  cursor: pointer;
-  min-height: 44px;
-  font-weight: 700;
-}
-.fencepost-app pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  max-height: 300px;
-  overflow: auto;
-}
-.fencepost-app .field-error {
-  color: #943323;
-  display: block;
-  font-size: 14px;
-}
-.fencepost-app [aria-invalid="true"] {
-  border: 2px solid #943323;
-}
-.fencepost-app #feedback:not(:empty) {
-  border: 2px solid var(--accent);
-  padding: 16px;
-  margin-bottom: 18px;
-}
-.fencepost-app footer {
-  position: static;
-  background: var(--paper);
-  font-size: 13px;
-  padding: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-.fencepost-app dt {
-  font-weight: 700;
-}
-.fencepost-app dd {
-  margin: 0 0 16px;
-}
-.fencepost-app fieldset {
-  border: 1px solid var(--line);
-  padding: 14px;
-  min-width: 0;
-}
-.fencepost-app img {
-  max-width: 100%;
-}
-.fencepost-app .help-options {
-  display: flex;
-  flex-direction: column;
-}
-.fencepost-app .eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 12px;
-  font-weight: 700;
-}
-@media (max-width: 400px) {
-  .mobile-main {
-    padding: 18px;
-  }
-  .fencepost-app h1 {
-    font-size: 33px;
-  }
-  .mobile-nav a {
-    font-size: 13px;
-  }
-  .fencepost-app button {
-    max-width: 100%;
-    white-space: normal;
-  }
-}
-/* Purpose-led mobile hierarchy: a single feature, then guidance, stories and action. */
-.fencepost-app {
-  max-width: 1080px;
-  font-size: 17px;
-}
-.mobile-header {
-  padding: 26px 32px;
-  border-bottom: 1px solid #ced4c6;
-}
-.mobile-header .brand {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.05em;
-  text-decoration: none;
-}
-.mobile-header .brand span {
-  color: #944124;
-}
-.mobile-header > span {
-  font-size: 12px;
-  color: #526458;
-}
-.mobile-main {
-  max-width: 100%;
-  padding: 32px;
-}
-.mobile-nav {
-  justify-content: center;
-  gap: 26px;
-  padding: 10px 16px;
-}
-.mobile-nav a {
-  font-size: 15px;
-  padding: 8px 14px;
-  border-radius: 7px;
-  text-decoration: none;
-}
-.mobile-nav a[aria-current="page"] {
-  background: #f5f1e7;
-  color: #193c31;
-}
-.phone-intro {
-  max-width: 720px;
-  padding: 10px 0 32px;
-}
-.fencepost-app .phone-intro h1 {
-  font-size: clamp(36px, 5vw, 54px);
-  line-height: 1.08;
-  margin-bottom: 20px;
-  max-width: 680px;
-}
-.phone-intro > p:not(.eyebrow) {
-  font-size: 18px;
-  color: #526458;
-  line-height: 1.65;
-  max-width: 620px;
-}
-.fencepost-app .secondary-button {
-  background: transparent;
-  color: #193c31;
-  text-decoration: none;
-}
-.fencepost-app .link-button {
-  background: #193c31;
-  color: white;
-  text-decoration: none;
-}
-.featured-story {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-top: 0;
-}
-.featured-story > img,
-.featured-story > .illustrated {
-  height: 100%;
-  min-height: 380px;
-  max-height: none;
-}
-.featured-story img {
-  object-fit: cover;
-}
-.featured-story .card-body {
-  padding: 28px;
-  align-self: center;
-}
-.fencepost-app .featured-story h2 {
-  font-size: 34px;
-  line-height: 1.1;
-}
-.fencepost-app .status-label {
-  font-size: 10px;
-  margin-bottom: 14px;
-}
-.fencepost-app .review-label {
-  font-size: 12px;
-}
-.fencepost-app .card-meta {
-  font-size: 13px;
-}
-.guidance-card {
-  margin: 36px 0;
-  padding: 28px;
-  border: 1px solid #a6b7a5;
-  border-radius: 16px;
-  background: #e3e9da;
-}
-.guidance-card h2 {
-  margin: 0 0 14px;
-}
-.guidance-shortcuts {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin: 20px 0;
-}
-.guidance-shortcuts a {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  padding: 12px;
-  background: #fffcf5;
-  border: 1px solid #a6b7a5;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-}
-.feed-section {
-  margin: 44px 0;
-}
-.fencepost-app .section-heading h2 {
-  margin: 0;
-}
-.story-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px;
-}
-.story-grid .mobile-card {
-  margin: 0;
-}
-.story-grid h3 {
-  font-size: 25px;
-  line-height: 1.15;
-  margin: 0 0 14px;
-}
-.story-grid .mobile-card > img,
-.story-grid .mobile-card > .illustrated {
-  height: 220px;
-}
-.fencepost-app .mobile-card > .illustrated {
-  width: 100%;
-}
-.community-preview {
-  border-top: 1px solid #ced4c6;
-  padding-top: 34px;
-}
-.community-preview > p:not(.eyebrow) {
-  max-width: 640px;
-}
-.fencepost-app .opportunity-grid,
-.fencepost-app .update-grid {
-  margin: 26px 0;
-}
-.fencepost-app .return-link {
-  margin-bottom: 24px;
-  text-decoration: none;
-}
-.fencepost-app .illustrated figcaption {
-  font-size: 10px;
-  max-width: calc(100% - 16px);
-}
-.fencepost-app .sample-note {
-  font-size: 15px;
-}
-.fencepost-app .opportunity-card h3,
-.fencepost-app .update-card h3 {
-  margin-top: 0;
-}
-.fencepost-app .opportunity-card .small,
-.fencepost-app .update-card .small {
-  margin-top: 12px;
-}
-@media (max-width: 650px) {
-  .mobile-main {
-    padding: 24px 20px;
-  }
-  .mobile-header {
-    padding: 22px 20px;
-  }
-  .mobile-nav {
-    gap: 3px;
-    justify-content: space-between;
-    padding: 8px;
-  }
-  .mobile-nav a {
-    padding: 8px;
-    font-size: 13px;
-  }
-  .featured-story {
-    grid-template-columns: 1fr;
-  }
-  .featured-story > img,
-  .featured-story > .illustrated {
-    min-height: 0;
-    height: 270px;
-  }
-  .featured-story .card-body {
-    padding: 24px;
-  }
-  .fencepost-app .featured-story h2 {
-    font-size: 30px;
-  }
-  .fencepost-app .phone-intro h1 {
-    font-size: 38px;
-  }
-  .phone-intro {
-    padding-bottom: 26px;
-  }
-  .phone-intro > p:not(.eyebrow) {
-    font-size: 16px;
-  }
-  .story-grid {
-    grid-template-columns: 1fr;
-  }
-  .guidance-card {
-    padding: 24px;
-  }
-  .guidance-shortcuts {
-    grid-template-columns: 1fr 1fr;
-  }
-  .section-heading > span {
-    display: none;
-  }
-}
-.fencepost-app .registration-image {
-  height: 220px;
-  border-radius: 14px;
-  margin-bottom: 24px;
-}
-.fencepost-app .update-card .small {
-  line-height: 1.6;
-}
-.fencepost-app .opportunity-card .card-meta {
-  line-height: 1.6;
-}
-/* Exhibition account, writing and discussion layers reuse the park design system. */
-.account-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 10px 28px;
-  border-bottom: 1px solid #ced4c6;
-  font-size: 14px;
-}
-.account-header > span {
-  margin-right: auto;
-  font-weight: 700;
-}
-.account-header small {
-  display: block;
-  font-weight: 400;
-  color: #526458;
-}
-.fencepost-app .account-header button {
-  font-size: 13px;
-  min-height: 44px;
-  padding: 8px 14px;
-  margin: 0;
-}
-.account-header a {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-.login-panel {
-  max-width: 620px;
-  margin: 0 auto;
-}
-.demo-accounts {
-  border: 1px solid #ced4c6;
-  border-radius: 12px;
-  padding: 22px;
-  background: #fffcf5;
-  margin-top: 26px;
-}
-.demo-accounts article {
-  padding: 18px 0;
-  border-bottom: 1px solid #ced4c6;
-}
-.demo-accounts code {
-  font-size: 16px;
-}
-.fencepost-app #login-error {
-  color: #943323;
-}
-.activity-menu {
-  display: grid;
-  gap: 12px;
-  margin: 24px 0;
-}
-.activity-menu a {
-  min-height: 52px;
-  padding: 14px 18px;
-  border: 1px solid #526458;
-  border-radius: 8px;
-  font-weight: 700;
-}
-.admin-layout {
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: 26px;
-  align-items: start;
-}
-.admin-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid #ced4c6;
-  border-radius: 12px;
-  background: #e3e9da;
-}
-.admin-nav a {
-  min-height: 44px;
-  font-size: 14px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  text-decoration: none;
-}
-.admin-nav a[aria-current="page"] {
-  background: #193c31;
-  color: white;
-  font-weight: 700;
-}
-.admin-content {
-  min-width: 0;
-}
-.admin-content > h2 {
-  margin-top: 0;
-}
-.admin-summary {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-}
-.admin-summary article {
-  padding: 18px;
-  background: #fffcf5;
-  border: 1px solid #ced4c6;
-  border-radius: 10px;
-}
-.admin-summary strong,
-.admin-summary span {
-  display: block;
-}
-.admin-summary strong {
-  font-size: 30px;
-}
-.admin-summary span {
-  font-size: 13px;
-}
-.comment-card {
-  padding: 20px;
-  background: #fffcf5;
-  border: 1px solid #ced4c6;
-  border-radius: 10px;
-  margin: 18px 0;
-}
-.comment-card header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-.comment-card header span {
-  font-size: 12px;
-  color: #526458;
-}
-.fencepost-app .comment-actions button {
-  min-height: 44px;
-  font-size: 13px;
-  padding: 8px 14px;
-  background: transparent;
-  color: #193c31;
-}
-.comment-moderation {
-  margin-top: 20px;
-  border-top: 1px solid #ced4c6;
-  padding-top: 12px;
-}
-.fencepost-app button[hidden] {
-  display: none !important;
-}
-.admin-content blockquote {
-  margin: 12px 0;
-  padding: 16px;
-  border-left: 4px solid #944124;
-  background: #fffcf5;
-}
-.discussion {
-  border-top: 1px solid #ced4c6;
-  margin-top: 28px;
-  padding-top: 20px;
-}
-.discussion #comment-validation:not(:empty) {
-  padding: 16px;
-  border: 1px solid #943323;
-  color: #943323;
-  border-radius: 8px;
-}
-.fencepost-app #reply-state:empty {
-  display: none;
-}
-.admin-content .notice summary {
-  overflow-wrap: anywhere;
-}
-@media (max-width: 700px) {
-  .admin-layout {
-    grid-template-columns: 1fr;
-  }
-  .admin-nav {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-  .admin-nav a {
-    font-size: 12px;
-  }
-  .account-header {
-    padding: 10px 18px;
-    font-size: 13px;
-    gap: 10px;
-  }
-  .admin-summary {
-    grid-template-columns: 1fr 1fr;
-  }
-}
 
-/* Minimal pass. Measured at 1440x900 before it: seven button styles, the main action
-   outlined while every "Read story" was filled, no hover state anywhere, Arial beside the
-   park display's Figtree, text down to 10px, four stacked header bands (about 255px)
-   before any content, and black gutters either side of the page. So: the display's two
-   typefaces, three button weights (filled for the one main action, outlined for choices,
-   plain links for moving on), one header row, flat cards, nothing smaller than 13px. */
 @font-face {
   font-family: "Figtree";
   src: url("../assets/fonts/figtree-latin-400-normal.woff2") format("woff2");
@@ -733,141 +37,207 @@
   font-weight: 400;
   font-display: swap;
 }
+
+/* ---------------------------------------------------------------- tokens */
+
+.fencepost-app {
+  /* Colour. Contrast on --paper (lowest of paper, surface and tint in brackets), measured
+     2026-11-10: --text 13.8 (13.3), --muted 6.0 (5.8), --accent 5.0 (4.8), --ink 10.8
+     (10.3), --danger 6.8 (6.5); white on --ink 12.1. --field 3.8 (3.7) is a border, which
+     needs 3.0 (WCAG 1.4.11); the old #8a978c was 2.7. */
+  --paper: #f5f1e7;
+  --surface: #fffcf5;
+  --tint: #f3ece2;
+  --text: #24241e;
+  --muted: #615a52;
+  --ink: #193c31;
+  --ink-hover: #0f2a22;
+  --accent: #9e5326;
+  --rule: #c0764a;
+  --line: #dccfc2;
+  --field: #6f7d72;
+  --danger: #943323;
+
+  /* Type. Six sizes. Caprasimo is for the brand and the page title only. */
+  --font-body: "Figtree", Arial, Helvetica, sans-serif;
+  --font-display: "Caprasimo", Georgia, serif;
+  --fs-xs: 13px; /* labels, captions, fine print */
+  --fs-sm: 15px; /* meta lines, navigation, secondary links */
+  --fs-md: 17px; /* body, fields, buttons */
+  --fs-lg: 20px; /* card titles, lead paragraphs */
+  --fs-xl: 26px; /* section titles */
+  --fs-display: clamp(34px, 4vw, 48px); /* the page title */
+
+  /* Space. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 72px;
+  --gutter: 32px;
+
+  --r-field: 10px;
+  --r-media: 14px;
+  --r-pill: 999px;
+  --measure: 68ch; /* a comfortable line of body text */
+  --form: 640px;
+}
+
+/* ------------------------------------------------------------------ base */
+
 .mobile-body {
   margin: 0;
   background: #f5f1e7;
 }
-/* Colours follow the booth poster and the park display (kiosk.css): warm black text, green
-   kept for what can be pressed, terracotta labels (#9e5326, 5.0:1 on cream) and warm
-   hairlines, with the poster's thin terracotta rule under the header. */
 .fencepost-app {
-  --text: #24241e;
-  --muted: #615a52;
-  --accent: #9e5326;
-  --line: #dccfc2;
-  --rule: #c0764a;
-  --sage: #f3ece2;
-  --hover: #0f2a22;
+  max-width: 1080px;
+  min-height: 100vh;
+  margin: auto;
+  background: var(--paper);
   color: var(--text);
-  font-family: "Figtree", Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
   line-height: 1.6;
 }
-/* Paper behind the side gutters too, instead of the page sitting in a black frame. */
+/* Paper behind the side gutters too, instead of the page sitting in a frame. */
 @media (min-width: 1081px) {
   .fencepost-app {
     box-shadow: 0 0 0 100vmax var(--paper);
     clip-path: inset(0 -100vmax);
   }
 }
+.fencepost-app * {
+  box-sizing: border-box;
+}
+.fencepost-app img {
+  max-width: 100%;
+}
+.fencepost-app p {
+  margin: 0 0 var(--s4);
+}
+.fencepost-app :focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
 
-/* Type: Caprasimo for the brand and page titles only, Figtree for everything else. */
-.fencepost-app h1,
-.fencepost-app .phone-intro h1 {
-  font-family: "Caprasimo", Georgia, serif;
+.fencepost-app h1 {
+  margin: 0 0 var(--s4);
+  max-width: 20ch;
+  font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(32px, 3.6vw, 46px);
-  line-height: 1.12;
+  font-size: var(--fs-display);
+  line-height: 1.1;
   letter-spacing: 0;
-  margin: 0 0 16px;
-  max-width: 760px;
 }
 .fencepost-app h2 {
-  font-size: 24px;
+  margin: var(--s7) 0 var(--s3);
+  font-size: var(--fs-xl);
+  font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.01em;
 }
-.fencepost-app h3,
-.fencepost-app .story-grid h3,
-.fencepost-app .opportunity-card h3,
-.fencepost-app .update-card h3 {
-  font-size: 20px;
+.fencepost-app h3 {
+  margin: 0 0 var(--s2);
+  font-size: var(--fs-lg);
+  font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.01em;
-  margin: 0 0 8px;
-}
-.fencepost-app .featured-story h2 {
-  font-size: clamp(26px, 2.6vw, 32px);
-}
-/* Labels read as quiet eyebrows, not as boxed badges competing with the headings. */
-.fencepost-app .status-label,
-.fencepost-app .eyebrow,
-.fencepost-app .label {
-  display: block;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 0 0 10px;
-}
-.fencepost-app .eyebrow,
-.fencepost-app .label,
-.fencepost-app .status-label {
-  color: var(--accent);
-}
-.fencepost-app .phone-intro > p:not(.eyebrow),
-.fencepost-app .mobile-header > span,
-.fencepost-app .account-header small {
-  color: var(--muted);
-}
-.fencepost-app .review-label {
-  border: 0;
-  padding: 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-.fencepost-app .card-meta,
-.fencepost-app .small,
-.fencepost-app .compact-meta,
-.fencepost-app .field-error {
-  font-size: 14px;
-}
-.fencepost-app .card-meta {
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-.fencepost-app .illustrated figcaption {
-  font-size: 13px;
 }
 
-/* Header: one row. The demo notice becomes a thin line under it. */
+/* Small type: eyebrows above a title, meta lines below it, fine print. */
+.fencepost-app :is(.eyebrow, .label, .status-label) {
+  display: block;
+  margin: 0 0 var(--s2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.fencepost-app :is(.card-meta, .compact-meta, .sample-note) {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.fencepost-app :is(.small, .review-label) {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.fencepost-app .card-meta {
+  margin-bottom: var(--s3);
+}
+
+.fencepost-app a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.fencepost-app a:where(:not(.link-button, .secondary-button, .contact-call)):hover {
+  color: var(--accent);
+}
+/* A link standing on its own, not inside a sentence, gets a whole row to tap. */
+.fencepost-app :is(#content, .story-main, .notice, .card-body) > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* ---------------------------------------------------------------- header */
+
 .fencepost-app .mobile-header {
   position: sticky;
   top: 0;
   z-index: 20;
-  gap: 24px;
-  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding: var(--s3) var(--gutter);
   background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--rule);
 }
 .fencepost-app .mobile-header .brand {
-  font-family: "Caprasimo", Georgia, serif;
-  font-weight: 400;
-  font-size: 26px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
   line-height: 1;
-  letter-spacing: 0;
+  text-decoration: none;
+}
+.fencepost-app .mobile-header .brand span {
+  color: var(--accent);
+}
+.fencepost-app .mobile-header > span {
+  color: var(--muted);
+  font-size: var(--fs-xs);
 }
 .fencepost-app .mobile-nav {
-  position: static;
+  display: flex;
   flex: 1;
   justify-content: center;
-  gap: 4px;
-  padding: 0;
-  background: none;
+  gap: var(--s1);
 }
 .fencepost-app .mobile-nav a {
-  min-height: 40px;
-  padding: 8px 16px;
-  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--r-pill);
   color: var(--ink);
-  font-size: 15px;
+  font-size: var(--fs-sm);
   font-weight: 600;
+  text-decoration: none;
 }
 .fencepost-app .mobile-nav a:hover {
-  background: var(--sage);
+  background: var(--tint);
   color: var(--ink);
 }
 .fencepost-app .mobile-nav a[aria-current="page"] {
@@ -875,66 +245,126 @@
   color: #fff;
 }
 .fencepost-app .account-header {
-  padding: 0;
-  border: 0;
-  gap: 16px;
-  flex-wrap: nowrap;
-  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  font-size: var(--fs-sm);
 }
 .fencepost-app .account-header > span {
-  margin-right: 0;
   font-weight: 600;
   white-space: nowrap;
+}
+.fencepost-app .account-header small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
 }
 .fencepost-app .account-header a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-weight: 600;
   white-space: nowrap;
 }
+/* The demo notice: one quiet line under the header, not a band above every title. */
 .fencepost-app .mode-note {
   margin: 0;
-  padding: 8px 32px;
-  border: 0;
+  padding: var(--s2) var(--gutter);
   border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: none;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
   text-align: center;
 }
 
-/* Buttons. Filled: the one thing a screen is for. Outlined: a choice among several, or a
-   step back from the main action. Plain links: moving on to read something. */
-.fencepost-app button,
-.fencepost-app .link-button,
-.fencepost-app .secondary-button,
-.fencepost-app .contact-call {
+/* ---------------------------------------------------------------- layout */
+
+.fencepost-app .mobile-main {
+  width: 100%;
+  min-height: 60vh;
+  padding: var(--s7) var(--gutter) var(--s8);
+}
+/* Running text keeps to a reading width; forms keep to one column of fields. */
+.fencepost-app #content > :is(p, ul, ol, .notice, blockquote),
+.fencepost-app .discussion {
+  max-width: var(--measure);
+}
+.fencepost-app :is(#observation-form, #registration-form, #account-login, .moderation-form) {
+  max-width: var(--form);
+}
+.fencepost-app .return-link {
+  margin-bottom: var(--s5);
+}
+.fencepost-app .phone-intro {
+  padding: 0 0 var(--s7);
+}
+.fencepost-app .phone-intro > p:not(.eyebrow) {
+  max-width: 56ch;
+  margin-bottom: var(--s5);
+  color: var(--muted);
+  font-size: var(--fs-lg);
+  line-height: 1.55;
+}
+.fencepost-app .feed-section {
+  margin: var(--s8) 0 0;
+}
+.fencepost-app .section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s5);
+  margin-bottom: var(--s5);
+}
+.fencepost-app .section-heading h2 {
+  margin: 0;
+}
+.fencepost-app .community-preview {
+  padding-top: var(--s7);
+  border-top: 1px solid var(--line);
+}
+.fencepost-app .community-preview > p {
+  max-width: var(--measure);
+  margin-top: calc(-1 * var(--s3));
+}
+
+/* --------------------------------------------------------------- buttons */
+
+/* Filled: the one thing a screen is for. Outlined: a choice among several, or a step back
+   from the main action. Plain links: moving on to read something. */
+.fencepost-app :is(button, .link-button, .secondary-button, .contact-call) {
+  display: inline-flex;
+  align-items: center;
   min-height: 48px;
-  padding: 12px 22px;
+  margin: var(--s1) var(--s2) var(--s1) 0;
+  padding: var(--s3) 22px;
   border: 1.5px solid var(--ink);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--ink);
   color: #fff;
-  font-size: 16px;
+  font: inherit;
+  font-size: var(--fs-md);
   font-weight: 600;
   line-height: 1.3;
   text-decoration: none;
+  cursor: pointer;
   transition:
     background-color 0.15s,
     border-color 0.15s,
     color 0.15s;
 }
-.fencepost-app button:hover:not(:disabled),
-.fencepost-app .link-button:hover {
-  background: var(--hover);
-  border-color: var(--hover);
+.fencepost-app :is(button, .link-button):hover:not(:disabled) {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
   color: #fff;
 }
-.fencepost-app .secondary-button,
-.fencepost-app .help-options button,
-.fencepost-app .comment-actions button,
-.fencepost-app .account-header button,
 .fencepost-app
   :is(
+    .secondary-button,
+    .help-options button,
+    .comment-actions button,
+    .account-header button,
     [data-action="edit-draft"],
     [data-action="cancel-draft"],
     [data-action="cancel-comment"],
@@ -952,12 +382,12 @@
   background: transparent;
   color: var(--ink);
 }
-.fencepost-app .secondary-button:hover,
-.fencepost-app .help-options button:hover,
-.fencepost-app .comment-actions button:hover,
-.fencepost-app .account-header button:hover:not(:disabled),
 .fencepost-app
   :is(
+    .secondary-button,
+    .help-options button,
+    .comment-actions button,
+    .account-header button,
     [data-action="edit-draft"],
     [data-action="cancel-draft"],
     [data-action="cancel-comment"],
@@ -972,36 +402,33 @@
     [data-action="removal"],
     [data-action="logout"]
   ):hover:not(:disabled) {
-  background: var(--sage);
+  background: var(--tint);
   border-color: var(--ink);
   color: var(--ink);
 }
-.fencepost-app .help-options button[aria-pressed="true"],
-.fencepost-app .help-options button[aria-pressed="true"]:hover {
-  background: var(--ink);
-  color: #fff;
-}
-.fencepost-app .account-header button {
-  min-height: 40px;
-  padding: 6px 16px;
-  font-size: 14px;
+/* Small outlined buttons inside a card or the header. */
+.fencepost-app :is(.account-header button, .comment-actions button) {
+  min-height: 44px;
+  margin: 0;
+  padding: 6px var(--s4);
+  font-size: var(--fs-sm);
 }
 .fencepost-app button:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
-.fencepost-app a {
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+.fencepost-app button[hidden] {
+  display: none !important;
 }
-.fencepost-app a:where(:not(.link-button, .secondary-button, .contact-call)):hover {
-  color: var(--accent);
-}
-.fencepost-app .card-link,
-.fencepost-app .opportunity-card .link-button,
-.fencepost-app .update-card .link-button,
-.fencepost-app .return-link,
-.fencepost-app .section-heading a,
-.fencepost-app .related-link {
+/* Links that move on: no box, an arrow in the text, a full-height target. */
+.fencepost-app
+  :is(
+    .card-link,
+    .opportunity-card .link-button,
+    .update-card .link-button,
+    .return-link,
+    .section-heading a
+  ) {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -1011,212 +438,599 @@
   border-radius: 0;
   background: none;
   color: var(--ink);
-  font-size: 16px;
+  font-size: var(--fs-md);
   font-weight: 600;
   text-decoration: none;
 }
-.fencepost-app .card-link:hover,
-.fencepost-app .opportunity-card .link-button:hover,
-.fencepost-app .update-card .link-button:hover,
-.fencepost-app .return-link:hover,
-.fencepost-app .section-heading a:hover,
-.fencepost-app .related-link:hover {
+.fencepost-app
+  :is(
+      .card-link,
+      .opportunity-card .link-button,
+      .update-card .link-button,
+      .return-link,
+      .section-heading a
+    ):hover {
   background: none;
   color: var(--accent);
   text-decoration: underline;
 }
 .fencepost-app .related-link {
-  margin-left: 20px;
-  font-size: 14px;
-  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-left: var(--s5);
   color: var(--muted);
-}
-.fencepost-app .return-link {
-  margin-bottom: 16px;
-  font-size: 15px;
+  font-size: var(--fs-sm);
 }
 .fencepost-app .contact-call {
   min-height: 56px;
   border-color: transparent;
-  font-size: 18px;
+  font-size: var(--fs-lg);
 }
-.fencepost-app .contact-emergency .contact-call {
-  border-color: transparent;
+
+/* ----------------------------------------------------------------- forms */
+
+.fencepost-app label {
+  display: block;
+  margin: 0 0 var(--s5);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.4;
 }
-.fencepost-app input,
-.fencepost-app select,
+.fencepost-app :is(input, select, textarea) {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: var(--s2);
+  padding: var(--s3) 14px;
+  border: 1px solid var(--field);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 400;
+}
+.fencepost-app :is(input, select, textarea):hover {
+  border-color: var(--ink);
+}
 .fencepost-app textarea {
-  border-radius: 10px;
-  border-color: #8a978c;
+  min-height: 120px;
+  resize: vertical;
+}
+.fencepost-app select:has(option[value=""]:checked) {
+  color: var(--muted);
 }
 .fencepost-app input[type="file"] {
-  padding: 8px;
-  font-size: 14px;
+  padding: var(--s2);
+  font-size: var(--fs-sm);
 }
 .fencepost-app input[type="file"]::file-selector-button {
   margin-right: 14px;
-  padding: 8px 16px;
+  padding: var(--s2) var(--s4);
   border: 1.5px solid var(--ink);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: transparent;
   color: var(--ink);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
+/* A checkbox and its sentence on one row; its error, if any, on the row under both. */
+.fencepost-app .tick {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: start;
+  gap: var(--s1) var(--s3);
+  font-weight: 400;
+}
+.fencepost-app .tick .field-error {
+  grid-column: 2;
+}
+.fencepost-app input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 1px 0 0;
+  accent-color: var(--ink);
+}
+.fencepost-app fieldset {
+  min-width: 0;
+  margin: 0 0 var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-field);
+}
+.fencepost-app .field-error {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.fencepost-app .field-error:empty {
+  display: none;
+}
+.fencepost-app [aria-invalid="true"] {
+  border: 2px solid var(--danger);
+}
+.fencepost-app :is(#login-error) {
+  color: var(--danger);
+}
+.fencepost-app #feedback:not(:empty) {
+  margin-bottom: var(--s5);
+  padding: var(--s4);
+  border: 2px solid var(--accent);
+  border-radius: var(--r-field);
+  background: var(--surface);
+}
+.fencepost-app summary {
+  min-height: 44px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fencepost-app pre {
+  max-height: 300px;
+  overflow: auto;
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
-/* Layout: room between sections, a reading width for text, forms not stretched to 1000px. */
-.fencepost-app .mobile-main {
-  padding: 40px 32px 72px;
-}
-.fencepost-app #content > p,
-.fencepost-app #content > dl,
-.fencepost-app #content > .notice,
-.fencepost-app #observation-form,
-.fencepost-app #registration-form,
-.fencepost-app .discussion {
-  max-width: 680px;
-}
-.fencepost-app .phone-intro {
-  padding: 8px 0 48px;
-}
-.fencepost-app .phone-intro > p:not(.eyebrow) {
-  font-size: 18px;
-  margin-bottom: 28px;
-}
-.fencepost-app .feed-section {
-  margin: 72px 0 0;
-}
-.fencepost-app .section-heading {
-  margin-bottom: 24px;
-}
-.fencepost-app .community-preview {
-  padding-top: 56px;
-  border-top-color: var(--line);
-}
-.fencepost-app .mobile-header {
-  border-bottom-color: var(--rule);
-}
-.fencepost-app .mobile-header .brand span {
-  color: var(--accent);
-}
-.fencepost-app .community-preview > p {
-  margin-top: -12px;
-}
+/* --------------------------------------------------------- panels, lists */
 
-/* Cards: no box, just the picture and the words under it. */
-.fencepost-app .mobile-card,
-.fencepost-app .opportunity-card,
-.fencepost-app .update-card {
+.fencepost-app .notice {
+  margin: var(--s5) 0;
+  padding: var(--s5);
+  border: 0;
+  border-radius: var(--r-media);
+  background: var(--tint);
+}
+.fencepost-app .notice > :last-child {
+  margin-bottom: 0;
+}
+.fencepost-app .notice > :is(h2, h3):first-child {
+  margin-top: 0;
+}
+/* Definition lists read as a two-column table where there is room. */
+.fencepost-app dl {
+  margin: 0 0 var(--s5);
+}
+.fencepost-app dt {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.fencepost-app dd {
+  margin: 0 0 var(--s3);
+}
+@media (min-width: 701px) {
+  .fencepost-app #content > dl {
+    display: grid;
+    grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+    max-width: 760px;
+    border-top: 1px solid var(--line);
+  }
+  .fencepost-app #content > dl > :is(dt, dd) {
+    margin: 0;
+    padding: var(--s3) 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+.fencepost-app .compact-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s1) 14px;
+  margin: 14px 0;
+}
+.fencepost-app .compact-meta :is(dt, dd) {
   margin: 0;
+}
+.fencepost-app blockquote {
+  margin: var(--s3) 0;
+  padding: var(--s4);
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+}
+
+/* ----------------------------------------------------------------- cards */
+
+/* No box: the picture, then the words under it. */
+.fencepost-app :is(.mobile-card, .opportunity-card, .update-card) {
+  margin: 0;
+  overflow: visible;
   border: 0;
   border-radius: 0;
   background: none;
-  overflow: visible;
-}
-.fencepost-app #content > .mobile-card {
-  margin: 0 0 40px;
 }
 .fencepost-app :is(.mobile-card, .opportunity-card, .update-card) > :is(img, .illustrated) {
-  border-radius: 14px;
+  display: block;
+  width: 100%;
+  height: 230px;
+  object-fit: cover;
+  border-radius: var(--r-media);
   overflow: hidden;
 }
 .fencepost-app :is(.mobile-card, .opportunity-card, .update-card) > .card-body {
   padding: 18px 0 0;
 }
-/* A card's picture carries no caption bar: the label under it already says the content
-   is a sample, and the detail page and Image credits keep the credit. */
+/* A card's picture carries no caption bar: the detail page and Image credits keep the
+   credit. */
 .fencepost-app :is(.mobile-card, .opportunity-card, .update-card) figcaption {
   display: none;
 }
-/* Tinted panels take the poster's warm tint; green stays for what can be pressed. */
-.fencepost-app .guidance-card {
-  border-color: var(--line);
-  background: var(--sage);
+.fencepost-app .illustrated figcaption {
+  max-width: calc(100% - 16px);
+  font-size: var(--fs-xs);
 }
-.fencepost-app :is(.admin-nav, .animal-quiz .quiz-portrait, .animal-quiz .answer-letter) {
-  background: var(--sage);
+.fencepost-app :is(.detail-image, .registration-image) {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  margin: 0 0 var(--s5);
+  object-fit: cover;
+  border-radius: var(--r-media);
 }
-/* The quiz hint names the display's remote buttons; here the answers are just buttons. */
-.fencepost-app .quiz-hint {
+.fencepost-app .registration-image {
+  height: 220px;
+}
+.fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s7) var(--s6);
+  margin: var(--s5) 0;
+}
+@media (min-width: 701px) {
+  .fencepost-app .story-grid > .mobile-card > :is(img, .illustrated) {
+    height: 220px;
+  }
+}
+/* Every story in the list said "Neighbour Observation · Sample"; the site notice and the
+   story page say it once, and repeating it on each card buried the titles. Activity and
+   update cards keep theirs: there the label tells a verified activity from a sample. */
+.fencepost-app .story-grid .observation-label {
   display: none;
 }
-.fencepost-app .story-grid,
-.fencepost-app .opportunity-grid,
-.fencepost-app .update-grid {
-  gap: 48px 32px;
+.fencepost-app :is(.opportunity-card, .update-card) .small {
+  margin-top: var(--s3);
 }
+
+/* The featured story: picture and words side by side. */
 .fencepost-app .featured-story {
-  gap: 40px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s6);
   align-items: center;
+}
+.fencepost-app .featured-story > :is(img, .illustrated) {
+  height: 100%;
+  min-height: 360px;
 }
 .fencepost-app .featured-story > .card-body {
   padding: 0;
 }
-.fencepost-app .compact-meta {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 14px;
-  margin: 14px 0;
+.fencepost-app .featured-story h2 {
+  margin: 0 0 var(--s2);
+  font-size: var(--fs-xl);
 }
-.fencepost-app .compact-meta dt {
-  margin: 0;
+
+/* A story page: the neighbour's words and the checked information in the main column,
+   safety and privacy beside them where there is room. */
+.fencepost-app .story-layout {
+  display: grid;
+  gap: var(--s6) var(--s7);
+}
+@media (min-width: 901px) {
+  .fencepost-app .story-layout {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+  .fencepost-app .story-aside {
+    position: sticky;
+    top: 96px;
+  }
+}
+.fencepost-app .story-main {
+  max-width: var(--measure);
+}
+.fencepost-app .story-lede {
+  font-size: var(--fs-lg);
+  line-height: 1.55;
+}
+.fencepost-app .story-main h2 {
+  margin-top: var(--s6);
+}
+.fencepost-app .story-aside .notice {
+  margin: 0 0 var(--s5);
+}
+.fencepost-app .story-aside .notice h2 {
+  font-size: var(--fs-lg);
+}
+.fencepost-app .story-aside .notice a {
   font-weight: 600;
-  color: var(--muted);
 }
-.fencepost-app .compact-meta dd {
-  margin: 0;
+.fencepost-app .privacy-note .small {
+  margin-bottom: var(--s2);
 }
+
+/* "What should I do?" on the home page and the choices on Help. */
 .fencepost-app .guidance-card {
-  margin: 72px 0 0;
-  padding: 32px;
+  margin: var(--s8) 0 0;
+  padding: var(--s6);
   border: 0;
+  border-radius: var(--r-media);
+  background: var(--tint);
 }
-.fencepost-app .guidance-shortcuts,
-.fencepost-app .help-options {
+.fencepost-app .guidance-card h2 {
+  margin: 0 0 var(--s3);
+}
+/* One column of choices: each reads as a row to pick, and none is cut short. */
+.fencepost-app :is(.guidance-shortcuts, .help-options) {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 24px 0;
-  max-width: 680px;
+  grid-template-columns: 1fr;
+  gap: var(--s2);
+  max-width: var(--form);
+  margin: var(--s5) 0;
 }
-.fencepost-app .guidance-shortcuts a,
-.fencepost-app .help-options button {
+.fencepost-app :is(.guidance-shortcuts a, .help-options button) {
+  display: flex;
   justify-content: flex-start;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
   margin: 0;
-  font-size: 16px;
+  padding: var(--s3) 20px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  font-weight: 600;
   text-align: left;
+  text-decoration: none;
+}
+.fencepost-app .guidance-shortcuts a:hover {
+  background: var(--tint);
+  color: var(--ink);
+}
+.fencepost-app .help-options button[aria-pressed="true"],
+.fencepost-app .help-options button[aria-pressed="true"]:hover {
+  background: var(--ink);
+  color: #fff;
 }
 .fencepost-app .rescue-route {
-  margin-bottom: 8px;
+  margin-bottom: var(--s2);
 }
-.fencepost-app footer {
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px 24px;
-  padding: 28px 32px;
+.fencepost-app .activity-menu {
+  display: grid;
+  gap: var(--s3);
+  max-width: var(--form);
+  margin: var(--s5) 0;
+}
+.fencepost-app .activity-menu a {
+  min-height: 52px;
+  padding: 14px 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-field);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The quiz hint names the display's remote buttons; here the answers are just buttons. */
+.fencepost-app .quiz-hint {
+  display: none;
+}
+/* quiz.css and contacts.css are sized for a 1080p screen read from a few steps away. In
+   the web app they take the same six sizes as everything else. */
+.fencepost-app .animal-quiz :is(.quiz-art figcaption, .quiz-portrait > p) {
+  font-size: var(--fs-xs);
+}
+.fencepost-app .animal-quiz :is(.quiz-kicker, .answer-letter, .quiz-source) {
+  font-size: var(--fs-sm);
+}
+.fencepost-app .animal-quiz :is(.quiz-feedback, .quiz-actions > *, .quiz-return, .quiz-review) {
+  font-size: var(--fs-md);
+}
+.fencepost-app .animal-quiz :is(.quiz-portrait strong, .quiz-answers button, .quiz-feedback h3, .quiz-review summary) {
+  font-size: var(--fs-lg);
+}
+.fencepost-app .animal-quiz :is(h2, .quiz-total) {
+  font-size: var(--fs-xl);
+}
+.fencepost-app :is(.contact-card .contact-kicker, .contact-review) {
+  font-size: var(--fs-xs);
+}
+.fencepost-app .contact-source {
+  font-size: var(--fs-sm);
+}
+.fencepost-app :is(.contact-warning, .contact-dialog p) {
+  font-size: var(--fs-md);
+}
+.fencepost-app :is(.contact-card h3, .contact-number) {
+  font-size: var(--fs-lg);
+}
+.fencepost-app .contact-dialog h2 {
+  font-size: var(--fs-xl);
+}
+.fencepost-app :is(.animal-quiz .quiz-portrait, .animal-quiz .answer-letter) {
+  background: var(--tint);
+}
+
+/* -------------------------------------------------- accounts, discussion */
+
+.fencepost-app .login-panel {
+  max-width: var(--form);
+}
+.fencepost-app .demo-accounts {
+  margin-top: var(--s5);
+  padding: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-media);
+  background: var(--surface);
+}
+.fencepost-app .demo-accounts article {
+  padding: var(--s4) 0;
+  border-bottom: 1px solid var(--line);
+}
+.fencepost-app .demo-accounts article:last-child {
+  border-bottom: 0;
+}
+.fencepost-app .demo-accounts code {
+  font-size: var(--fs-sm);
+}
+.fencepost-app .discussion {
+  margin-top: var(--s7);
+  padding-top: var(--s5);
   border-top: 1px solid var(--line);
+}
+.fencepost-app .discussion h2 {
+  margin-top: 0;
+}
+.fencepost-app .discussion #comment-validation:not(:empty) {
+  padding: var(--s4);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-field);
+  color: var(--danger);
+}
+.fencepost-app #reply-state:empty {
+  display: none;
+}
+.fencepost-app .comment-card {
+  margin: var(--s4) 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-media);
+  background: var(--surface);
+}
+.fencepost-app .comment-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: var(--s2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.fencepost-app .comment-card header span {
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+.fencepost-app .comment-card > p:last-of-type {
+  margin-bottom: var(--s3);
+}
+.fencepost-app .comment-moderation {
+  margin-top: 20px;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/* -------------------------------------------------------------- moderator */
+
+.fencepost-app .admin-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--s6);
+  align-items: start;
+}
+.fencepost-app .admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s2);
+  border-radius: var(--r-media);
+  background: var(--tint);
+}
+.fencepost-app .admin-nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-field);
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  text-decoration: none;
+}
+.fencepost-app .admin-nav a:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.fencepost-app .admin-nav a[aria-current="page"] {
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+}
+.fencepost-app .admin-content {
+  min-width: 0;
+}
+.fencepost-app .admin-content > h2 {
+  margin-top: 0;
+}
+.fencepost-app .admin-content .notice summary {
+  overflow-wrap: anywhere;
+}
+.fencepost-app .admin-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+}
+.fencepost-app .admin-summary article {
+  padding: var(--s4) 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-media);
+  background: var(--surface);
+}
+.fencepost-app .admin-summary :is(strong, span) {
+  display: block;
+}
+.fencepost-app .admin-summary strong {
+  font-size: var(--fs-xl);
+  line-height: 1.2;
+}
+.fencepost-app .admin-summary span {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* ----------------------------------------------------------------- footer */
+
+.fencepost-app footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s5);
+  padding: var(--s4) var(--gutter);
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: var(--fs-sm);
 }
 .fencepost-app footer > span {
   margin-right: auto;
 }
+.fencepost-app footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
 
-/* Phones: the sections become a bar along the bottom, within reach of a thumb, and the
-   header is just the brand and the account. */
+/* ----------------------------------------------------------------- phones */
+
+/* The sections become a bar along the bottom, within reach of a thumb; the header is just
+   the brand and the account; lists of stories and activities become compact rows. */
 @media (max-width: 700px) {
   .fencepost-app {
+    --gutter: 20px;
     padding-bottom: 68px;
   }
   .fencepost-app .mobile-header {
     position: static;
     justify-content: space-between;
-    padding: 14px 20px;
+    padding: 14px var(--gutter);
   }
   .fencepost-app .mobile-nav {
     position: fixed;
-    top: auto;
     left: 0;
     right: 0;
     bottom: 0;
@@ -1229,34 +1043,103 @@
   }
   .fencepost-app .mobile-nav a {
     min-height: 44px;
-    padding: 8px 10px;
-    font-size: 14px;
+    padding: var(--s2) 10px;
   }
   .fencepost-app .mode-note {
-    padding: 8px 20px;
     text-align: left;
   }
   .fencepost-app .mobile-main {
-    padding: 28px 20px 48px;
+    padding: var(--s6) var(--gutter) var(--s7);
   }
-  .fencepost-app .feed-section,
-  .fencepost-app .guidance-card {
-    margin-top: 56px;
+  .fencepost-app h2 {
+    margin-top: var(--s6);
+  }
+  .fencepost-app .phone-intro {
+    padding-bottom: var(--s6);
+  }
+  .fencepost-app .phone-intro > p:not(.eyebrow) {
+    font-size: var(--fs-md);
+  }
+  .fencepost-app :is(.feed-section, .guidance-card) {
+    margin-top: var(--s7);
   }
   .fencepost-app .guidance-card {
-    padding: 24px 20px;
+    padding: var(--s5) 20px;
   }
   .fencepost-app .featured-story {
+    grid-template-columns: 1fr;
     gap: 0;
   }
-  .fencepost-app .guidance-shortcuts,
-  .fencepost-app .help-options {
-    grid-template-columns: 1fr;
+  .fencepost-app .featured-story > :is(img, .illustrated) {
+    min-height: 0;
+    height: 240px;
   }
   .fencepost-app .featured-story > .card-body {
     padding: 18px 0 0;
   }
+  /* Lists: a square picture beside the title, the meta line and the link. The summary
+     waits for the story page. About a third of the old height per card. */
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) {
+    grid-template-columns: 1fr;
+    gap: var(--s5);
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) > * {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 0 var(--s4);
+    align-items: start;
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) > * > :is(img, .illustrated) {
+    width: 96px;
+    height: 96px;
+    border-radius: var(--r-field);
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) > * > .card-body {
+    padding: 0;
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) h3 {
+    margin-bottom: var(--s1);
+    font-size: var(--fs-md);
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) .card-meta {
+    margin-bottom: 0;
+    font-size: var(--fs-xs);
+  }
+  .fencepost-app
+    :is(.story-grid, .opportunity-grid, .update-grid)
+    .card-body
+    > :is(p:not(.card-meta, .status-label), .small, .review-label, dl) {
+    display: none;
+  }
+  .fencepost-app :is(.story-grid, .opportunity-grid, .update-grid) :is(.card-link, .link-button) {
+    font-size: var(--fs-sm);
+  }
+  .fencepost-app .related-link {
+    display: none;
+  }
+  .fencepost-app .admin-layout {
+    grid-template-columns: 1fr;
+  }
+  .fencepost-app .admin-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .fencepost-app .account-header {
+    gap: 10px;
+    font-size: var(--fs-xs);
+  }
   .fencepost-app footer {
-    padding: 24px 20px;
+    padding: var(--s3) var(--gutter);
+  }
+}
+@media (max-width: 400px) {
+  .fencepost-app button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fencepost-app * {
+    transition: none !important;
   }
 }
