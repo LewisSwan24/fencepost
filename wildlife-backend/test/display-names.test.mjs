@@ -41,7 +41,18 @@ const ids = {
   other: "00000000-0000-4000-8000-000000000003",
   oldTaylor: "00000000-0000-4000-8000-000000000004",
   oldMod: "00000000-0000-4000-8000-000000000005",
+  twin: "00000000-0000-4000-8000-000000000006",
+  jamie: "00000000-0000-4000-8000-000000000007",
+  sam: "00000000-0000-4000-8000-000000000008",
 };
+
+// Characters built from code points, so no editor or formatter can quietly change them.
+const cp = (...points) => String.fromCodePoint(...points);
+const fullwidth = (s) => [...s].map((c) => (/[!-~]/.test(c) ? cp(c.codePointAt(0) + 0xfee0) : c)).join("");
+const mathBold = (s) =>
+  [...s]
+    .map((c) => (/[A-Z]/.test(c) ? cp(0x1d400 + c.charCodeAt(0) - 65) : /[a-z]/.test(c) ? cp(0x1d41a + c.charCodeAt(0) - 97) : c))
+    .join("");
 
 let db;
 
@@ -76,12 +87,18 @@ before(async () => {
   await db.exec(`insert into auth.users(id, raw_user_meta_data) values
     ('${ids.impostor}', '{"display_name":"Wildlife Moderator"}'),
     ('${ids.taylor}', '{}'), ('${ids.other}', '{}'),
-    ('${ids.oldTaylor}', '{"display_name":"Robin"}'),
-    ('${ids.oldMod}', '{"display_name":"Fencepost Admin"}')`);
+    ('${ids.oldMod}', '{"display_name":"Fencepost Admin"}'),
+    ('${ids.jamie}', '{}'), ('${ids.sam}', '{}')`);
+  // Two accounts that both called themselves Robin; the earlier one keeps the name.
+  await db.exec(`insert into auth.users(id, raw_user_meta_data, created_at) values
+    ('${ids.oldTaylor}', '{"display_name":"Robin"}', '2026-01-01'),
+    ('${ids.twin}', '{"display_name":"robin"}', '2026-02-01')`);
   for (const file of migrations) {
     if (file.startsWith("006")) {
-      await db.exec(`insert into comments(story_id, author_id, author_display_name, body, status)
-        values ('${STORY}', '${ids.oldMod}', 'Fencepost Admin', 'Posted before the fix.', 'visible')`);
+      await db.exec(`insert into comments(story_id, author_id, author_display_name, body, status) values
+        ('${STORY}', '${ids.oldMod}', 'Fencepost Admin', 'Posted before the fix.', 'visible'),
+        ('${STORY}', '${ids.oldTaylor}', 'Robin', 'Robin first.', 'visible'),
+        ('${STORY}', '${ids.twin}', 'robin', 'Twin post.', 'visible')`);
     }
     await db.exec(readFileSync(join(here, "..", file), "utf8"));
   }
@@ -97,7 +114,7 @@ test("names that claim a role or the organisation are refused, however they are 
     "M0derator", "Mod3rator", "F e n c e p o s t", "Mоderator" /* Cyrillic о */, "Staff",
     "Community member", "Ranger Dave", "Council", "Adm1n", "0ff1c1al", "Módérator",
   ]) {
-    await assert.rejects(setName(ids.taylor, name), /reserved/i, `"${name}" was accepted`);
+    await assert.rejects(setName(ids.taylor, name), /reserved|alphabet/i, `"${name}" was accepted`);
   }
 });
 
@@ -142,4 +159,55 @@ test("the upgrade keeps fair names from metadata and drops official-looking ones
   assert.equal(of(ids.impostor), undefined);
   const old = await db.query("select author_display_name from comments where body = 'Posted before the fix.'");
   assert.equal(old.rows[0].author_display_name, "Community member");
+});
+
+test("compatibility forms of reserved words are refused too", async () => {
+  // Fullwidth and mathematical letters render as the word itself.
+  for (const name of [fullwidth("Moderator"), mathBold("Admin"), fullwidth("Fencepost") + " fan"]) {
+    await assert.rejects(setName(ids.taylor, name), /reserved/i, `"${name}" was accepted`);
+  }
+});
+
+test("invisible fillers, joiners and selectors are refused", async () => {
+  // Hangul fillers, combining grapheme joiner, Arabic letter mark, Mongolian vowel separator,
+  // a supplementary variation selector.
+  for (const point of [0x3164, 0x115f, 0xffa0, 0x034f, 0x061c, 0x180e, 0xe0101]) {
+    await assert.rejects(setName(ids.other, "Tay" + cp(point) + "lor Q"), /letters/, point.toString(16));
+  }
+});
+
+test("Latin mixed with Cyrillic or Greek letters is refused", async () => {
+  await assert.rejects(setName(ids.other, "Tayl" + cp(0x43e) + "r Q"), /alphabet/i);
+  await assert.rejects(setName(ids.other, "Tayl" + cp(0x3bf) + "r Q"), /alphabet/i);
+  assert.equal(await setName(ids.other, "Иван Петров"), "Иван Петров");
+});
+
+test("a lookalike of a name someone holds counts as the same name", async () => {
+  await setName(ids.taylor, "Taylor B");
+  for (const name of [fullwidth("Taylor") + " B", "Tay1or B", "Taylor-B", "TAYLOR  b", "Táylor B"]) {
+    await assert.rejects(setName(ids.other, name), /taken/i, `"${name}" was accepted`);
+  }
+});
+
+test("a name stays with whoever held it, even after they rename", async () => {
+  await setName(ids.jamie, "Jamie Q");
+  await setName(ids.jamie, "Jordan Q");
+  await assert.rejects(setName(ids.sam, "Jamie Q"), /taken/i);
+  assert.equal(await setName(ids.jamie, "Jamie Q"), "Jamie Q");
+});
+
+test("the upgrade resets comments whose author did not keep that name", async () => {
+  const rows = (
+    await db.query("select body, author_display_name from comments where body in ('Robin first.', 'Twin post.') order by body")
+  ).rows;
+  assert.deepEqual(rows.map((r) => r.author_display_name), ["Robin", "Community member"]);
+  await assert.rejects(setName(ids.twin, "Robin"), /taken/i);
+});
+
+test("a name written wholly in lookalike letters is read as the word it imitates", async () => {
+  // All Cyrillic, so the mixed-alphabet rule does not apply: "System", and a copy of "Coco".
+  const system = cp(0x405, 0x443, 0x455, 0x442, 0x435, 0x43c);
+  await assert.rejects(setName(ids.other, system), /reserved/i);
+  await setName(ids.sam, "Coco");
+  await assert.rejects(setName(ids.other, cp(0x421, 0x43e, 0x441, 0x43e)), /taken/i);
 });
