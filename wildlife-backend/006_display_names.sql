@@ -90,7 +90,9 @@ create table if not exists public.profiles(
  updated_at timestamptz not null default now()
 );
 alter table public.profiles add column if not exists name_key text;
--- Recomputed on every run, so a key made by an earlier fold never lingers.
+-- Filled for rows made before name_key existed. This migration runs once; claims keep only
+-- keys, so any later change to display_name_fold or display_name_key must ship as a new
+-- migration that re-keys display_name_claims and profiles together.
 update public.profiles set name_key=display_name_key(display_name);
 alter table public.profiles alter column name_key set not null;
 drop index if exists public.profiles_display_name_key;
