@@ -3,10 +3,13 @@
 -- The name printed beside a comment used to come from auth.users.raw_user_meta_data, which a
 -- user writes for themselves at sign-up and can rewrite at any time through /auth/v1/user.
 -- Anyone could post as "Wildlife Moderator" or "Fencepost". The name now lives in a profile
--- the server owns: users read their own row and change it only through set_display_name(),
--- which refuses names that claim a role or the organisation, names that look like one
--- someone else holds or has held, and characters that hide or disguise letters.
--- user_metadata is never read for anything shown publicly.
+-- the server owns: users read their own row and change it only through set_display_name().
+--
+-- What a name may contain is an allowlist, not a list of bad characters: letters of common
+-- scripts, digits, spaces, full stops, apostrophes and hyphens, all in one script. Every
+-- Latin letter must reduce to a to z, so the reserved-word check sees each one. Names that
+-- claim a role or the organisation are refused, and so are names that read the same as one
+-- another account holds or has ever held. user_metadata is never read for anything shown.
 --
 -- Tests: wildlife-backend/test (runs 001 to 006 in an in-process Postgres).
 begin;
@@ -16,49 +19,62 @@ create or replace function public.clean_display_name(value text) returns text la
  select regexp_replace(regexp_replace(normalize(coalesce(value,''),NFC),'^\s+|\s+$','','g'),'\s+',' ','g')
 $$;
 
--- How a name reads, for comparison only. NFKD turns fullwidth and mathematical letters into
--- plain ones and splits accents off, which are then dropped; lookalike Cyrillic and Greek
--- letters and digits fold onto Latin. Letters of other scripts are kept as they are.
+-- How a name reads, for comparison only. NFKD splits accents off, and they are dropped;
+-- Latin letters with no decomposition (ø, ł, þ, ı ...), lookalike Cyrillic and Greek letters
+-- and digits that stand for letters fold onto a to z. The table runs before lower(), so a
+-- capital is folded the same whatever the database's locale would lower it to.
 create or replace function public.display_name_fold(value text) returns text language sql immutable set search_path=public as $$
- select regexp_replace(translate(lower(normalize(coalesce(value,''),NFKD)),
-  '034578аеорсухіјѕкмнтвԁԛԝӏАВЕКМНОРСТХІЈЅαεορτυνικβηχΑΒΕΗΙΚΜΝΟΡΤΥΧ@$!',
-  'oeastbaeopcyxijskmhtbdqwlabekmhopctxijsaeoptuvikbnxabehikmnoptyxasi'),
+ select regexp_replace(
+  replace(replace(replace(replace(replace(lower(translate(normalize(coalesce(value,''),NFKD),
+   '034578øØðÐþÞđĐħĦıĸłŁŀĿŋŊŧŦаеорсухіјѕкмнтвԁԛԝӏпгһьүѵАВЕКМНОРСТХІЈЅӀҺЬҮԀԚԜαεορτυνικβηχγωμϲϳΑΒΕΗΙΚΜΝΟΡΤΥΧΖϹͿ',
+   'oeastbooddppddhhikllllnnttaeopcyxijskmhtbdqwlnrhbyvabekmhopctxijslhbydqwaeoptuvikbnxywucjabehikmnoptyxzcj')),
+   'æ','ae'),'Æ','ae'),'œ','oe'),'Œ','oe'),'ß','ss'),
   '[\x0300-\x036F]','','g')
 $$;
 
--- Latin letters only, for the reserved-word check. 1 and | stand for i or l, so the caller
--- folds both ways.
-create or replace function public.display_name_skeleton(value text,one text) returns text language sql immutable set search_path=public as $$
- select regexp_replace(regexp_replace(display_name_fold(value),'[1|]',one,'g'),'[^a-z]','','g')
+-- Latin letters only, for the reserved-word check. 1 stands for i or l, and rn and vv can
+-- pass for m and w, so the caller tries each reading.
+create or replace function public.display_name_skeleton(value text,one text,merge boolean) returns text language sql immutable set search_path=public as $$
+ select case when merge then replace(replace(s,'rn','m'),'vv','w') else s end
+ from (select regexp_replace(regexp_replace(display_name_fold(value),'1',one,'g'),'[^a-z]','','g') as s) x
 $$;
 
--- The key two names collide on: folded, separators dropped. "Taylor B", "TAYLOR-b",
--- "Táylor B", "Tay1or B" and a fullwidth "Taylor B" share one key.
+-- The key two names collide on: folded, separators dropped, i, l and 1 one letter, rn as m
+-- and vv as w. "Taylor B", "TAYLOR-b", "Táylor B", "TayIor B" and "Tay1or B" share a key.
 create or replace function public.display_name_key(value text) returns text language sql immutable set search_path=public as $$
- select regexp_replace(regexp_replace(display_name_fold(clean_display_name(value)),'[1|]','l','g'),'[\s.''-]','','g')
+ select replace(replace(translate(regexp_replace(display_name_fold(clean_display_name(value)),'[\s.''-]','','g'),'i1','ll'),'rn','m'),'vv','w')
 $$;
 
--- Null when the name may be used, otherwise the message to show. Letters in any script are
--- allowed; ASCII punctuation beyond . ' -, symbols, emoji, and characters that are invisible,
--- change direction or fill space are not, and Latin may not be mixed with Cyrillic or Greek.
+-- Null when the name may be used, otherwise the message to show.
 create or replace function public.display_name_problem(value text) returns text language plpgsql immutable set search_path=public as $$
-declare v text:=clean_display_name(value); one text; w text;
+declare v text:=clean_display_name(value); one text; merge boolean; w text;
 begin
  if char_length(v) not between 2 and 40 then return 'Use 2 to 40 characters.';end if;
- if v ~ '^[ .''-]' or v ~ '[\x01-\x1F\x21-\x26\x28-\x2C\x2F\x3A-\x40\x5B-\x60\x7B-\xBF\xD7\xF7\x034F\x061C\x115F-\x1160\x17B4-\x17B5\x180B-\x180F\x2000-\x2BFF\x3000-\x303F\x3164\xE000-\xF8FF\xFE00-\xFE0F\xFEFF\xFF01-\xFF0F\xFF1A-\xFF20\xFF3B-\xFF40\xFF5B-\xFF65\xFFA0\xFFF0-\xFFFF\x1BCA0-\x1BCA3\x1D173-\x1D17A\x1F000-\x1FFFF\xE0000-\xE0FFF]' then
+ -- Latin (Basic, Latin-1 letters, Extended-A, Vietnamese), Greek, Cyrillic, Hebrew, Arabic,
+ -- Devanagari, Thai, kana, CJK ideographs and Hangul syllables. No combining marks left over
+ -- after composing, no symbols, no invisible or direction-changing characters.
+ if v ~ '^[ .''-]' or v ~ '[^A-Za-z0-9 .''\xC0-\xD6\xD8-\xF6\xF8-\xFF\x0100-\x017F\x1E00-\x1E99\x1EA0-\x1EF9\x0386\x0388-\x03CE\x0400-\x0481\x048A-\x052F\x05D0-\x05EA\x0620-\x064A\x0900-\x097F\x0E01-\x0E3A\x0E40-\x0E4E\x3041-\x3096\x30A1-\x30FA\x30FC\x3400-\x4DBF\x4E00-\x9FFF\xAC00-\xD7A3-]' then
   return 'Use letters, numbers, spaces, full stops, hyphens or apostrophes.';
  end if;
- if v ~ '[A-Za-z\xC0-\x024F\x1E00-\x1EFF]' and v ~ '[\x0370-\x03FF\x0400-\x052F\x1F00-\x1FFF\x2DE0-\x2DFF\xA640-\xA69F]' then
-  return 'Use one alphabet: Latin letters cannot be mixed with Cyrillic or Greek.';
+ if (select count(*) from unnest(array[
+   '[A-Za-z\xC0-\x017F\x1E00-\x1EFF]','[\x0370-\x03FF]','[\x0400-\x052F]','[\x0590-\x05FF]',
+   '[\x0600-\x06FF]','[\x0900-\x097F]','[\x0E00-\x0E7F]','[\x3040-\x30FF\x3400-\x4DBF\x4E00-\x9FFF\xAC00-\xD7AF]']) as s(script)
+   where v ~ s.script) > 1 then
+  return 'Use one alphabet: letters from different scripts cannot be mixed.';
+ end if;
+ if v ~ '[A-Za-z\xC0-\x017F\x1E00-\x1EFF]' and display_name_fold(v) ~ '[^a-z0-9 .''-]' then
+  return 'Use letters, numbers, spaces, full stops, hyphens or apostrophes.';
  end if;
  foreach one in array array['i','l'] loop
-  if display_name_skeleton(v,one) ~ '(moderator|fencepost|communitymember|wildlifeneighbou?r|possumhelp)' then
-   return 'That name is reserved. Choose another.';
-  end if;
-  for w in select regexp_split_to_table(v,'[ .''-]+') loop
-   if display_name_skeleton(w,one) in ('admin','admins','administrator','staff','ranger','rangers','council','official','officials','support','system','rspca','wires','police') then
+  foreach merge in array array[false,true] loop
+   if display_name_skeleton(v,one,merge) ~ '(moderator|fencepost|communitymember|wildlifeneighbou?r|possumhelp)' then
     return 'That name is reserved. Choose another.';
    end if;
+   for w in select regexp_split_to_table(v,'[ .''-]+') loop
+    if display_name_skeleton(w,one,merge) in ('admin','admins','administrator','staff','ranger','rangers','council','official','officials','support','system','rspca','wires','police') then
+     return 'That name is reserved. Choose another.';
+    end if;
+   end loop;
   end loop;
  end loop;
  return null;
@@ -83,12 +99,14 @@ grant select on public.profiles to authenticated;
 
 -- Every name an account has held, by key. A name never passes to another account, even after
 -- its holder renames or the account is deleted, because comments keep the name they were
--- posted under. No foreign key, so a deleted account's names stay held.
+-- posted under. No foreign key, so a deleted account's names stay held. An account may hold
+-- at most five, so no one can sit on a whole neighbourhood's names.
 create table if not exists public.display_name_claims(
  name_key text primary key,
  user_id uuid not null,
  claimed_at timestamptz not null default now()
 );
+create index if not exists display_name_claims_user on public.display_name_claims(user_id);
 alter table public.display_name_claims enable row level security;
 revoke all on public.display_name_claims from public,anon,authenticated;
 
@@ -97,6 +115,13 @@ declare v text:=clean_display_name(name); k text:=display_name_key(name); proble
 begin
  if auth.uid() is null then raise exception 'Sign in required';end if;
  if problem is not null then raise exception '%',problem;end if;
+ -- One rename at a time per account, so the five-name count below cannot be raced.
+ perform pg_advisory_xact_lock(hashtext('display_name:'||auth.uid()::text));
+ select c.user_id into holder from display_name_claims c where c.name_key=k;
+ if holder is not null and holder<>auth.uid() then raise exception 'That name is taken. Choose another.';end if;
+ if holder is null and (select count(*) from display_name_claims c where c.user_id=auth.uid())>=5 then
+  raise exception 'An account can use at most five names. Choose one you have used before.';
+ end if;
  insert into display_name_claims(name_key,user_id) values(k,auth.uid()) on conflict(name_key) do nothing;
  select c.user_id into holder from display_name_claims c where c.name_key=k;
  if holder is distinct from auth.uid() then raise exception 'That name is taken. Choose another.';end if;
@@ -133,6 +158,6 @@ update comments c set author_display_name='Community member'
  where c.author_display_name<>'Community member'
   and not exists(select 1 from display_name_claims k where k.name_key=display_name_key(c.author_display_name) and k.user_id=c.author_id);
 
-revoke execute on function public.clean_display_name(text),public.display_name_fold(text),public.display_name_skeleton(text,text),public.display_name_key(text),public.display_name_problem(text),public.set_display_name(text) from public,anon,authenticated;
+revoke execute on function public.clean_display_name(text),public.display_name_fold(text),public.display_name_skeleton(text,text,boolean),public.display_name_key(text),public.display_name_problem(text),public.set_display_name(text) from public,anon,authenticated;
 grant execute on function public.set_display_name(text) to authenticated;
 commit;

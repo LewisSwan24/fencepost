@@ -76,6 +76,14 @@ const comment = (user, body = "Saw one on the fence tonight.") =>
       .author_display_name;
   });
 
+// A fresh account, for tests that only need a name accepted.
+let users = 100;
+async function newUser() {
+  const id = `00000000-0000-4000-8000-${String(++users).padStart(12, "0")}`;
+  await db.query("insert into auth.users(id) values ($1)", [id]);
+  return id;
+}
+
 const setName = (user, name) =>
   as(user, async () => (await db.query("select public.set_display_name($1) as n", [name])).rows[0].n);
 
@@ -120,7 +128,7 @@ test("names that claim a role or the organisation are refused, however they are 
 
 test("ordinary names in any script are accepted and printed", async () => {
   for (const name of ["Nguyễn Vy", "李小明", "O'Brien", "Mod Squad fan"]) {
-    assert.equal(await setName(ids.other, name), name);
+    assert.equal(await setName(await newUser(), name), name);
   }
   assert.equal(await setName(ids.taylor, "  Taylor   B  "), "Taylor B");
   assert.equal(await comment(ids.taylor), "Taylor B");
@@ -161,11 +169,31 @@ test("the upgrade keeps fair names from metadata and drops official-looking ones
   assert.equal(old.rows[0].author_display_name, "Community member");
 });
 
-test("compatibility forms of reserved words are refused too", async () => {
-  // Fullwidth and mathematical letters render as the word itself.
-  for (const name of [fullwidth("Moderator"), mathBold("Admin"), fullwidth("Fencepost") + " fan"]) {
-    await assert.rejects(setName(ids.taylor, name), /reserved/i, `"${name}" was accepted`);
+test("compatibility forms and letters outside the allowed scripts are refused", async () => {
+  // Fullwidth and mathematical letters render as the word itself; IPA alpha, Cherokee and
+  // Latin Extended-B letters pass for Latin ones.
+  for (const name of [
+    fullwidth("Moderator"), mathBold("Admin"), fullwidth("Fencepost") + " fan",
+    cp(0x251) + "dmin", cp(0x13b7) + "oderator", "Off" + cp(0x269) + "cial", "Tay" + cp(0x301, 0x301, 0x301) + "lor",
+    // An allowed Latin letter that does not reduce to a to z (n preceded by apostrophe).
+    "Do" + cp(0x149) + "a",
+  ]) {
+    await assert.rejects(setName(ids.taylor, name), /letters/i, `"${name}" was accepted`);
   }
+});
+
+test("Latin letters with no plain form are read as the plain letter", async () => {
+  for (const name of ["Moderat" + cp(0xf8) + "r", "Fence" + cp(0xfe) + "ost", "Adrnin", "Off" + cp(0x131) + "cial", "A" + cp(0x111) + "min"]) {
+    await assert.rejects(setName(ids.taylor, name), /reserved|letters/i, `"${name}" was accepted`);
+  }
+  for (const name of ["S" + cp(0xf8) + "ren", cp(0x141) + "ukasz", "Stra" + cp(0xdf) + "e", "Ma" + cp(0xeb) + "lle"]) {
+    assert.equal(await setName(await newUser(), name), name.normalize("NFC"));
+  }
+});
+
+test("lookalike Cyrillic spellings of reserved words are refused", async () => {
+  // a, komi de, em, i, pe: reads "admin".
+  await assert.rejects(setName(ids.other, cp(0x430, 0x501, 0x43c, 0x456, 0x43f)), /reserved/i);
 });
 
 test("invisible fillers, joiners and selectors are refused", async () => {
@@ -179,14 +207,24 @@ test("invisible fillers, joiners and selectors are refused", async () => {
 test("Latin mixed with Cyrillic or Greek letters is refused", async () => {
   await assert.rejects(setName(ids.other, "Tayl" + cp(0x43e) + "r Q"), /alphabet/i);
   await assert.rejects(setName(ids.other, "Tayl" + cp(0x3bf) + "r Q"), /alphabet/i);
-  assert.equal(await setName(ids.other, "Иван Петров"), "Иван Петров");
+  assert.equal(await setName(await newUser(), "Иван Петров"), "Иван Петров");
 });
 
 test("a lookalike of a name someone holds counts as the same name", async () => {
   await setName(ids.taylor, "Taylor B");
-  for (const name of [fullwidth("Taylor") + " B", "Tay1or B", "Taylor-B", "TAYLOR  b", "Táylor B"]) {
+  for (const name of ["Tay1or B", "TayIor B", "Taylor-B", "TAYLOR  b", "T" + cp(0xe1) + "ylor B"]) {
     await assert.rejects(setName(ids.other, name), /taken/i, `"${name}" was accepted`);
   }
+  await setName(ids.taylor, "Iris Warne");
+  for (const name of ["lris Warne", "Iris VVarne", "Iris Wame"]) {
+    await assert.rejects(setName(ids.other, name), /taken/i, `"${name}" was accepted`);
+  }
+});
+
+test("one account can hold at most five names", async () => {
+  for (const n of ["One", "Two", "Three", "Four", "Five"]) await setName(ids.sam, "Sam " + n);
+  await assert.rejects(setName(ids.sam, "Sam Six"), /five names/i);
+  assert.equal(await setName(ids.sam, "Sam Two"), "Sam Two");
 });
 
 test("a name stays with whoever held it, even after they rename", async () => {
@@ -208,6 +246,6 @@ test("a name written wholly in lookalike letters is read as the word it imitates
   // All Cyrillic, so the mixed-alphabet rule does not apply: "System", and a copy of "Coco".
   const system = cp(0x405, 0x443, 0x455, 0x442, 0x435, 0x43c);
   await assert.rejects(setName(ids.other, system), /reserved/i);
-  await setName(ids.sam, "Coco");
+  await setName(ids.jamie, "Coco");
   await assert.rejects(setName(ids.other, cp(0x421, 0x43e, 0x441, 0x43e)), /taken/i);
 });
