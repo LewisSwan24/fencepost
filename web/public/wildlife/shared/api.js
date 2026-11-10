@@ -225,11 +225,16 @@ export async function login(email, password) {
       method: "POST",
       body: "{}",
     });
+    // The name comments are printed under (wildlife-backend/006), never user_metadata,
+    // which the user writes for themselves.
+    const profiles = await request(
+      "/rest/v1/profiles?select=display_name&id=eq." +
+        encodeURIComponent(session.user.id),
+    );
     session.profile = {
       id: session.user.id,
       email: session.user.email,
-      displayName:
-        session.user.user_metadata?.display_name || "Community member",
+      displayName: profiles?.[0]?.display_name || "Community member",
       role: moderator === true ? "moderator" : "user",
     };
     store.writeSession(session);
