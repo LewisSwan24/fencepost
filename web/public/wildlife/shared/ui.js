@@ -83,7 +83,7 @@ export function fencepostUrl(hash = "stories") {
 }
 export const sourceLink = (url, label = "Information source") =>
   /^https:\/\//.test(url || "")
-    ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">${label} ↗</a>`
+    ? `<a class="out-link" href="${esc(url)}" target="_blank" rel="noreferrer"><span>${label}</span> <span class="out-arrow">↗</span></a>`
     : "";
 export const modeNote = (live) =>
   `<p class="mode-note">${live ? "Connected prototype · wildlife posts require human review" : "Local demo only · fictional content · stored in this browser, not shared between devices. Do not enter real personal or rescue details."}</p>`;

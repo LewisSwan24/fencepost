@@ -426,8 +426,7 @@
     .card-link,
     .opportunity-card .link-button,
     .update-card .link-button,
-    .return-link,
-    .section-heading a
+    .return-link
   ) {
   display: inline-flex;
   align-items: center;
@@ -447,12 +446,90 @@
       .card-link,
       .opportunity-card .link-button,
       .update-card .link-button,
-      .return-link,
-      .section-heading a
+      .return-link
     ):hover {
   background: none;
   color: var(--accent);
   text-decoration: underline;
+}
+/* A link that moves on and stands by itself: the words, then an arrow in a ring that fills
+   when the link is pointed at. The stylesheet draws the arrow, so the underline never runs
+   through it and a screen reader is not told "right arrow". Cards draw the same ring. */
+.fencepost-app .go-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 44px;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.fencepost-app .go-link:hover {
+  color: var(--ink);
+}
+.fencepost-app .go-link::after,
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card)
+  :is(.card-link, .link-button):not(.related-link)::before {
+  content: "\2192";
+  content: "\2192" / "";
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    transform 0.15s ease;
+}
+.fencepost-app .go-link:hover::after,
+.fencepost-app
+  :is(.mobile-card, .opportunity-card, .update-card):hover
+  :is(.card-link, .link-button):not(.related-link)::before {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+  transform: translateX(3px);
+}
+/* Inside a sentence it stays a link in the sentence: underlined words, a bare arrow. */
+.fencepost-app p > .go-link {
+  display: inline;
+  font-weight: inherit;
+  text-decoration: underline;
+}
+.fencepost-app p > .go-link::after,
+.fencepost-app p > .go-link:hover::after {
+  display: inline-block;
+  width: auto;
+  height: auto;
+  margin-left: 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+}
+/* A link that leaves the site keeps its underline, under the words only: the arrow stands
+   clear of it. The words and the arrow are separate spans because a standalone link is a
+   flex row, and an underline on the row would run under every item in it. */
+.fencepost-app .out-link {
+  gap: 5px;
+  text-decoration: none;
+}
+.fencepost-app .out-link > span:first-child {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.fencepost-app .out-arrow {
+  display: inline-block;
+  color: var(--muted);
 }
 .fencepost-app .related-link {
   display: inline-flex;
@@ -688,10 +765,7 @@
 .fencepost-app
   :is(.mobile-card, .opportunity-card, .update-card)
   :is(.card-link, .link-button):not(.related-link)::before {
-  content: "\2192";
-  font-size: var(--fs-lg);
-  line-height: 1;
-  transition: transform 0.15s ease;
+  font-size: var(--fs-md);
 }
 .fencepost-app
   :is(.mobile-card, .opportunity-card, .update-card)
@@ -700,11 +774,6 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-}
-.fencepost-app
-  :is(.mobile-card, .opportunity-card, .update-card):hover
-  :is(.card-link, .link-button):not(.related-link)::before {
-  transform: translateX(4px);
 }
 /* Focus is drawn round the whole card, which is what the link stands for. */
 .fencepost-app
@@ -890,8 +959,14 @@
   padding: 14px 18px;
   border: 1.5px solid var(--ink);
   border-radius: var(--r-field);
-  font-weight: 600;
-  text-decoration: none;
+  justify-content: space-between;
+}
+.fencepost-app .activity-menu a:hover {
+  background: var(--tint);
+}
+/* The row already has a border, so its arrow goes without a ring until it is pointed at. */
+.fencepost-app .activity-menu a:not(:hover)::after {
+  border-color: transparent;
 }
 
 /* The quiz hint names the display's remote buttons; here the answers are just buttons. */

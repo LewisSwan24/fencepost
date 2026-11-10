@@ -30,7 +30,7 @@ export function mountActivity(
   const returnLink = () =>
     `<a class="quiz-return" data-quiz-option href="${esc(animalUrl)}">← ${esc(animal.name)}</a>`;
   const source = (q) =>
-    `<p class="quiz-source">Wildlife information · <a href="${esc(q.source.url)}" target="_blank" rel="noreferrer">${esc(q.source.title)} ↗</a></p>`;
+    `<p class="quiz-source">Wildlife information · <a class="out-link" href="${esc(q.source.url)}" target="_blank" rel="noreferrer"><span>${esc(q.source.title)}</span> <span class="out-arrow">↗</span></a></p>`;
   function draw(focus = true) {
     const questions = quizzes[state.speciesId],
       q = questions[state.question];

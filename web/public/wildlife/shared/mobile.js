@@ -133,7 +133,7 @@ export async function mount(root) {
     if (section === "my-observations")
       return `<h1>My observations</h1><p>Your own public wording and status only. Private rescue details and moderator notes are not shown.</p>${observations.map((o) => `<article class="notice"><span class="status-label">${{ pending: "Awaiting review", approved: "Approved", rejected: "Rejected", urgent: "Urgent", clarification: "Clarification requested", removed: "Removed" }[o.status] || esc(o.status)}</span><h2>Possible ${esc(name(o.possibleSpecies))}</h2><p>${esc(o.description)}</p><p>${esc(o.publicArea)} · ${esc(o.approximateTime)}</p></article>`).join("") || "<p>You have not submitted any observations yet.</p>"}<a class="link-button" href="#share">Share an observation</a>`;
     const saved = await api.savedStories();
-    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a href="#my-observations">My observations (${observations.length}) →</a><a href="#registrations">My volunteer registrations →</a><a href="#share">Share an observation →</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${button("Log out", "logout")}`;
+    return `<p class="eyebrow">Resident activity / Private demonstration view</p><h1>Hello, ${esc(user.displayName)}</h1><p>${esc(user.email)} · ${user.role === "moderator" ? "Moderator" : "Community user"}</p><nav class="activity-menu"><a class="go-link" href="#my-observations">My observations (${observations.length})</a><a class="go-link" href="#registrations">My volunteer registrations</a><a class="go-link" href="#share">Share an observation</a></nav><h2>Saved wildlife stories</h2>${saved.map((story) => storyCard(story)).join("") || "<p>No saved stories yet. Open an approved story to save it.</p>"}${button("Log out", "logout")}`;
   }
   function discussionHtml(storyId, comments) {
     const user = api.account();
@@ -150,7 +150,7 @@ export async function mount(root) {
         .slice(1)
         .map((story) => storyCard(story))
         .join("") || "<p>No other approved stories yet.</p>"
-    }</div></section><section class="feed-section community-preview"><div class="section-heading"><h2>Volunteer in your neighbourhood</h2><a href="#community">All activities and updates →</a></div><p>Habitat care, at your own pace. Volunteers never handle wildlife.</p><div class="opportunity-grid">${
+    }</div></section><section class="feed-section community-preview"><div class="section-heading"><h2>Volunteer in your neighbourhood</h2><a class="go-link" href="#community">All activities and updates</a></div><p>Habitat care, at your own pace. Volunteers never handle wildlife.</p><div class="opportunity-grid">${
       opportunities
         .filter((o) => o.status !== "completed")
         .slice(0, 2)
@@ -225,7 +225,7 @@ export async function mount(root) {
           const comments = await api.comments(s.id);
           // The neighbour's words lead; checked information follows under its own label, so
           // the two are never read as one voice. Safety and privacy sit beside them.
-          html = `<a class="return-link" href="#stories">← Stories</a><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<div class="story-layout"><div class="story-main"><p class="eyebrow">Resident observation</p><p class="story-lede">${esc(s.storyText)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}</div><aside class="story-aside"><section class="notice"><h2>Safe response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><a href="#help">If it may be hurt →</a></section><section class="privacy-note"><p class="eyebrow">Public privacy information</p><p class="small">Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p class="small">Reviewed by ${esc(s.reviewedBy)}</p></section></aside></div>${discussionHtml(s.id, comments)}`;
+          html = `<a class="return-link" href="#stories">← Stories</a><p class="status-label observation-label">Neighbour Observation ${s.sample ? "· Sample" : ""}</p><h1>Possible ${esc(name(s.species))}</h1><p class="card-meta">${esc(s.publicArea)} · ${esc(s.approximateTime)}</p>${image(api.publicImage(s.mediaUrl) || sp?.image, name(s.species), "detail-image")}<div class="story-layout"><div class="story-main"><p class="eyebrow">Resident observation</p><p class="story-lede">${esc(s.storyText)}</p><h2>Wildlife information</h2><p>${esc(s.verifiedFact)}</p>${sourceLink(s.factSource)}<p class="small">Source review status: ${esc(sp?.sourceStatus || "Review needed")}.</p>${api.account() ? button("Save / unsave story", "save-story", `data-id="${esc(s.id)}"`) : ""}</div><aside class="story-aside"><section class="notice"><h2>Safe response</h2><p>Observe from a distance. Do not approach, feed or handle wildlife.</p><a class="go-link" href="#help">If it may be hurt</a></section><section class="privacy-note"><p class="eyebrow">Public privacy information</p><p class="small">Contributor identity removed · Broad area only · Images reviewed before publication · Private details removed.</p><p class="small">Reviewed by ${esc(s.reviewedBy)}</p></section></aside></div>${discussionHtml(s.id, comments)}`;
         }
       } else if (section === "learn") {
         html = `<h1>Meet the animals</h1><div class="story-grid">${species.map((s) => `<article class="mobile-card">${image(s.image, s.name)}<div class="card-body"><h3>${esc(s.name)}</h3><p>${esc(s.fact)}</p><a class="card-link" href="#species/${s.id}" aria-label="About the ${esc(s.name)}">About this animal →</a></div></article>`).join("")}</div>`;
@@ -237,7 +237,7 @@ export async function mount(root) {
         html =
           '<h1 class="quiz-page-heading">Meet the Animal quiz</h1><div id="activity-root"></div>';
       } else if (section === "share") {
-        html = `<h1>Share an observation</h1><p>Text is enough. A photograph and nickname are optional. No account needed.</p><p class="notice">Observe from a safe distance. Do not approach, follow, feed or disturb wildlife to create a post. If driving, submit only after parking safely.</p><p class="rescue-route">Is the animal injured or trapped? <a href="#rescue">Use the private help form →</a></p>${submissionForm(false)}`;
+        html = `<h1>Share an observation</h1><p>Text is enough. A photograph and nickname are optional. No account needed.</p><p class="notice">Observe from a safe distance. Do not approach, follow, feed or disturb wildlife to create a post. If driving, submit only after parking safely.</p><p class="rescue-route">Is the animal injured or trapped? <a class="go-link" href="#rescue">Use the private help form</a></p>${submissionForm(false)}`;
       } else if (section === "rescue") {
         html = `<h1>Animal needs help</h1><p class="notice">This form does not dispatch rescue assistance and is not monitored for emergencies. <a href="#help">Read safety guidance and contact a wildlife organisation directly.</a></p><p>Exact location is shared privately only to support an appropriate response. In local demo mode, use fictional details only.</p>${submissionForm(true)}`;
       } else if (section === "preview") {
@@ -448,13 +448,13 @@ export async function mount(root) {
           ? q.reports
               .map((r) => {
                 const c = q.comments.find((c) => c.id === r.commentId);
-                return `<article class="notice"><span class="status-label">Report ${esc(r.status)}</span><p>${esc(r.reason)} · ${esc(r.details)}</p>${c ? `<blockquote>${esc(c.body)}</blockquote><p>By ${esc(c.authorDisplayName)} · Comment ${esc(c.status)}</p><a href="#story/${esc(c.storyId)}">Open related story in context →</a>${commentModeration(c)}` : "<p>Comment is unavailable.</p>"}${r.status === "open" ? button("Dismiss report", "dismiss-report", `data-id="${esc(r.id)}"`) : `<p class="small">Reviewed by ${esc(r.reviewedBy)} · ${esc(r.reviewedAt)}</p>`}</article>`;
+                return `<article class="notice"><span class="status-label">Report ${esc(r.status)}</span><p>${esc(r.reason)} · ${esc(r.details)}</p>${c ? `<blockquote>${esc(c.body)}</blockquote><p>By ${esc(c.authorDisplayName)} · Comment ${esc(c.status)}</p><a class="go-link" href="#story/${esc(c.storyId)}">Open related story in context</a>${commentModeration(c)}` : "<p>Comment is unavailable.</p>"}${r.status === "open" ? button("Dismiss report", "dismiss-report", `data-id="${esc(r.id)}"`) : `<p class="small">Reviewed by ${esc(r.reviewedBy)} · ${esc(r.reviewedAt)}</p>`}</article>`;
               })
               .join("") || "<p>No reported comments.</p>"
           : q.comments
               .map(
                 (c) =>
-                  `<article class="notice"><strong>${esc(c.authorDisplayName)}</strong><p>${esc(c.body)}</p><p>Status: ${esc(c.status)} ${c.authorDeleted ? "· Deleted by author" : ""}</p><a href="#story/${esc(c.storyId)}">Open story in context →</a>${commentModeration(c)}</article>`,
+                  `<article class="notice"><strong>${esc(c.authorDisplayName)}</strong><p>${esc(c.body)}</p><p>Status: ${esc(c.status)} ${c.authorDeleted ? "· Deleted by author" : ""}</p><a class="go-link" href="#story/${esc(c.storyId)}">Open story in context</a>${commentModeration(c)}</article>`,
               )
               .join("") || "<p>No comments.</p>"
       }`;
