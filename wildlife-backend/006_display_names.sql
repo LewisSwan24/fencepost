@@ -21,22 +21,27 @@ $$;
 
 -- How a name reads, for comparison only. NFKD splits accents off, and they are dropped;
 -- Latin letters with no decomposition (ø, ł, þ, ı ...), lookalike Cyrillic and Greek letters
--- and digits that stand for letters fold onto a to z. The table runs before lower(), so a
--- capital is folded the same whatever the database's locale would lower it to.
+-- and digits that stand for letters fold onto a to z. The table runs before and after
+-- lower(), so a capital folds the same whatever the database's locale lowers it to.
 create or replace function public.display_name_fold(value text) returns text language sql immutable set search_path=public as $$
  select regexp_replace(
-  replace(replace(replace(replace(replace(lower(translate(normalize(coalesce(value,''),NFKD),
-   '034578øØðÐþÞđĐħĦıĸłŁŀĿŋŊŧŦаеорсухіјѕкмнтвԁԛԝӏпгһьүѵАВЕКМНОРСТХІЈЅӀҺЬҮԀԚԜαεορτυνικβηχγωμϲϳΑΒΕΗΙΚΜΝΟΡΤΥΧΖϹͿ',
-   'oeastbooddppddhhikllllnnttaeopcyxijskmhtbdqwlnrhbyvabekmhopctxijslhbydqwaeoptuvikbnxywucjabehikmnoptyxzcj')),
+  replace(replace(replace(replace(replace(translate(lower(translate(normalize(coalesce(value,''),NFKD),
+   '034578øØðÐþÞđĐħĦıĸłŁŀĿŋŊŧŦаеорсухіјѕкмнтвԁԛԝӏпгһьүѵАВЕКМНОРСТХІЈЅӀҺЬҮԀԚԜαεορτυνικβηχγωμϲϳΑΒΕΗΙΚΜΝΟΡΤΥΧΖϹͿПГ',
+   'oeastbooddppddhhikllllnnttaeopcyxijskmhtbdqwlnrhbyvabekmhopctxijslhbydqwaeoptuvikbnxywucjabehikmnoptyxzcjnr')),
+   '034578øØðÐþÞđĐħĦıĸłŁŀĿŋŊŧŦаеорсухіјѕкмнтвԁԛԝӏпгһьүѵАВЕКМНОРСТХІЈЅӀҺЬҮԀԚԜαεορτυνικβηχγωμϲϳΑΒΕΗΙΚΜΝΟΡΤΥΧΖϹͿПГ',
+   'oeastbooddppddhhikllllnnttaeopcyxijskmhtbdqwlnrhbyvabekmhopctxijslhbydqwaeoptuvikbnxywucjabehikmnoptyxzcjnr'),
    'æ','ae'),'Æ','ae'),'œ','oe'),'Œ','oe'),'ß','ss'),
   '[\x0300-\x036F]','','g')
 $$;
 
--- Latin letters only, for the reserved-word check. 1 stands for i or l, and rn and vv can
--- pass for m and w, so the caller tries each reading.
-create or replace function public.display_name_skeleton(value text,one text,merge boolean) returns text language sql immutable set search_path=public as $$
+-- Latin letters only, for the reserved-word check, read the way the key reads them: i, l
+-- and 1 as one letter, and with merge, rn and vv as m and w. Reserved words are compared
+-- after the same i-to-l fold.
+drop function if exists public.display_name_skeleton(text,text,boolean);
+drop function if exists public.display_name_skeleton(text,text);
+create or replace function public.display_name_skeleton(value text,merge boolean) returns text language sql immutable set search_path=public as $$
  select case when merge then replace(replace(s,'rn','m'),'vv','w') else s end
- from (select regexp_replace(regexp_replace(display_name_fold(value),'1',one,'g'),'[^a-z]','','g') as s) x
+ from (select translate(regexp_replace(display_name_fold(value),'[^a-z1]','','g'),'i1','ll') as s) x
 $$;
 
 -- The key two names collide on: folded, separators dropped, i, l and 1 one letter, rn as m
@@ -47,7 +52,7 @@ $$;
 
 -- Null when the name may be used, otherwise the message to show.
 create or replace function public.display_name_problem(value text) returns text language plpgsql immutable set search_path=public as $$
-declare v text:=clean_display_name(value); one text; merge boolean; w text;
+declare v text:=clean_display_name(value); merge boolean; w text;
 begin
  if char_length(v) not between 2 and 40 then return 'Use 2 to 40 characters.';end if;
  -- Latin (Basic, Latin-1 letters, Extended-A, Vietnamese), Greek, Cyrillic, Hebrew, Arabic,
@@ -65,16 +70,14 @@ begin
  if v ~ '[A-Za-z\xC0-\x017F\x1E00-\x1EFF]' and display_name_fold(v) ~ '[^a-z0-9 .''-]' then
   return 'Use letters, numbers, spaces, full stops, hyphens or apostrophes.';
  end if;
- foreach one in array array['i','l'] loop
-  foreach merge in array array[false,true] loop
-   if display_name_skeleton(v,one,merge) ~ '(moderator|fencepost|communitymember|wildlifeneighbou?r|possumhelp)' then
+ foreach merge in array array[false,true] loop
+  if display_name_skeleton(v,merge) ~ translate('(moderator|fencepost|communitymember|wildlifeneighbou?r|possumhelp)','i','l') then
+   return 'That name is reserved. Choose another.';
+  end if;
+  for w in select regexp_split_to_table(v,'[ .''-]+') loop
+   if display_name_skeleton(w,merge) in (select translate(r,'i','l') from unnest(array['admin','admins','administrator','staff','ranger','rangers','council','official','officials','support','system','rspca','wires','police']) r) then
     return 'That name is reserved. Choose another.';
    end if;
-   for w in select regexp_split_to_table(v,'[ .''-]+') loop
-    if display_name_skeleton(w,one,merge) in ('admin','admins','administrator','staff','ranger','rangers','council','official','officials','support','system','rspca','wires','police') then
-     return 'That name is reserved. Choose another.';
-    end if;
-   end loop;
   end loop;
  end loop;
  return null;
@@ -87,7 +90,8 @@ create table if not exists public.profiles(
  updated_at timestamptz not null default now()
 );
 alter table public.profiles add column if not exists name_key text;
-update public.profiles set name_key=display_name_key(display_name) where name_key is null;
+-- Recomputed on every run, so a key made by an earlier fold never lingers.
+update public.profiles set name_key=display_name_key(display_name);
 alter table public.profiles alter column name_key set not null;
 drop index if exists public.profiles_display_name_key;
 create unique index if not exists profiles_name_key on public.profiles(name_key);
@@ -158,6 +162,6 @@ update comments c set author_display_name='Community member'
  where c.author_display_name<>'Community member'
   and not exists(select 1 from display_name_claims k where k.name_key=display_name_key(c.author_display_name) and k.user_id=c.author_id);
 
-revoke execute on function public.clean_display_name(text),public.display_name_fold(text),public.display_name_skeleton(text,text,boolean),public.display_name_key(text),public.display_name_problem(text),public.set_display_name(text) from public,anon,authenticated;
+revoke execute on function public.clean_display_name(text),public.display_name_fold(text),public.display_name_skeleton(text,boolean),public.display_name_key(text),public.display_name_problem(text),public.set_display_name(text) from public,anon,authenticated;
 grant execute on function public.set_display_name(text) to authenticated;
 commit;

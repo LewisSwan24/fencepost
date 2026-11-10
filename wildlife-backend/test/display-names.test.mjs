@@ -249,3 +249,15 @@ test("a name written wholly in lookalike letters is read as the word it imitates
   await setName(ids.jamie, "Coco");
   await assert.rejects(setName(ids.other, cp(0x421, 0x43e, 0x441, 0x43e)), /taken/i);
 });
+
+test("I, l and 1 read as one letter in reserved words too", async () => {
+  // A capital I and the digit 1 pass for l in most sans-serif type.
+  for (const name of ["CounciI", "Po1ice", "AdmIn", "OffIcial", "WiIdlife Neighbours"]) {
+    await assert.rejects(setName(ids.other, name), /reserved/i, `"${name}" was accepted`);
+  }
+});
+
+test("capital lookalikes are folded whatever the database lowercases", async () => {
+  // All Cyrillic capitals: A, Komi DE, EM, I, PE.
+  await assert.rejects(setName(ids.other, cp(0x410, 0x500, 0x41c, 0x406, 0x41f)), /reserved/i);
+});
